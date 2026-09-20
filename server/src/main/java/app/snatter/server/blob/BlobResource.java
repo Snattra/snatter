@@ -2,8 +2,8 @@ package app.snatter.server.blob;
 
 import app.snatter.api.BlobsApi;
 import app.snatter.server.api.ApiException;
-import jakarta.ws.rs.core.Response;
 import java.io.InputStream;
+import org.jboss.resteasy.reactive.RestResponse;
 
 /**
  * Serves blob bytes. Blobs are immutable and their ids unguessable, so this
@@ -19,12 +19,12 @@ public class BlobResource implements BlobsApi {
     }
 
     @Override
-    public Response getBlob(BlobId id) {
+    public RestResponse<InputStream> getBlob(BlobId id) {
         Blob blob = blobs.find(id)
             .orElseThrow(() -> ApiException.notFound("blob_not_found", "No such blob"));
         InputStream content = blobs.open(id)
             .orElseThrow(() -> ApiException.notFound("blob_not_found", "No such blob"));
-        return Response.ok(content, blob.contentType())
+        return RestResponse.ResponseBuilder.ok(content, blob.contentType())
             .header("Content-Length", blob.sizeBytes())
             .header("Cache-Control", "public, max-age=31536000, immutable")
             .header("X-Content-Type-Options", "nosniff")

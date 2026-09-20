@@ -11,6 +11,7 @@ import io.vertx.core.http.HttpServerRequest;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.RestResponse;
 
 public class AuthResource implements AuthApi {
 
@@ -28,25 +29,24 @@ public class AuthResource implements AuthApi {
     }
 
     @Override
-    public Response register(RegisterRequestDto body) {
+    public RestResponse<AuthResponseDto> register(RegisterRequestDto body) {
         AuthService.Login login = auth.register(
             body.getUsername(), body.getPassword(), body.getDisplayName(), clientIp(), userAgent());
-        return Response.status(Response.Status.CREATED).entity(toDto(login)).build();
+        return RestResponse.status(Response.Status.CREATED, toDto(login));
     }
 
     @Override
-    public Response login(LoginRequestDto body) {
-        AuthService.Login login = auth.login(body.getUsername(), body.getPassword(), clientIp(), userAgent());
-        return Response.ok(toDto(login)).build();
+    public RestResponse<AuthResponseDto> login(LoginRequestDto body) {
+        return RestResponse.ok(toDto(auth.login(body.getUsername(), body.getPassword(), clientIp(), userAgent())));
     }
 
     /** Revokes the session used to make this call. */
     @Override
     @Authenticated
-    public Response logout() {
+    public RestResponse<Void> logout() {
         AccountPrincipal principal = (AccountPrincipal) identity.getPrincipal();
         auth.logout(principal.sessionId());
-        return Response.noContent().build();
+        return RestResponse.noContent();
     }
 
     private static AuthResponseDto toDto(AuthService.Login login) {

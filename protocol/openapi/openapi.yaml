@@ -236,18 +236,25 @@ paths:
             $ref: "#/components/schemas/BlobId"
       responses:
         "200":
-          description: The content, with its stored Content-Type
+          description: |
+            The content. The actual `Content-Type` header is the type recorded
+            when the blob was uploaded, for example `image/png`; it is declared
+            here as `application/octet-stream` because this operation must
+            advertise exactly one media type.
           headers:
             Cache-Control:
               schema:
                 type: string
               description: "`public, max-age=31536000, immutable`"
           content:
-            "*/*":
+            application/octet-stream:
               schema:
                 $ref: "#/components/schemas/Binary"
         "404":
-          $ref: "#/components/responses/NotFound"
+          # No content block on purpose: this operation must advertise a single
+          # media type. The body is still an `ApiError` JSON document with
+          # code `blob_not_found`.
+          description: No such blob (`blob_not_found`)
 
 components:
   securitySchemes:

@@ -108,8 +108,10 @@ Conventions that follow from this:
   Typed ids (`AccountId`, `BlobId`) are the exception: the contract's
   `AccountId` and `BlobId` schemas are mapped straight onto the hand-written
   records, so DTOs and interface parameters use them directly.
-- **Methods return `Response`.** Build it with the DTO as entity and the
-  status the contract specifies.
+- **Methods return `RestResponse<Dto>`**, Quarkus REST's typed response, so
+  the body type is checked by the compiler while status and headers stay
+  under the resource's control. Binary bodies are `InputStream` in both
+  directions.
 - **Bean Validation constraints live in the contract** (`minLength`,
   `pattern`, `required`) and are generated onto the DTOs and interface
   parameters. Do not repeat them on the implementing method.

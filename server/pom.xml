@@ -142,17 +142,20 @@
                             </schemaMappings>
                             <typeMappings>
                                 <typeMapping>DateTime=Instant</typeMapping>
-                                <!-- Raw request and response bodies arrive as byte arrays. -->
-                                <typeMapping>file=byte[]</typeMapping>
-                                <typeMapping>binary=byte[]</typeMapping>
+                                <!-- Raw request and response bodies are streamed. -->
+                                <typeMapping>file=InputStream</typeMapping>
+                                <typeMapping>binary=InputStream</typeMapping>
                             </typeMappings>
                             <importMappings>
                                 <importMapping>Instant=java.time.Instant</importMapping>
+                                <importMapping>InputStream=java.io.InputStream</importMapping>
                             </importMappings>
                             <configOptions>
                                 <library>quarkus</library>
                                 <interfaceOnly>true</interfaceOnly>
-                                <returnResponse>true</returnResponse>
+                                <!-- Typed responses: RestResponse<Dto> keeps the body type checked
+                                     while leaving status and headers under our control. -->
+                                <returnJBossResponse>true</returnJBossResponse>
                                 <useTags>true</useTags>
                                 <useJakartaEe>true</useJakartaEe>
                                 <useBeanValidation>true</useBeanValidation>

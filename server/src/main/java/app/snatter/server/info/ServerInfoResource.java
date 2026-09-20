@@ -5,8 +5,8 @@ import app.snatter.api.model.CommunityDto;
 import app.snatter.api.model.ServerInfoDto;
 import app.snatter.server.settings.ServerSettings;
 import app.snatter.server.settings.ServerSettingsRepository;
-import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.resteasy.reactive.RestResponse;
 
 public class ServerInfoResource implements ServerApi {
 
@@ -24,13 +24,12 @@ public class ServerInfoResource implements ServerApi {
     }
 
     @Override
-    public Response getServerInfo() {
+    public RestResponse<ServerInfoDto> getServerInfo() {
         ServerSettings s = settings.get();
-        ServerInfoDto info = new ServerInfoDto()
+        return RestResponse.ok(new ServerInfoDto()
             .name("Snatter")
             .version(version)
             .apiVersion(API_VERSION)
-            .community(new CommunityDto().name(s.name()).description(s.description()));
-        return Response.ok(info).build();
+            .community(new CommunityDto().name(s.name()).description(s.description())));
     }
 }

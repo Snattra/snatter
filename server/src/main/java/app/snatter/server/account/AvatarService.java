@@ -6,6 +6,9 @@ import app.snatter.server.blob.BlobService;
 import app.snatter.server.blob.ImageInfo;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 
 /**
  * Profile pictures. The server validates and stores the image as uploaded; it
@@ -28,7 +31,8 @@ public class AvatarService {
     }
 
     @Transactional
-    public Account set(AccountId accountId, byte[] image) {
+    public Account set(AccountId accountId, InputStream upload) {
+        byte[] image = readBounded(upload);
         if (image.length > MAX_BYTES) {
             throw new ApiException(413, "image_too_large", "Avatar must be at most " + MAX_BYTES + " bytes");
         }
@@ -60,5 +64,14 @@ public class AvatarService {
             blobs.delete(current.avatarId());
         }
         return accounts.findById(accountId).orElseThrow();
+    }
+
+    /** Reads at most one byte more than the limit, so oversized uploads are rejected without buffering them. */
+    private static byte[] readBounded(InputStream in) {
+        try (in) {
+            return in.readNBytes(MAX_BYTES + 1);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read upload", e);
+        }
     }
 }

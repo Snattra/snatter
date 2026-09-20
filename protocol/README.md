@@ -34,3 +34,7 @@ Clients and SDKs are expected to generate their code from the same file.
 3. Every error response uses the `ApiError` schema with a stable `error`
    code. Document new codes in the response description of the operation
    that produces them.
+4. An operation that returns binary content must advertise exactly one media
+   type across all its responses, so its error responses carry a description
+   only and the success response is declared as `application/octet-stream`.
+   See `getBlob` for the pattern.
