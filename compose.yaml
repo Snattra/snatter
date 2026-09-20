@@ -1,0 +1,41 @@
+# Runs a complete Snatter server locally in the production profile.
+#
+#   cp .env.example .env      # then set SNATTER_DB_PASSWORD
+#   docker compose up --build
+#
+# The server is then available on http://localhost:8080.
+
+name: snatter
+
+services:
+  db:
+    image: docker.io/library/postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: snatter
+      POSTGRES_USER: snatter
+      POSTGRES_PASSWORD: ${SNATTER_DB_PASSWORD:?Set SNATTER_DB_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snatter -d snatter"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build: ./server
+    image: snatter-server:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SNATTER_DB_URL: jdbc:postgresql://db:5432/snatter
+      SNATTER_DB_USER: snatter
+      SNATTER_DB_PASSWORD: ${SNATTER_DB_PASSWORD}
+    ports:
+      - "${SNATTER_HTTP_PORT:-8080}:8080"
+
+volumes:
+  db-data:

@@ -70,6 +70,21 @@ PostgreSQL is the only supported database.
   them as `OffsetDateTime` and call `toInstant()`, because the PostgreSQL
   driver does not convert `timestamptz` to `Instant` directly.
 
+
+## Container image
+
+`Dockerfile` in this directory is a multi-stage build that compiles the server
+and produces a JVM image on the Red Hat UBI OpenJDK runtime. It needs no local
+toolchain and is what the repository root `compose.yaml` uses:
+
+```
+docker build -t snatter-server ./server
+```
+
+The Dockerfiles under `src/main/docker` are the standard Quarkus ones. They
+expect a prebuilt `target/` directory and are the better choice in CI, where
+the build already ran.
+
 ## Native executable
 
 The `native` Maven profile builds a native executable with GraalVM or Mandrel:

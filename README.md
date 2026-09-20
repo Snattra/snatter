@@ -34,6 +34,22 @@ Windows first, then macOS, then Linux.
 | `client/`   | The desktop client                                | AGPL-3.0    |
 | `protocol/` | Protocol definitions shared by server and clients | Apache-2.0  |
 
+
+## Running with Docker Compose
+
+The quickest way to run a Snatter server, no JDK or Maven required:
+
+```
+cp .env.example .env      # set SNATTER_DB_PASSWORD
+docker compose up --build
+```
+
+This builds the server from source and starts it together with PostgreSQL in
+the production profile. The server listens on http://localhost:8080; try
+`/api/v1/server-info` and `/q/health`. Database files persist in the
+`db-data` volume, so `docker compose down` keeps your data and
+`docker compose down -v` wipes it.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Commits must carry a DCO sign-off.
