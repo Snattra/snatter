@@ -14,6 +14,7 @@ import app.snatter.server.ratelimit.RateLimited;
 import app.snatter.server.settings.ServerSettings;
 import app.snatter.server.settings.ServerSettingsService;
 import io.quarkus.security.Authenticated;
+import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.Response;
@@ -41,7 +42,7 @@ public class InviteResource implements InvitesApi {
     }
 
     @Override
-    @Authenticated
+    @PermissionsAllowed("CREATE_INVITE")
     public RestResponse<InviteDto> createInvite(InviteCreateDto body) {
         Duration lifetime = body.getExpiresInSeconds() == null ? null : Duration.ofSeconds(body.getExpiresInSeconds());
         Invite invite = invites.create(self(), lifetime, body.getMaxUses());
@@ -51,13 +52,13 @@ public class InviteResource implements InvitesApi {
     @Override
     @Authenticated
     public RestResponse<List<InviteDto>> listInvites() {
-        return RestResponse.ok(invites.list(self()).stream().map(this::toDto).toList());
+        return RestResponse.ok(invites.list(principal()).stream().map(this::toDto).toList());
     }
 
     @Override
     @Authenticated
     public RestResponse<Void> revokeInvite(InviteCode code) {
-        invites.revoke(code, self());
+        invites.revoke(code, principal());
         return RestResponse.noContent();
     }
 
@@ -100,7 +101,11 @@ public class InviteResource implements InvitesApi {
         return base + "/invite/" + code;
     }
 
+    private AccountPrincipal principal() {
+        return (AccountPrincipal) identity.getPrincipal();
+    }
+
     private AccountId self() {
-        return ((AccountPrincipal) identity.getPrincipal()).accountId();
+        return principal().accountId();
     }
 }

@@ -1,6 +1,7 @@
 package app.snatter.server.api;
 
 import app.snatter.api.model.ApiErrorDto;
+import io.quarkus.security.ForbiddenException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.core.MediaType;
@@ -17,6 +18,15 @@ public class ApiExceptionMappers {
         return Response.status(e.status())
             .type(MediaType.APPLICATION_JSON)
             .entity(new ApiErrorDto().error(e.code()).message(e.getMessage()))
+            .build();
+    }
+
+    /** Raised by {@code @PermissionsAllowed} when the caller lacks the permission. */
+    @ServerExceptionMapper
+    public Response forbidden(ForbiddenException e) {
+        return Response.status(403)
+            .type(MediaType.APPLICATION_JSON)
+            .entity(new ApiErrorDto().error("forbidden").message("You do not have permission to do this"))
             .build();
     }
 

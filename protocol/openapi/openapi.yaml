@@ -29,6 +29,8 @@ tags:
     description: Binary content such as profile pictures
   - name: invites
     description: Invite links that let new people register
+  - name: roles
+    description: Roles bundle permissions and are assigned to members
 
 paths:
   /api/v1/server-info:
@@ -50,7 +52,7 @@ paths:
       tags: [server]
       operationId: getServerSettings
       summary: Read the server settings
-      description: Only the server owner may call this.
+      description: Requires the `MANAGE_SERVER` permission.
       security:
         - session: []
       responses:
@@ -69,7 +71,7 @@ paths:
       operationId: updateServerSettings
       summary: Change server settings
       description: |
-        Only the server owner may call this. Fields that are absent stay
+        Requires the `MANAGE_SERVER` permission. Fields that are absent stay
         unchanged. Send `description` as an empty string to clear it. Changes
         take effect immediately.
       security:
@@ -323,7 +325,7 @@ paths:
       tags: [invites]
       operationId: listInvites
       summary: List invites
-      description: The owner sees every invite; other members see the ones they created.
+      description: Members with `MANAGE_INVITES` see every invite; others see the ones they created.
       security:
         - session: []
       responses:
@@ -342,9 +344,9 @@ paths:
       operationId: createInvite
       summary: Create an invite
       description: |
-        Allowed for every member while `ServerSettings.membersCanInvite` is
-        true, otherwise only for the owner. Omitted limits mean the invite
-        never expires or has unlimited uses.
+        Requires the `CREATE_INVITE` permission, which the default role grants
+        unless the server changed it. Omitted limits mean the invite never
+        expires or has unlimited uses.
       security:
         - session: []
       requestBody:
@@ -407,7 +409,7 @@ paths:
       tags: [invites]
       operationId: revokeInvite
       summary: Revoke an invite
-      description: Allowed for the invite's creator and for the owner.
+      description: Allowed for the invite's creator and for members with `MANAGE_INVITES`.
       security:
         - session: []
       parameters:
@@ -429,6 +431,200 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+
+  /api/v1/roles:
+    get:
+      tags: [roles]
+      operationId: listRoles
+      summary: List roles
+      description: Every member may see the roles, ordered from highest position to lowest.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Roles, highest first; the default role is last
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Role"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [roles]
+      operationId: createRole
+      summary: Create a role
+      description: |
+        Requires `MANAGE_ROLES`. The new role is placed at the bottom, just
+        above the default role. A caller may only grant permissions they hold
+        themselves (`permission_escalation`).
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleCreate"
+      responses:
+        "201":
+          description: The new role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/roles/{id}:
+    patch:
+      tags: [roles]
+      operationId: updateRole
+      summary: Change a role
+      description: |
+        Requires `MANAGE_ROLES`. Only roles below the caller's highest role can
+        be changed (`role_hierarchy`), and only permissions the caller holds
+        can be granted (`permission_escalation`). The default role accepts
+        permission changes only (`default_role`). Absent fields stay unchanged.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/RoleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleUpdate"
+      responses:
+        "200":
+          description: The updated role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [roles]
+      operationId: deleteRole
+      summary: Delete a role
+      description: |
+        Requires `MANAGE_ROLES` and a role below the caller's highest
+        (`role_hierarchy`). The default role cannot be deleted (`default_role`).
+        Members holding the role simply lose it.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/RoleId"
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/accounts/{id}/roles/{roleId}:
+    put:
+      tags: [roles]
+      operationId: assignRole
+      summary: Give a member a role
+      description: |
+        Requires `MANAGE_ROLES` and a role below the caller's highest
+        (`role_hierarchy`). Idempotent. The default role is implicit and cannot
+        be assigned (`default_role`).
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/RoleId"
+      responses:
+        "204":
+          description: The member has the role
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [roles]
+      operationId: unassignRole
+      summary: Take a role from a member
+      description: Same rules as assigning. Idempotent.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/RoleId"
+      responses:
+        "204":
+          description: The member no longer has the role
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/accounts/me/permissions:
+    get:
+      tags: [roles]
+      operationId: getMyPermissions
+      summary: The caller's effective permissions
+      description: |
+        The union of the caller's roles and the default role, or every
+        permission for the server owner. Clients use this to show or hide
+        controls.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Effective permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionSet"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/v1/blobs/{id}:
     get:
@@ -487,7 +683,10 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
     Forbidden:
-      description: The caller is signed in but not allowed to do this (`forbidden`)
+      description: |
+        The caller is signed in but not allowed to do this: missing permission
+        (`forbidden`), role at or above their own (`role_hierarchy`), or
+        granting a permission they lack (`permission_escalation`)
       content:
         application/json:
           schema:
@@ -521,6 +720,112 @@ components:
       type: string
       format: uuid
       description: Identifies a blob on this server
+
+    RoleId:
+      type: string
+      format: uuid
+      description: Identifies a role on this server
+
+    Permission:
+      type: string
+      description: |
+        Server-level permissions. Channel-level overrides will refine the
+        channel-oriented ones later.
+      enum:
+        - MANAGE_SERVER
+        - MANAGE_ROLES
+        - MANAGE_CHANNELS
+        - MANAGE_INVITES
+        - KICK_MEMBERS
+        - BAN_MEMBERS
+        - CREATE_INVITE
+        - VIEW_CHANNELS
+        - SEND_MESSAGES
+        - MANAGE_MESSAGES
+        - CONNECT
+        - SPEAK
+        - STREAM
+        - MUTE_MEMBERS
+        - MOVE_MEMBERS
+
+    PermissionSet:
+      type: object
+      required: [owner, permissions]
+      properties:
+        owner:
+          type: boolean
+          description: True for the server owner, who holds every permission
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+
+    Role:
+      type: object
+      required: [id, name, position, permissions, isDefault, createdAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/RoleId"
+        name:
+          type: string
+          example: Moderator
+        color:
+          type: string
+          nullable: true
+          pattern: "^#[0-9A-Fa-f]{6}$"
+          example: "#5865F2"
+        position:
+          type: integer
+          description: Higher means more senior; the default role is 0
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+        isDefault:
+          type: boolean
+          description: The role every member has implicitly
+        createdAt:
+          type: string
+          format: date-time
+
+    RoleCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        color:
+          type: string
+          pattern: "^#[0-9A-Fa-f]{6}$"
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+          description: Defaults to none
+
+    RoleUpdate:
+      type: object
+      description: Partial update; absent fields stay unchanged
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        color:
+          type: string
+          pattern: "^$|^#[0-9A-Fa-f]{6}$"
+          description: Empty string clears the colour
+        position:
+          type: integer
+          minimum: 1
+          description: Roles at or above this position move up one
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+          description: Replaces the whole set
 
     InviteCode:
       type: string
@@ -665,7 +970,7 @@ components:
 
     ServerSettings:
       type: object
-      required: [name, registrationMode, challengeRequired, membersCanInvite, rateLimits]
+      required: [name, registrationMode, challengeRequired, rateLimits]
       properties:
         name:
           type: string
@@ -685,9 +990,6 @@ components:
         challengeRequired:
           type: boolean
           description: Require a proof-of-work challenge on registration
-        membersCanInvite:
-          type: boolean
-          description: Whether every member may create invites, or only the owner
         rateLimits:
           $ref: "#/components/schemas/RateLimits"
 
@@ -711,8 +1013,6 @@ components:
         registrationMode:
           $ref: "#/components/schemas/RegistrationMode"
         challengeRequired:
-          type: boolean
-        membersCanInvite:
           type: boolean
         rateLimits:
           $ref: "#/components/schemas/RateLimits"
@@ -806,7 +1106,7 @@ components:
 
     Account:
       type: object
-      required: [id, username, displayName, createdAt]
+      required: [id, username, displayName, roleIds, createdAt]
       properties:
         id:
           $ref: "#/components/schemas/AccountId"
@@ -821,6 +1121,11 @@ components:
             - $ref: "#/components/schemas/BlobId"
           nullable: true
           description: Profile picture, fetch at `/api/v1/blobs/{avatarId}`; null if none
+        roleIds:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleId"
+          description: Assigned roles; the default role is implicit and not listed
         createdAt:
           type: string
           format: date-time

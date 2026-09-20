@@ -14,6 +14,7 @@ public final class AccountDtos {
             .username(account.username())
             .displayName(account.displayName())
             .avatarId(account.avatarId())
+            .roleIds(account.roleIds())
             .createdAt(account.createdAt());
     }
 }

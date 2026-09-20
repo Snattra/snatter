@@ -9,10 +9,7 @@ import app.snatter.api.model.RegistrationModeDto;
 import app.snatter.api.model.ServerInfoDto;
 import app.snatter.api.model.ServerSettingsDto;
 import app.snatter.api.model.ServerSettingsUpdateDto;
-import app.snatter.server.api.ApiException;
-import app.snatter.server.auth.AccountPrincipal;
-import io.quarkus.security.Authenticated;
-import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.PermissionsAllowed;
 import java.time.Duration;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.resteasy.reactive.RestResponse;
@@ -25,15 +22,12 @@ public class ServerSettingsResource implements ServerApi {
 
     private final String version;
     private final ServerSettingsService settings;
-    private final SecurityIdentity identity;
 
     public ServerSettingsResource(
             @ConfigProperty(name = "quarkus.application.version") String version,
-            ServerSettingsService settings,
-            SecurityIdentity identity) {
+            ServerSettingsService settings) {
         this.version = version;
         this.settings = settings;
-        this.identity = identity;
     }
 
     @Override
@@ -50,16 +44,14 @@ public class ServerSettingsResource implements ServerApi {
     }
 
     @Override
-    @Authenticated
+    @PermissionsAllowed("MANAGE_SERVER")
     public RestResponse<ServerSettingsDto> getServerSettings() {
-        requireOwner();
         return RestResponse.ok(toDto(settings.current()));
     }
 
     @Override
-    @Authenticated
+    @PermissionsAllowed("MANAGE_SERVER")
     public RestResponse<ServerSettingsDto> updateServerSettings(ServerSettingsUpdateDto update) {
-        requireOwner();
         ServerSettings s = settings.current();
         if (update.getName() != null) {
             s = s.withName(update.getName().strip());
@@ -76,20 +68,10 @@ public class ServerSettingsResource implements ServerApi {
         if (update.getChallengeRequired() != null) {
             s = s.withChallengeRequired(update.getChallengeRequired());
         }
-        if (update.getMembersCanInvite() != null) {
-            s = s.withMembersCanInvite(update.getMembersCanInvite());
-        }
         if (update.getRateLimits() != null) {
             s = s.withRateLimits(fromDto(update.getRateLimits()));
         }
         return RestResponse.ok(toDto(settings.update(s)));
-    }
-
-    private void requireOwner() {
-        AccountPrincipal principal = (AccountPrincipal) identity.getPrincipal();
-        if (!settings.current().isOwner(principal.accountId())) {
-            throw new ApiException(403, "forbidden", "Only the server owner may do this");
-        }
     }
 
     static ServerSettingsDto toDto(ServerSettings s) {
@@ -99,7 +81,6 @@ public class ServerSettingsResource implements ServerApi {
             .publicUrl(s.publicUrl())
             .registrationMode(toDto(s.registrationMode()))
             .challengeRequired(s.challengeRequired())
-            .membersCanInvite(s.membersCanInvite())
             .rateLimits(new RateLimitsDto()
                 .enabled(s.rateLimits().enabled())
                 .login(toDto(s.rateLimits().login()))

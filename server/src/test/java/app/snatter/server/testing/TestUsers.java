@@ -143,4 +143,54 @@ public final class TestUsers {
             throw new IllegalStateException(e);
         }
     }
+
+    // --- Roles ---------------------------------------------------------------
+
+    /** Creates a role as the owner and returns its id. */
+    public static String createRole(String name, String... permissions) {
+        return given()
+            .header("Authorization", "Bearer " + ownerToken())
+            .contentType(ContentType.JSON)
+            .body(Map.of("name", name, "permissions", java.util.List.of(permissions)))
+            .post("/api/v1/roles")
+            .then().statusCode(201)
+            .extract().path("id");
+    }
+
+    public static Response patchRole(String token, String roleId, Map<String, Object> update) {
+        return given()
+            .header("Authorization", "Bearer " + token)
+            .contentType(ContentType.JSON)
+            .body(update)
+            .patch("/api/v1/roles/" + roleId);
+    }
+
+    public static void assignRole(String accountId, String roleId) {
+        given()
+            .header("Authorization", "Bearer " + ownerToken())
+            .put("/api/v1/accounts/" + accountId + "/roles/" + roleId)
+            .then().statusCode(204);
+    }
+
+    public static void deleteRole(String roleId) {
+        given()
+            .header("Authorization", "Bearer " + ownerToken())
+            .delete("/api/v1/roles/" + roleId)
+            .then().statusCode(204);
+    }
+
+    public static String defaultRoleId() {
+        return given()
+            .header("Authorization", "Bearer " + ownerToken())
+            .get("/api/v1/roles")
+            .then().statusCode(200)
+            .extract().path("find { it.isDefault }.id");
+    }
+
+    /** A fresh member holding exactly the given permissions through a new role. */
+    public static User registerWithPermissions(String... permissions) {
+        User user = register();
+        assignRole(user.id(), createRole("perm_" + UUID.randomUUID().toString().substring(0, 8), permissions));
+        return user;
+    }
 }

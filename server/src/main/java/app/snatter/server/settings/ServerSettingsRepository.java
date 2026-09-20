@@ -23,7 +23,6 @@ public class ServerSettingsRepository {
         id(rs, "owner_account_id", AccountId::new),
         RegistrationMode.fromDbValue(rs.getString("registration_mode")),
         rs.getBoolean("registration_challenge"),
-        rs.getBoolean("members_can_invite"),
         new RateLimits(
             rs.getBoolean("rate_limits_enabled"),
             policy(rs.getInt("rate_limit_login_limit"), rs.getInt("rate_limit_login_period")),
@@ -47,7 +46,7 @@ public class ServerSettingsRepository {
         return jdbi.withHandle(h -> h
             .createQuery("""
                 SELECT name, description, public_url, owner_account_id,
-                       registration_mode, registration_challenge, members_can_invite,
+                       registration_mode, registration_challenge,
                        rate_limits_enabled,
                        rate_limit_login_limit, rate_limit_login_period,
                        rate_limit_register_limit, rate_limit_register_period,
@@ -74,7 +73,6 @@ public class ServerSettingsRepository {
                     public_url = :publicUrl,
                     registration_mode = :registrationMode,
                     registration_challenge = :challengeRequired,
-                    members_can_invite = :membersCanInvite,
                     rate_limits_enabled = :rateLimitsEnabled,
                     rate_limit_login_limit = :loginLimit,
                     rate_limit_login_period = :loginPeriod,
@@ -92,7 +90,6 @@ public class ServerSettingsRepository {
             .bind("publicUrl", s.publicUrl())
             .bind("registrationMode", s.registrationMode().dbValue())
             .bind("challengeRequired", s.challengeRequired())
-            .bind("membersCanInvite", s.membersCanInvite())
             .bind("rateLimitsEnabled", s.rateLimits().enabled())
             .bind("loginLimit", s.rateLimits().login().limit())
             .bind("loginPeriod", s.rateLimits().login().period().toSeconds())

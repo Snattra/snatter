@@ -132,14 +132,20 @@ class InviteResourceTest {
     }
 
     @Test
-    void ownerCanRestrictInvitingToThemselves() {
+    void invitingRequiresTheCreateInvitePermission() {
         TestUsers.User member = TestUsers.register();
+        String defaultRole = TestUsers.defaultRoleId();
+        java.util.List<String> original = given().header("Authorization", "Bearer " + member.token())
+            .get("/api/v1/roles").then().statusCode(200).extract().path("find { it.isDefault }.permissions");
         try {
-            TestUsers.patchSettings(Map.of("membersCanInvite", false)).then().statusCode(200);
+            java.util.List<String> without = original.stream().filter(p -> !p.equals("CREATE_INVITE")).toList();
+            TestUsers.patchRole(TestUsers.ownerToken(), defaultRole, Map.of("permissions", without)).then().statusCode(200);
+
             createInvite(member.token(), Map.of()).then().statusCode(403).body("error", equalTo("forbidden"));
             createInvite(TestUsers.ownerToken(), Map.of()).then().statusCode(201);
+            createInvite(TestUsers.registerWithPermissions("CREATE_INVITE").token(), Map.of()).then().statusCode(201);
         } finally {
-            TestUsers.patchSettings(Map.of("membersCanInvite", true)).then().statusCode(200);
+            TestUsers.patchRole(TestUsers.ownerToken(), defaultRole, Map.of("permissions", original)).then().statusCode(200);
         }
     }
 

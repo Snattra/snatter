@@ -16,7 +16,6 @@ public record ServerSettings(
         AccountId ownerId,
         RegistrationMode registrationMode,
         boolean challengeRequired,
-        boolean membersCanInvite,
         RateLimits rateLimits,
         Instant createdAt,
         Instant updatedAt) {
@@ -26,30 +25,26 @@ public record ServerSettings(
     }
 
     public ServerSettings withName(String name) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, membersCanInvite, rateLimits, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, createdAt, updatedAt);
     }
 
     public ServerSettings withDescription(String description) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, membersCanInvite, rateLimits, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, createdAt, updatedAt);
     }
 
     public ServerSettings withPublicUrl(String publicUrl) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, membersCanInvite, rateLimits, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, createdAt, updatedAt);
     }
 
     public ServerSettings withRegistrationMode(RegistrationMode mode) {
-        return new ServerSettings(name, description, publicUrl, ownerId, mode, challengeRequired, membersCanInvite, rateLimits, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, mode, challengeRequired, rateLimits, createdAt, updatedAt);
     }
 
     public ServerSettings withChallengeRequired(boolean required) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, required, membersCanInvite, rateLimits, createdAt, updatedAt);
-    }
-
-    public ServerSettings withMembersCanInvite(boolean allowed) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, allowed, rateLimits, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, required, rateLimits, createdAt, updatedAt);
     }
 
     public ServerSettings withRateLimits(RateLimits limits) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, membersCanInvite, limits, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, limits, createdAt, updatedAt);
     }
 }

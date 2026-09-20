@@ -75,7 +75,8 @@ PostgreSQL is the only supported database. The schema is created and upgraded
 automatically at startup.
 
 Registration mode, the proof-of-work requirement and rate limits are not
-configuration: the server owner changes them at runtime through
+configuration: members with the `MANAGE_SERVER` permission change them at
+runtime through
 `PATCH /api/v1/server-settings`. The first account registered on a fresh
 server becomes the owner.
 

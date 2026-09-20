@@ -137,9 +137,10 @@
                             <generateSupportingFiles>false</generateSupportingFiles>
                             <schemaMappings>
                                 <!-- Typed ids are hand-written value records, not generated. -->
-                                <schemaMapping>AccountId=app.snatter.server.account.AccountId</schemaMapping>
-                                <schemaMapping>BlobId=app.snatter.server.blob.BlobId</schemaMapping>
-                                <schemaMapping>InviteCode=app.snatter.server.invite.InviteCode</schemaMapping>
+                                <schemaMapping>AccountId=AccountId</schemaMapping>
+                                <schemaMapping>BlobId=BlobId</schemaMapping>
+                                <schemaMapping>InviteCode=InviteCode</schemaMapping>
+                                <schemaMapping>RoleId=RoleId</schemaMapping>
                             </schemaMappings>
                             <typeMappings>
                                 <typeMapping>DateTime=Instant</typeMapping>
@@ -150,6 +151,10 @@
                             <importMappings>
                                 <importMapping>Instant=java.time.Instant</importMapping>
                                 <importMapping>InputStream=java.io.InputStream</importMapping>
+                                <importMapping>AccountId=app.snatter.server.account.AccountId</importMapping>
+                                <importMapping>BlobId=app.snatter.server.blob.BlobId</importMapping>
+                                <importMapping>InviteCode=app.snatter.server.invite.InviteCode</importMapping>
+                                <importMapping>RoleId=app.snatter.server.role.RoleId</importMapping>
                             </importMappings>
                             <configOptions>
                                 <library>quarkus</library>
@@ -163,6 +168,9 @@
                                 <useSwaggerAnnotations>false</useSwaggerAnnotations>
                                 <useMicroProfileOpenAPIAnnotations>false</useMicroProfileOpenAPIAnnotations>
                                 <openApiNullable>false</openApiNullable>
+                                <!-- Absent arrays must arrive as null so partial updates can tell
+                                     "unchanged" from "set to empty". -->
+                                <containerDefaultToNull>true</containerDefaultToNull>
                                 <dateLibrary>java8</dateLibrary>
                                 <!-- Response DTOs travel inside Response.entity(), where Quarkus
                                      cannot see them, so register every model for native reflection. -->

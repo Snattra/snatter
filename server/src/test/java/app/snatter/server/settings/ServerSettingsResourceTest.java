@@ -17,8 +17,9 @@ import org.junit.jupiter.api.Test;
 class ServerSettingsResourceTest {
 
     @Test
-    void onlyTheOwnerMayReadOrChangeSettings() {
+    void settingsRequireTheManageServerPermission() {
         TestUsers.User member = TestUsers.register();
+        TestUsers.User admin = TestUsers.registerWithPermissions("MANAGE_SERVER");
 
         given().get("/api/v1/server-settings").then().statusCode(401);
 
@@ -36,6 +37,12 @@ class ServerSettingsResourceTest {
             .patch("/api/v1/server-settings")
             .then()
             .statusCode(403);
+
+        given()
+            .header("Authorization", "Bearer " + admin.token())
+            .get("/api/v1/server-settings")
+            .then()
+            .statusCode(200);
 
         given()
             .header("Authorization", "Bearer " + TestUsers.ownerToken())

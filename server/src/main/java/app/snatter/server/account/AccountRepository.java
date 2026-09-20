@@ -1,12 +1,15 @@
 package app.snatter.server.account;
 
 import static app.snatter.server.persistence.Rows.id;
+import static app.snatter.server.persistence.Rows.ids;
 import static app.snatter.server.persistence.Rows.instant;
 import static app.snatter.server.persistence.Rows.uuid;
 
 import app.snatter.server.blob.BlobId;
+import app.snatter.server.role.RoleId;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
@@ -22,12 +25,17 @@ public class AccountRepository {
         rs.getString("username"),
         rs.getString("display_name"),
         id(rs, "avatar_blob_id", BlobId::new),
+        ids(rs, "role_ids", RoleId::new),
         instant(rs, "created_at"));
 
     private static final String SELECT = """
-        SELECT id, username, display_name, avatar_blob_id, created_at
-        FROM account
+        SELECT a.id, a.username, a.display_name, a.avatar_blob_id, a.created_at,
+               array_remove(array_agg(ar.role_id), NULL) AS role_ids
+        FROM account a
+        LEFT JOIN account_role ar ON ar.account_id = a.id
         """;
+
+    private static final String GROUP = " GROUP BY a.id";
 
     private final Jdbi jdbi;
 
@@ -37,7 +45,7 @@ public class AccountRepository {
 
     public Optional<Account> findById(AccountId id) {
         return jdbi.withHandle(h -> h
-            .createQuery(SELECT + "WHERE id = :id")
+            .createQuery(SELECT + "WHERE a.id = :id" + GROUP)
             .bind("id", id)
             .map(MAPPER)
             .findOne());
@@ -45,7 +53,7 @@ public class AccountRepository {
 
     public Optional<Account> findByUsername(String username) {
         return jdbi.withHandle(h -> h
-            .createQuery(SELECT + "WHERE lower(username) = lower(:username)")
+            .createQuery(SELECT + "WHERE lower(a.username) = lower(:username)" + GROUP)
             .bind("username", username)
             .map(MAPPER)
             .findOne());
@@ -98,7 +106,7 @@ public class AccountRepository {
                 .bind("now", now)
                 .execute();
         });
-        return new Account(id, username, displayName, null, now);
+        return new Account(id, username, displayName, null, List.of(), now);
     }
 
     public Optional<String> findPasswordHash(AccountId accountId) {

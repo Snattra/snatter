@@ -37,7 +37,6 @@ class ServerSettingsRepositoryTest {
                 .withRegistrationMode(RegistrationMode.INVITE_ONLY)
                 .withChallengeRequired(false)
                 .withPublicUrl("https://example.test")
-                .withMembersCanInvite(false)
                 .withRateLimits(new RateLimits(false,
                     new RateLimitPolicy(1, Duration.ofSeconds(2)),
                     new RateLimitPolicy(3, Duration.ofSeconds(4)),
@@ -51,7 +50,6 @@ class ServerSettingsRepositoryTest {
             assertEquals(RegistrationMode.INVITE_ONLY, after.registrationMode());
             assertEquals(false, after.challengeRequired());
             assertEquals("https://example.test", after.publicUrl());
-            assertEquals(false, after.membersCanInvite());
             assertEquals(changed.rateLimits(), after.rateLimits());
             assertEquals(before.ownerId(), after.ownerId(), "update must not touch the owner");
             assertTrue(!after.updatedAt().isBefore(before.updatedAt()));

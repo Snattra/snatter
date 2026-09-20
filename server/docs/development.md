@@ -11,11 +11,12 @@ splitting by technical layer:
 
 | Package       | Contents                                             |
 |---------------|------------------------------------------------------|
-| `settings`    | Community settings, server info, owner-only settings API |
+| `settings`    | Community settings, server info, settings API        |
 | `account`     | Accounts and the identity model                      |
 | `auth`        | Passwords, sessions, challenges, HTTP authentication |
 | `blob`        | Binary content: storage, metadata, image detection   |
 | `invite`      | Invite links and their redemption                    |
+| `role`        | Permissions, roles, assignment, hierarchy rules      |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
@@ -56,8 +57,9 @@ instantly. A token is `snt_` followed by 32 random bytes in URL-safe base64.
 Only its SHA-256 hash is stored, in the `session` table. Clients send it as
 `Authorization: Bearer snt_...`. `SessionAuthenticationMechanism` and
 `SessionIdentityProvider` resolve it into an `AccountPrincipal` carrying the
-account id, username and session id, so `@Authenticated`, `@RolesAllowed` and
-`SecurityIdentity` work as usual in resources.
+account id, username, session id and effective permissions, so
+`@Authenticated`, `@PermissionsAllowed` and `SecurityIdentity` work as usual
+in resources.
 
 Sessions record the client IP as the server sees it. Behind a reverse proxy
 that is the proxy's address until trusted-proxy handling is configured; this
@@ -90,16 +92,47 @@ at the current blob; replacing or clearing an avatar deletes the old blob.
 ## Server owner and settings
 
 The first account registered on a fresh server becomes the **server owner**,
-recorded in `server_settings.owner_account_id`. Until role-based access
-control exists, the owner is the only administrator: `GET` and `PATCH
-/api/v1/server-settings` check `ServerSettings.isOwner`. Roles and
-permissions will build on this; the owner keeps every permission.
+recorded in `server_settings.owner_account_id`. The owner holds every
+permission, is exempt from the role hierarchy rules, and cannot be demoted.
+Everything else is decided by permissions; see "Roles and permissions".
 
 Everything an administrator can change at runtime lives in the
 `server_settings` row and is read through `ServerSettingsService`, which
 caches the row in memory and fires a `Changed` event on updates. Request paths
 never query the table. Tuning that only an operator would touch, such as the
 challenge difficulty, stays in `application.properties`.
+
+## Roles and permissions
+
+Authorization is permission-based. `role.Permission` is an enum with a fixed
+bit per permission, stored as a bitmask in `role.permissions` and exposed by
+name in the API; never renumber a bit. Roles (`role` table) bundle
+permissions and are assigned to accounts through `account_role`. One role is
+the **default role** that every member has implicitly; it is never listed in
+`Account.roleIds` and cannot be assigned, removed or deleted, only its
+permissions change. A member's effective permissions are the union of the
+default role and their assigned roles; the owner has all of them.
+
+`SessionIdentityProvider` resolves the effective permissions once per request
+through `RoleService.resolve` and puts them on the `AccountPrincipal`
+together with an owner flag and the position of the member's highest role. It
+also installs a Quarkus permission checker, so resources guard operations
+with `@PermissionsAllowed("MANAGE_ROLES")` and the like; a denial is rendered
+as the `forbidden` error. Checks that need to look at the arguments, such as
+"is this role below mine", live in the services and use the principal.
+
+Two rules from Discord keep role management safe, and `RoleService`
+enforces both for everyone except the owner:
+
+- **Hierarchy.** Roles have a `position`; the default role is 0 and new roles
+  are inserted at 1 with everything else moving up. You may only change,
+  delete, assign or move roles whose position is strictly below your own
+  highest role (`role_hierarchy`).
+- **No escalation.** You may only grant permissions you hold yourself
+  (`permission_escalation`).
+
+Channel-level permission overrides will refine the channel-oriented
+permissions later; the server-level set is the baseline.
 
 ## Registration policy
 
@@ -128,9 +161,9 @@ overspend the last use. Redemption runs inside the registration transaction:
 if the registration fails afterwards, for example on a taken username, the
 use is rolled back with it.
 
-Every member may create invites while `membersCanInvite` is set, otherwise
-only the owner. The owner lists and revokes all invites; members only their
-own. `GET /api/v1/invites/{code}` is public so a client can show what the
+Creating an invite needs the `CREATE_INVITE` permission, which the default
+role grants unless changed. Members with `MANAGE_INVITES` list and revoke all
+invites; others only their own. `GET /api/v1/invites/{code}` is public so a client can show what the
 invite leads to before the person registers; it is rate limited under the
 `invite` policy and answers 404 for unknown or revoked codes and 410 for
 expired or used-up ones.
@@ -176,6 +209,9 @@ Conventions that follow from this:
   the body type is checked by the compiler while status and headers stay
   under the resource's control. Binary bodies are `InputStream` in both
   directions.
+- **Partial updates** use `*Update` schemas where every field is optional.
+  Generated DTOs leave absent arrays `null` (`containerDefaultToNull`), so a
+  null field means "unchanged" and an empty array means "set to empty".
 - **Bean Validation constraints live in the contract** (`minLength`,
   `pattern`, `required`) and are generated onto the DTOs and interface
   parameters. Do not repeat them on the implementing method.
@@ -194,8 +230,8 @@ that produces it.
 | Method | Path                | Auth | Purpose                                   |
 |--------|---------------------|------|-------------------------------------------|
 | GET    | `/server-info`      | no   | Software and community description        |
-| GET    | `/server-settings`   | owner | Read the settings                        |
-| PATCH  | `/server-settings`   | owner | Change settings, partial                 |
+| GET    | `/server-settings`   | MANAGE_SERVER | Read the settings                |
+| PATCH  | `/server-settings`   | MANAGE_SERVER | Change settings, partial         |
 | GET    | `/auth/challenge`   | no   | Proof-of-work challenge for registration  |
 | POST   | `/auth/register`    | no   | Create a local account, returns a session |
 | POST   | `/auth/login`       | no   | Username and password, returns a session  |
@@ -208,11 +244,19 @@ that produces it.
 | POST   | `/invites`           | yes  | Create an invite                          |
 | GET    | `/invites/{code}`    | no   | Preview an invite: community and inviter  |
 | DELETE | `/invites/{code}`    | yes  | Revoke, by creator or owner               |
+| GET    | `/roles`             | yes  | List roles, highest first                 |
+| POST   | `/roles`             | MANAGE_ROLES | Create a role at the bottom       |
+| PATCH  | `/roles/{id}`        | MANAGE_ROLES | Change name, colour, position or permissions |
+| DELETE | `/roles/{id}`        | MANAGE_ROLES | Delete a role                     |
+| PUT    | `/accounts/{id}/roles/{roleId}` | MANAGE_ROLES | Assign a role         |
+| DELETE | `/accounts/{id}/roles/{roleId}` | MANAGE_ROLES | Remove a role         |
+| GET    | `/accounts/me/permissions` | yes | Effective permissions of the caller |
 | GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
 Error codes so far: `validation_failed`, `username_taken`, `registration_closed`,
 `challenge_required`, `challenge_invalid`, `forbidden`, `rate_limited`,
-`invite_invalid`, `invite_not_found`, `invite_unusable`,
+`invite_invalid`, `invite_not_found`, `invite_unusable`, `role_not_found`,
+`role_hierarchy`, `permission_escalation`, `default_role`,
 `invalid_credentials`, `account_not_found`, `blob_not_found`,
 `unsupported_image`, `image_dimensions`, `image_too_large`.
 
