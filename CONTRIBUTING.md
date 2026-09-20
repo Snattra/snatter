@@ -30,6 +30,6 @@ that applies to the directory it lands in.
 
 ## Toolchain
 
-- Server: Java 26 and Maven. [SDKMAN](https://sdkman.io) is the easiest way to
+- Server: JDK 25 or newer and Maven. [SDKMAN](https://sdkman.io) is the easiest way to
   get both.
 - Client: Node.js LTS.

@@ -1,12 +1,12 @@
 # Snatter server
 
 The Snatter server: HTTP API, real-time gateway and, later, the media
-forwarding unit. Java 26, [Quarkus](https://quarkus.io), Maven. Licensed under
+forwarding unit. Java 25+, [Quarkus](https://quarkus.io), Maven. Licensed under
 AGPL-3.0 (see the repository root `LICENSE`).
 
 ## Requirements
 
-- JDK 26
+- JDK 25 or newer (the code targets Java 25 bytecode so that native images can be built; the JVM build runs on JDK 26 too)
 - Maven 3.9 or newer
 - Docker (or Podman) for dev mode and tests, which start a throwaway
   PostgreSQL container automatically through Quarkus Dev Services
