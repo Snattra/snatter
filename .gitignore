@@ -1,0 +1,30 @@
+# Claude Code local settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Java / Maven
+target/
+*.class
+*.log
+.mvn/wrapper/maven-wrapper.jar
+release.properties
+pom.xml.releaseBackup
+
+# Node / frontend
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# Tauri / Rust
+src-tauri/target/
