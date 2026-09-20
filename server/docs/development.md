@@ -16,6 +16,7 @@ splitting by technical layer:
 | `account`     | Accounts and the identity model                      |
 | `auth`        | Passwords, sessions, HTTP authentication             |
 | `api`         | Shared API error types and exception mappers         |
+| `common`      | Domain-wide abstractions such as `Id`                |
 | `persistence` | JDBI producer and small JDBC helpers                 |
 
 Planned: `channel`, `gateway`, `media`.
@@ -34,7 +35,8 @@ Planned: `channel`, `gateway`, `media`.
   `handle.begin()`.
 - **Timestamps** are `TIMESTAMPTZ` in the database and `Instant` in Java. Use
   the helpers in `persistence.Rows` to read them.
-- **Ids** are UUID version 7, generated with `persistence.Ids.newId()`.
+- **Ids** are UUID version 7 wrapped in typed records such as `AccountId`;
+  see "Typed identifiers" below.
 
 ## Identity and authentication
 
@@ -94,3 +96,19 @@ unique per server regardless of case. Passwords are 8 to 128 characters.
   `mvn verify -Dnative -Dquarkus.native.container-build=true` also tests the
   native executable end to end. Run it before merging changes that add
   dependencies or touch serialisation.
+
+## Typed identifiers and value records
+
+Identifiers are never bare `UUID`s or `String`s in method signatures. Each
+kind of id is its own record implementing `common.Id`, for example
+`account.AccountId` and `auth.SessionId`, so the compiler stops an account id
+from being passed where a session id belongs. Row mappers construct these
+types directly.
+
+Each id record provides `newId()`, `fromString(String)` for JAX-RS path
+parameters, and serialises to JSON as the plain UUID string. Repositories
+bind them directly with `.bind("id", accountId)`; `persistence.IdArgumentFactory`
+handles the conversion, so call sites never unwrap the value.
+
+Apply the same idea to other frequently passed values where a plain `String`
+invites mix-ups, once they earn it.

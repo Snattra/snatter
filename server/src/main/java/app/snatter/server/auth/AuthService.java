@@ -1,9 +1,9 @@
 package app.snatter.server.auth;
 
 import app.snatter.server.account.Account;
+import app.snatter.server.account.AccountId;
 import app.snatter.server.account.AccountRepository;
 import app.snatter.server.api.ApiException;
-import app.snatter.server.persistence.Ids;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
@@ -15,7 +15,6 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Optional;
-import java.util.UUID;
 import org.jdbi.v3.core.statement.UnableToExecuteStatementException;
 
 @ApplicationScoped
@@ -60,7 +59,7 @@ public class AuthService {
         String name = displayName == null || displayName.isBlank() ? username : displayName.strip();
         Account account;
         try {
-            account = accounts.createLocal(Ids.newId(), username, name, hasher.hash(password));
+            account = accounts.createLocal(AccountId.newId(), username, name, hasher.hash(password));
         } catch (UnableToExecuteStatementException e) {
             // Lost a race with a concurrent registration of the same username.
             if (e.getCause() instanceof java.sql.SQLException sql && UNIQUE_VIOLATION.equals(sql.getSQLState())) {
@@ -82,7 +81,7 @@ public class AuthService {
     }
 
     @Transactional
-    public void logout(UUID sessionId) {
+    public void logout(SessionId sessionId) {
         sessions.delete(sessionId);
     }
 
@@ -113,7 +112,7 @@ public class AuthService {
         random.nextBytes(raw);
         String token = TOKEN_PREFIX + B64.encodeToString(raw);
         Instant now = Instant.now();
-        Session session = new Session(Ids.newId(), account.id(), now, now.plus(config.sessionLifetime()), now);
+        Session session = new Session(SessionId.newId(), account.id(), now, now.plus(config.sessionLifetime()), now);
         sessions.insert(session, hashToken(token), ip, truncate(userAgent, 255));
         return new Login(account, token, session.expiresAt());
     }

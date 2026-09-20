@@ -3,10 +3,10 @@ package app.snatter.server.auth;
 import static app.snatter.server.persistence.Rows.instant;
 import static app.snatter.server.persistence.Rows.uuid;
 
+import app.snatter.server.account.AccountId;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.UUID;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -14,8 +14,8 @@ import org.jdbi.v3.core.mapper.RowMapper;
 public class SessionRepository {
 
     private static final RowMapper<Session> MAPPER = (rs, ctx) -> new Session(
-        uuid(rs, "id"),
-        uuid(rs, "account_id"),
+        new SessionId(uuid(rs, "id")),
+        new AccountId(uuid(rs, "account_id")),
         instant(rs, "created_at"),
         instant(rs, "expires_at"),
         instant(rs, "last_seen_at"));
@@ -55,7 +55,7 @@ public class SessionRepository {
             .findOne());
     }
 
-    public void touch(UUID id, Instant lastSeenAt) {
+    public void touch(SessionId id, Instant lastSeenAt) {
         jdbi.useHandle(h -> h
             .createUpdate("UPDATE session SET last_seen_at = :lastSeenAt WHERE id = :id")
             .bind("id", id)
@@ -63,7 +63,7 @@ public class SessionRepository {
             .execute());
     }
 
-    public boolean delete(UUID id) {
+    public boolean delete(SessionId id) {
         return jdbi.withHandle(h -> h
             .createUpdate("DELETE FROM session WHERE id = :id")
             .bind("id", id)

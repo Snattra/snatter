@@ -3,6 +3,7 @@ package app.snatter.server.auth;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasKey;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.startsWith;
 
@@ -28,7 +29,7 @@ class AuthResourceTest {
             .statusCode(201)
             .body("token", startsWith("snt_"))
             .body("expiresAt", notNullValue())
-            .body("account.id", notNullValue())
+            .body("account.id", matchesPattern("[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"))
             .body("account.username", equalTo(username))
             .body("account.displayName", equalTo(username))
             .extract().path("token");
