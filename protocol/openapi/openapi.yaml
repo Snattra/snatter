@@ -1,0 +1,282 @@
+---
+openapi: 3.1.0
+components:
+  schemas:
+    Account:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/AccountId"
+        username:
+          type: string
+        displayName:
+          type: string
+        avatarId:
+          $ref: "#/components/schemas/BlobId"
+        createdAt:
+          $ref: "#/components/schemas/Instant"
+    AccountId:
+      type: string
+      format: uuid
+      pattern: "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
+      description: Account identifier
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        expiresAt:
+          $ref: "#/components/schemas/Instant"
+        account:
+          $ref: "#/components/schemas/Account"
+    BlobId:
+      type: string
+      format: uuid
+      pattern: "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
+      description: Blob identifier
+    Community:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    Instant:
+      type: string
+      format: date-time
+      examples:
+      - 2022-03-10T16:15:50Z
+    LoginRequest:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          pattern: \S
+        password:
+          type: string
+    RegisterRequest:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          pattern: "[A-Za-z0-9_.]+"
+          minLength: 3
+          maxLength: 32
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        displayName:
+          type: string
+          maxLength: 64
+    ServerInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        apiVersion:
+          type: integer
+          format: int32
+        community:
+          $ref: "#/components/schemas/Community"
+    SessionId:
+      type: string
+      format: uuid
+      pattern: "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
+      description: Session identifier
+  securitySchemes:
+    session:
+      type: http
+      description: Opaque session token issued by /api/v1/auth/login or /register
+      scheme: bearer
+info:
+  description: "HTTP API of a Snatter server. Authenticate with POST /api/v1/auth/login\
+    \ or /register and send the returned token as 'Authorization: Bearer <token>'."
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  title: Snatter API
+  version: "1"
+paths:
+  /api/v1/accounts/me:
+    get:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      summary: Me
+      tags:
+      - Account Resource
+      security:
+      - session: []
+  /api/v1/accounts/me/avatar:
+    put:
+      requestBody:
+        content:
+          '*/*':
+            schema:
+              type: string
+              format: binary
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      summary: Set Avatar
+      tags:
+      - Account Resource
+      security:
+      - session: []
+    delete:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      summary: Clear Avatar
+      tags:
+      - Account Resource
+      security:
+      - session: []
+  /api/v1/accounts/{id}:
+    get:
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/AccountId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      summary: Get
+      tags:
+      - Account Resource
+      security:
+      - session: []
+  /api/v1/auth/login:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Bad Request
+      summary: Login
+      tags:
+      - Auth Resource
+  /api/v1/auth/logout:
+    post:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      summary: Logout
+      tags:
+      - Auth Resource
+      security:
+      - session: []
+  /api/v1/auth/register:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+        "400":
+          description: Bad Request
+      summary: Register
+      tags:
+      - Auth Resource
+  /api/v1/blobs/{id}:
+    get:
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/BlobId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      summary: Get
+      tags:
+      - Blob Resource
+  /api/v1/server-info:
+    get:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerInfo"
+      summary: Get
+      tags:
+      - Server Info Resource
+servers:
+- url: http://localhost:8080
+  description: Auto generated value
+- url: http://0.0.0.0:8080
+  description: Auto generated value

@@ -88,6 +88,12 @@ at the current blob; replacing or clearing an avatar deletes the old blob.
 
 ## HTTP API
 
+The contract is the OpenAPI document in `protocol/openapi/`, generated from
+the resource classes on every build. Review API changes there. In dev mode it
+is served at `/q/openapi` with Swagger UI at `/q/swagger-ui`. Annotate types
+whose JSON differs from their Java shape, such as the id records, with
+`@Schema` so the document matches the wire format.
+
 All endpoints live under `/api/v1`. Errors have one shape:
 
 ```json

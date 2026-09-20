@@ -153,8 +153,9 @@ class AccountResourceTest {
     }
 
     @Test
-    void avatarEndpointsRequireAuth() {
+    void accountEndpointsRequireAuth() {
         given().get("/api/v1/accounts/me").then().statusCode(401);
+        given().get("/api/v1/accounts/" + UUID.randomUUID()).then().statusCode(401);
         given().body(new byte[10]).put("/api/v1/accounts/me/avatar").then().statusCode(401);
         given().delete("/api/v1/accounts/me/avatar").then().statusCode(401);
     }
