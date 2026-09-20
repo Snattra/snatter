@@ -4,6 +4,9 @@ import app.snatter.server.account.Account;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.account.AccountRepository;
 import app.snatter.server.api.ApiException;
+import app.snatter.server.settings.RegistrationMode;
+import app.snatter.server.settings.ServerSettings;
+import app.snatter.server.settings.ServerSettingsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
@@ -27,20 +30,28 @@ public class AuthService {
     /** last_seen_at is written at most this often per session, to keep reads cheap. */
     private static final Duration TOUCH_INTERVAL = Duration.ofMinutes(5);
 
-    private final SecureRandom random = new SecureRandom();
     private static final Base64.Encoder B64 = Base64.getUrlEncoder().withoutPadding();
 
     private final AccountRepository accounts;
     private final SessionRepository sessions;
     private final PasswordHasher hasher;
+    private final AltchaService challenges;
+    private final ServerSettingsService settings;
     private final AuthConfig config;
+    private final SecureRandom random = new SecureRandom();
 
-    public AuthService(AccountRepository accounts, SessionRepository sessions,
-                       PasswordHasher hasher, AuthConfig config) {
+    public AuthService(AccountRepository accounts, SessionRepository sessions, PasswordHasher hasher,
+                       AltchaService challenges, ServerSettingsService settings, AuthConfig config) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.hasher = hasher;
+        this.challenges = challenges;
+        this.settings = settings;
         this.config = config;
+    }
+
+    /** What a new user submits. {@code displayName} and {@code altcha} may be null. */
+    public record Registration(String username, String password, String displayName, String altcha) {
     }
 
     /** Result of a successful login or registration. */
@@ -51,21 +62,46 @@ public class AuthService {
     public record Authenticated(Session session, Account account) {
     }
 
+    /**
+     * Creates a local account. The first account on a fresh server is always
+     * allowed and becomes the server owner; after that the registration mode
+     * and challenge policy from the server settings apply.
+     */
     @Transactional
-    public Login register(String username, String password, String displayName, String ip, String userAgent) {
-        if (accounts.usernameExists(username)) {
+    public Login register(Registration registration, String ip, String userAgent) {
+        ServerSettings policy = settings.current();
+        boolean firstAccount = policy.ownerId() == null && accounts.count() == 0;
+
+        if (!firstAccount) {
+            if (policy.registrationMode() != RegistrationMode.OPEN) {
+                throw new ApiException(403, "registration_closed", "Registration on this server requires an invite");
+            }
+            if (policy.challengeRequired()) {
+                if (registration.altcha() == null || registration.altcha().isBlank()) {
+                    throw ApiException.badRequest("challenge_required", "Solve a challenge from /api/v1/auth/challenge first");
+                }
+                challenges.verify(registration.altcha());
+            }
+        }
+
+        if (accounts.usernameExists(registration.username())) {
             throw ApiException.conflict("username_taken", "That username is already in use");
         }
-        String name = displayName == null || displayName.isBlank() ? username : displayName.strip();
+        String name = registration.displayName() == null || registration.displayName().isBlank()
+            ? registration.username()
+            : registration.displayName().strip();
         Account account;
         try {
-            account = accounts.createLocal(AccountId.newId(), username, name, hasher.hash(password));
+            account = accounts.createLocal(AccountId.newId(), registration.username(), name, hasher.hash(registration.password()));
         } catch (UnableToExecuteStatementException e) {
             // Lost a race with a concurrent registration of the same username.
             if (e.getCause() instanceof java.sql.SQLException sql && UNIQUE_VIOLATION.equals(sql.getSQLState())) {
                 throw ApiException.conflict("username_taken", "That username is already in use");
             }
             throw e;
+        }
+        if (firstAccount) {
+            settings.claimOwner(account.id());
         }
         return openSession(account, ip, userAgent);
     }

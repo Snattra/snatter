@@ -11,11 +11,11 @@ splitting by technical layer:
 
 | Package       | Contents                                             |
 |---------------|------------------------------------------------------|
-| `info`        | Public server description endpoint                   |
-| `settings`    | Community-wide settings                              |
+| `settings`    | Community settings, server info, owner-only settings API |
 | `account`     | Accounts and the identity model                      |
-| `auth`        | Passwords, sessions, HTTP authentication             |
+| `auth`        | Passwords, sessions, challenges, HTTP authentication |
 | `blob`        | Binary content: storage, metadata, image detection   |
+| `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Id`                |
 | `persistence` | JDBI producer and small JDBC helpers                 |
@@ -86,6 +86,44 @@ determined from the bytes (the declared Content-Type is ignored), at most
 so clients should crop and scale before uploading. `Account.avatarId` points
 at the current blob; replacing or clearing an avatar deletes the old blob.
 
+## Server owner and settings
+
+The first account registered on a fresh server becomes the **server owner**,
+recorded in `server_settings.owner_account_id`. Until role-based access
+control exists, the owner is the only administrator: `GET` and `PATCH
+/api/v1/server-settings` check `ServerSettings.isOwner`. Roles and
+permissions will build on this; the owner keeps every permission.
+
+Everything an administrator can change at runtime lives in the
+`server_settings` row and is read through `ServerSettingsService`, which
+caches the row in memory and fires a `Changed` event on updates. Request paths
+never query the table. Tuning that only an operator would touch, such as the
+challenge difficulty, stays in `application.properties`.
+
+## Registration policy
+
+`AuthService.register` applies the policy in this order:
+
+1. The first account on an empty server is always accepted and becomes owner.
+2. Otherwise `registrationMode` must be `open`; `invite_only` yields
+   `registration_closed` (403). Invites are the next step.
+3. If `challengeRequired` is set, the request must carry a solved
+   [ALTCHA](https://altcha.org) proof-of-work in `altcha`, verified by
+   `AltchaService`: HMAC signature, `SHA-256(salt + number)`, expiry from the
+   salt, and single use via the `used_challenge` table. The HMAC key is random
+   per server start, so a restart invalidates outstanding challenges without
+   any stored state.
+4. Username uniqueness, hashing and session creation as before.
+
+## Rate limiting
+
+`@RateLimited("<policy>")` on a resource method applies the named policy from
+`ServerSettings.rateLimits`, keyed by client IP, through `RateLimitFilter`.
+Policies are token buckets; a refused request gets 429 with `Retry-After`
+and the `rate_limited` error. Buckets live in memory, so this protects a
+single server instance, and they are reset whenever the owner changes the
+policies. Policies exist for `login`, `register` and `challenge`.
+
 ## HTTP API
 
 The API is specification-first. `protocol/openapi/openapi.yaml` is
@@ -130,6 +168,9 @@ that produces it.
 | Method | Path                | Auth | Purpose                                   |
 |--------|---------------------|------|-------------------------------------------|
 | GET    | `/server-info`      | no   | Software and community description        |
+| GET    | `/server-settings`   | owner | Read the settings                        |
+| PATCH  | `/server-settings`   | owner | Change settings, partial                 |
+| GET    | `/auth/challenge`   | no   | Proof-of-work challenge for registration  |
 | POST   | `/auth/register`    | no   | Create a local account, returns a session |
 | POST   | `/auth/login`       | no   | Username and password, returns a session  |
 | POST   | `/auth/logout`      | yes  | Revoke the calling session                |
@@ -139,7 +180,8 @@ that produces it.
 | DELETE | `/accounts/me/avatar` | yes | Remove the profile picture              |
 | GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
-Error codes so far: `validation_failed`, `username_taken`,
+Error codes so far: `validation_failed`, `username_taken`, `registration_closed`,
+`challenge_required`, `challenge_invalid`, `forbidden`, `rate_limited`,
 `invalid_credentials`, `account_not_found`, `blob_not_found`,
 `unsupported_image`, `image_dimensions`, `image_too_large`.
 
@@ -156,6 +198,16 @@ unique per server regardless of case. Passwords are 8 to 128 characters.
   `mvn verify -Dnative -Dquarkus.native.container-build=true` also tests the
   native executable end to end. Run it before merging changes that add
   dependencies or touch serialisation.
+
+- All tests that need an account register it through `testing.TestUsers`. Its
+  first use bootstraps the server: the well-known `owner` account is created
+  as the first account, opens registration and disables rate limiting for the
+  rest of the run. A test that registers any other way first would make that
+  account the owner and break the suite. Tests that change settings restore
+  them in a `finally` block.
+- Integration tests run the packaged application with the `test` profile
+  (`quarkus.test.integration-test-profile`), so `%test` configuration applies
+  to them too.
 
 ## Typed identifiers and value records
 

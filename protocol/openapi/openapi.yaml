@@ -43,12 +43,88 @@ paths:
               schema:
                 $ref: "#/components/schemas/ServerInfo"
 
+  /api/v1/server-settings:
+    get:
+      tags: [server]
+      operationId: getServerSettings
+      summary: Read the server settings
+      description: Only the server owner may call this.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      tags: [server]
+      operationId: updateServerSettings
+      summary: Change server settings
+      description: |
+        Only the server owner may call this. Fields that are absent stay
+        unchanged. Send `description` as an empty string to clear it. Changes
+        take effect immediately.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServerSettingsUpdate"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/auth/challenge:
+    get:
+      tags: [auth]
+      operationId: getChallenge
+      summary: Obtain a proof-of-work challenge for registration
+      description: |
+        Returns an [ALTCHA](https://altcha.org) challenge. Find a `number` between
+        0 and `maxnumber` such that `SHA-256(salt + number)` in hex equals
+        `challenge`, then send `altcha` in the registration request as the
+        base64-encoded JSON object `{algorithm, challenge, number, salt, signature}`.
+        Each challenge expires after a few minutes and can be used once.
+        Only needed when `ServerInfo.registration.challengeRequired` is true.
+      responses:
+        "200":
+          description: A fresh challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Challenge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /api/v1/auth/register:
     post:
       tags: [auth]
       operationId: register
       summary: Create a local account
-      description: Creates an account with a username and password and opens a session.
+      description: |
+        Creates an account with a username and password and opens a session.
+        Allowed when `ServerInfo.registration.mode` is `open`, or always for the
+        very first account on a fresh server. When
+        `ServerInfo.registration.challengeRequired` is true the request must
+        carry a solved challenge in `altcha`.
       requestBody:
         required: true
         content:
@@ -63,13 +139,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: |
+            Request is invalid (`validation_failed`), the challenge is missing
+            (`challenge_required`), or the challenge is wrong, expired or already
+            used (`challenge_invalid`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Registration is not open on this server (`registration_closed`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "409":
           description: Username already in use (`username_taken`)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /api/v1/auth/login:
     post:
@@ -97,6 +188,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /api/v1/auth/logout:
     post:
@@ -276,8 +369,26 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiError"
+    Forbidden:
+      description: The caller is signed in but not allowed to do this (`forbidden`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
     NotFound:
       description: No such resource
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    TooManyRequests:
+      description: |
+        Too many requests from this client (`rate_limited`). The `Retry-After`
+        header says how many seconds to wait.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
       content:
         application/json:
           schema:
@@ -300,8 +411,10 @@ components:
 
     ServerInfo:
       type: object
-      required: [name, version, apiVersion, community]
+      required: [name, version, apiVersion, community, registration]
       properties:
+        registration:
+          $ref: "#/components/schemas/RegistrationInfo"
         name:
           type: string
           description: Software name, always `Snatter`
@@ -316,6 +429,108 @@ components:
           example: 1
         community:
           $ref: "#/components/schemas/Community"
+
+    RegistrationMode:
+      type: string
+      enum: [open, invite_only]
+      description: |
+        `open`: anyone may register. `invite_only`: registration needs an
+        invite (the first account on a fresh server is always allowed).
+
+    RegistrationInfo:
+      type: object
+      required: [mode, challengeRequired]
+      properties:
+        mode:
+          $ref: "#/components/schemas/RegistrationMode"
+        challengeRequired:
+          type: boolean
+          description: Whether registration requires a solved challenge from `GET /api/v1/auth/challenge`
+
+    RateLimitPolicy:
+      type: object
+      required: [limit, periodSeconds]
+      description: A token bucket per client IP allowing `limit` requests per `periodSeconds`
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100000
+        periodSeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+
+    RateLimits:
+      type: object
+      required: [enabled, login, register, challenge]
+      properties:
+        enabled:
+          type: boolean
+        login:
+          $ref: "#/components/schemas/RateLimitPolicy"
+        register:
+          $ref: "#/components/schemas/RateLimitPolicy"
+        challenge:
+          $ref: "#/components/schemas/RateLimitPolicy"
+
+    ServerSettings:
+      type: object
+      required: [name, registrationMode, challengeRequired, rateLimits]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          nullable: true
+          maxLength: 1000
+        registrationMode:
+          $ref: "#/components/schemas/RegistrationMode"
+        challengeRequired:
+          type: boolean
+          description: Require a proof-of-work challenge on registration
+        rateLimits:
+          $ref: "#/components/schemas/RateLimits"
+
+    ServerSettingsUpdate:
+      type: object
+      description: Partial update; absent fields stay unchanged
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 1000
+          description: Empty string clears the description
+        registrationMode:
+          $ref: "#/components/schemas/RegistrationMode"
+        challengeRequired:
+          type: boolean
+        rateLimits:
+          $ref: "#/components/schemas/RateLimits"
+
+    Challenge:
+      type: object
+      required: [algorithm, challenge, salt, signature, maxnumber]
+      properties:
+        algorithm:
+          type: string
+          enum: [SHA-256]
+        challenge:
+          type: string
+          description: Hex SHA-256 of `salt + number`
+        salt:
+          type: string
+          description: Random salt; contains `?expires=<unix seconds>`
+        signature:
+          type: string
+          description: Server HMAC over `challenge`; opaque to clients
+        maxnumber:
+          type: integer
+          description: Upper bound for `number`
 
     Community:
       type: object
@@ -350,6 +565,10 @@ components:
           type: string
           maxLength: 64
           description: Defaults to the username
+        altcha:
+          type: string
+          maxLength: 2048
+          description: Solved challenge payload; required when `ServerInfo.registration.challengeRequired` is true
 
     LoginRequest:
       type: object

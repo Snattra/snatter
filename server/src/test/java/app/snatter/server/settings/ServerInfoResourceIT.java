@@ -1,4 +1,4 @@
-package app.snatter.server.info;
+package app.snatter.server.settings;
 
 import io.quarkus.test.junit.QuarkusIntegrationTest;
 

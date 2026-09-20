@@ -6,11 +6,10 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 import io.quarkus.test.junit.QuarkusTest;
-import io.restassured.http.ContentType;
+import app.snatter.server.testing.TestUsers;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.Map;
 import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -22,13 +21,8 @@ class AccountResourceTest {
     }
 
     static User register() {
-        var response = given()
-            .contentType(ContentType.JSON)
-            .body(Map.of("username", "user_" + UUID.randomUUID().toString().substring(0, 8), "password", "a long enough password"))
-            .post("/api/v1/auth/register")
-            .then().statusCode(201)
-            .extract();
-        return new User(response.path("token"), response.path("account.id"));
+        TestUsers.User u = TestUsers.register();
+        return new User(u.token(), u.id());
     }
 
     static byte[] png(int width, int height) throws IOException {

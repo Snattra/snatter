@@ -2,13 +2,12 @@ package app.snatter.server.settings;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import org.junit.jupiter.api.AfterEach;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
@@ -17,31 +16,42 @@ class ServerSettingsRepositoryTest {
     @Inject
     ServerSettingsRepository repository;
 
-    @AfterEach
-    @Transactional
-    void restoreDefaults() {
-        repository.update("My Snatter server", null);
-    }
-
     @Test
     void readsTheRowSeededByMigration() {
         ServerSettings s = repository.get();
-        assertEquals("My Snatter server", s.name());
-        assertNull(s.description());
+        assertNotNull(s.name());
+        assertNotNull(s.registrationMode());
+        assertNotNull(s.rateLimits().login());
         assertNotNull(s.createdAt());
         assertNotNull(s.updatedAt());
     }
 
     @Test
     @Transactional
-    void updatesNameAndDescription() {
+    void updatesEveryEditableField() {
         ServerSettings before = repository.get();
+        try {
+            ServerSettings changed = before
+                .withName("Snattra HQ")
+                .withDescription("Where the ducks quack")
+                .withRegistrationMode(RegistrationMode.INVITE_ONLY)
+                .withChallengeRequired(false)
+                .withRateLimits(new RateLimits(false,
+                    new RateLimitPolicy(1, Duration.ofSeconds(2)),
+                    new RateLimitPolicy(3, Duration.ofSeconds(4)),
+                    new RateLimitPolicy(5, Duration.ofSeconds(6))));
+            repository.update(changed);
 
-        repository.update("Snattra HQ", "Where the ducks quack");
-
-        ServerSettings after = repository.get();
-        assertEquals("Snattra HQ", after.name());
-        assertEquals("Where the ducks quack", after.description());
-        assertTrue(!after.updatedAt().isBefore(before.updatedAt()));
+            ServerSettings after = repository.get();
+            assertEquals("Snattra HQ", after.name());
+            assertEquals("Where the ducks quack", after.description());
+            assertEquals(RegistrationMode.INVITE_ONLY, after.registrationMode());
+            assertEquals(false, after.challengeRequired());
+            assertEquals(changed.rateLimits(), after.rateLimits());
+            assertEquals(before.ownerId(), after.ownerId(), "update must not touch the owner");
+            assertTrue(!after.updatedAt().isBefore(before.updatedAt()));
+        } finally {
+            repository.update(before);
+        }
     }
 }

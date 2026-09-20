@@ -51,6 +51,10 @@ public class AccountRepository {
             .findOne());
     }
 
+    public long count() {
+        return jdbi.withHandle(h -> h.createQuery("SELECT count(*) FROM account").mapTo(Long.class).one());
+    }
+
     public boolean usernameExists(String username) {
         return jdbi.withHandle(h -> h
             .createQuery("SELECT 1 FROM account WHERE lower(username) = lower(:username)")

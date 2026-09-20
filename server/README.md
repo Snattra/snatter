@@ -68,9 +68,16 @@ example `QUARKUS_HTTP_PORT=9000`.
 | `SNATTER_DB_PASSWORD`           | none, required                             | Database password               |
 | `SNATTER_AUTH_SESSION_LIFETIME` | `P30D`                                     | How long a login stays valid    |
 | `SNATTER_STORAGE_ROOT`          | `./data` (`/var/lib/snatter` in the container) | Directory for uploaded content such as avatars |
+| `SNATTER_REGISTRATION_CHALLENGE_MAX_NUMBER` | `100000` | Difficulty of the registration proof-of-work challenge |
+| `SNATTER_REGISTRATION_CHALLENGE_TTL` | `PT10M` | How long a challenge stays valid |
 
 PostgreSQL is the only supported database. The schema is created and upgraded
 automatically at startup.
+
+Registration mode, the proof-of-work requirement and rate limits are not
+configuration: the server owner changes them at runtime through
+`PATCH /api/v1/server-settings`. The first account registered on a fresh
+server becomes the owner.
 
 ## Contributing
 

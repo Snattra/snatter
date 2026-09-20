@@ -1,4 +1,4 @@
-package app.snatter.server.info;
+package app.snatter.server.settings;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
@@ -21,7 +21,7 @@ class ServerInfoResourceTest {
             .statusCode(200)
             .body("name", equalTo("Snatter"))
             .body("version", not(emptyString()))
-            .body("apiVersion", equalTo(ServerInfoResource.API_VERSION));
+            .body("apiVersion", equalTo(ServerSettingsResource.API_VERSION));
     }
 
     @Test

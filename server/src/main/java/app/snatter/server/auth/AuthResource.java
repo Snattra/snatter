@@ -2,9 +2,11 @@ package app.snatter.server.auth;
 
 import app.snatter.api.AuthApi;
 import app.snatter.api.model.AuthResponseDto;
+import app.snatter.api.model.ChallengeDto;
 import app.snatter.api.model.LoginRequestDto;
 import app.snatter.api.model.RegisterRequestDto;
 import app.snatter.server.account.AccountDtos;
+import app.snatter.server.ratelimit.RateLimited;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.vertx.core.http.HttpServerRequest;
@@ -16,26 +18,43 @@ import org.jboss.resteasy.reactive.RestResponse;
 public class AuthResource implements AuthApi {
 
     private final AuthService auth;
+    private final AltchaService challenges;
     private final SecurityIdentity identity;
     private final HttpServerRequest request;
     private final HttpHeaders headers;
 
-    public AuthResource(AuthService auth, SecurityIdentity identity,
+    public AuthResource(AuthService auth, AltchaService challenges, SecurityIdentity identity,
                         @Context HttpServerRequest request, @Context HttpHeaders headers) {
         this.auth = auth;
+        this.challenges = challenges;
         this.identity = identity;
         this.request = request;
         this.headers = headers;
     }
 
     @Override
+    @RateLimited("challenge")
+    public RestResponse<ChallengeDto> getChallenge() {
+        AltchaService.Challenge c = challenges.create();
+        return RestResponse.ok(new ChallengeDto()
+            .algorithm(ChallengeDto.AlgorithmEnum.fromValue(c.algorithm()))
+            .challenge(c.challenge())
+            .salt(c.salt())
+            .signature(c.signature())
+            .maxnumber(c.maxnumber()));
+    }
+
+    @Override
+    @RateLimited("register")
     public RestResponse<AuthResponseDto> register(RegisterRequestDto body) {
         AuthService.Login login = auth.register(
-            body.getUsername(), body.getPassword(), body.getDisplayName(), clientIp(), userAgent());
+            new AuthService.Registration(body.getUsername(), body.getPassword(), body.getDisplayName(), body.getAltcha()),
+            clientIp(), userAgent());
         return RestResponse.status(Response.Status.CREATED, toDto(login));
     }
 
     @Override
+    @RateLimited("login")
     public RestResponse<AuthResponseDto> login(LoginRequestDto body) {
         return RestResponse.ok(toDto(auth.login(body.getUsername(), body.getPassword(), clientIp(), userAgent())));
     }
