@@ -28,7 +28,6 @@ public class AuthService {
     /** last_seen_at is written at most this often per session, to keep reads cheap. */
     private static final Duration TOUCH_INTERVAL = Duration.ofMinutes(5);
 
-    // Instance field on purpose: a static SecureRandom cannot live in a GraalVM image heap.
     private final SecureRandom random = new SecureRandom();
     private static final Base64.Encoder B64 = Base64.getUrlEncoder().withoutPadding();
 

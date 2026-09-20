@@ -11,7 +11,6 @@ import java.util.Map;
  * @param message human-readable explanation
  * @param fields  per-field messages for validation failures, otherwise absent
  */
-// Only ever returned through Response.entity(), so Quarkus cannot detect it for native reflection.
 @RegisterForReflection
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApiError(String error, String message, Map<String, String> fields) {

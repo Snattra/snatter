@@ -6,9 +6,6 @@ import java.util.UUID;
  * Generates UUID version 7 identifiers: a millisecond timestamp in the high
  * bits followed by random bits. They sort by creation time, which keeps
  * B-tree indexes compact compared to fully random version 4 ids.
- *
- * <p>Randomness comes from {@link UUID#randomUUID()} rather than a static
- * {@code SecureRandom}, which GraalVM refuses to put in a native image heap.
  */
 public final class Ids {
 

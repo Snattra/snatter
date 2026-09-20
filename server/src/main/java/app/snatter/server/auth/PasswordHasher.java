@@ -26,7 +26,6 @@ public class PasswordHasher {
 
     private static final Base64.Encoder B64 = Base64.getEncoder().withoutPadding();
     private static final Base64.Decoder B64D = Base64.getDecoder();
-    // Instance field on purpose: a static SecureRandom cannot live in a GraalVM image heap.
     private final SecureRandom random = new SecureRandom();
 
     public String hash(String password) {
