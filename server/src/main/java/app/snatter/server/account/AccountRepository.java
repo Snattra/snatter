@@ -1,8 +1,10 @@
 package app.snatter.server.account;
 
+import static app.snatter.server.persistence.Rows.id;
 import static app.snatter.server.persistence.Rows.instant;
 import static app.snatter.server.persistence.Rows.uuid;
 
+import app.snatter.server.blob.BlobId;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
 import java.util.Optional;
@@ -19,10 +21,11 @@ public class AccountRepository {
         new AccountId(uuid(rs, "id")),
         rs.getString("username"),
         rs.getString("display_name"),
+        id(rs, "avatar_blob_id", BlobId::new),
         instant(rs, "created_at"));
 
     private static final String SELECT = """
-        SELECT id, username, display_name, created_at
+        SELECT id, username, display_name, avatar_blob_id, created_at
         FROM account
         """;
 
@@ -91,7 +94,7 @@ public class AccountRepository {
                 .bind("now", now)
                 .execute();
         });
-        return new Account(id, username, displayName, now);
+        return new Account(id, username, displayName, null, now);
     }
 
     public Optional<String> findPasswordHash(AccountId accountId) {
@@ -100,5 +103,15 @@ public class AccountRepository {
             .bind("id", accountId)
             .mapTo(String.class)
             .findOne());
+    }
+
+    /** Sets or clears (null) the avatar. Returns false if the account does not exist. */
+    public boolean setAvatar(AccountId id, BlobId avatarId) {
+        return jdbi.withHandle(h -> h
+            .createUpdate("UPDATE account SET avatar_blob_id = :avatarId, updated_at = :now WHERE id = :id")
+            .bind("id", id)
+            .bind("avatarId", avatarId)
+            .bind("now", Instant.now())
+            .execute()) == 1;
     }
 }

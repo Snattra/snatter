@@ -34,8 +34,11 @@ services:
       SNATTER_DB_URL: jdbc:postgresql://db:5432/snatter
       SNATTER_DB_USER: snatter
       SNATTER_DB_PASSWORD: ${SNATTER_DB_PASSWORD}
+    volumes:
+      - server-data:/var/lib/snatter
     ports:
       - "${SNATTER_HTTP_PORT:-8080}:8080"
 
 volumes:
   db-data:
+  server-data:

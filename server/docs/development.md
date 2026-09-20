@@ -15,6 +15,7 @@ splitting by technical layer:
 | `settings`    | Community-wide settings                              |
 | `account`     | Accounts and the identity model                      |
 | `auth`        | Passwords, sessions, HTTP authentication             |
+| `blob`        | Binary content: storage, metadata, image detection   |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Id`                |
 | `persistence` | JDBI producer and small JDBC helpers                 |
@@ -61,6 +62,30 @@ Sessions record the client IP as the server sees it. Behind a reverse proxy
 that is the proxy's address until trusted-proxy handling is configured; this
 arrives together with IP bans.
 
+## Blobs and avatars
+
+All binary content goes through the `blob` package. A row in the `blob` table
+holds the metadata (content type, size, SHA-256, owner, purpose) and the bytes
+live in a `BlobStore`. The default store is the filesystem under
+`snatter.storage.root`, laid out as `blobs/<first two hex digits>/<id>`. An
+object store implementation can be added behind the same interface.
+
+`BlobService` keeps the two in step across transactions: bytes are written
+before the row is inserted and removed after the deleting transaction commits,
+so readers never see a row without bytes.
+
+Blobs are immutable and their ids unguessable, so `GET /api/v1/blobs/{id}` is
+public and served with a one-year immutable cache header. This lets `<img>`
+tags load avatars without an Authorization header. Anything that needs access
+control later, such as attachments in private channels, will need a different
+delivery scheme.
+
+Avatars are stored as uploaded after validation: PNG, JPEG, GIF or WebP as
+determined from the bytes (the declared Content-Type is ignored), at most
+1 MiB and between 32 and 1024 pixels on each side. The server does not resize,
+so clients should crop and scale before uploading. `Account.avatarId` points
+at the current blob; replacing or clearing an avatar deletes the old blob.
+
 ## HTTP API
 
 All endpoints live under `/api/v1`. Errors have one shape:
@@ -79,9 +104,14 @@ domain errors; it carries the status and code.
 | POST   | `/auth/login`       | no   | Username and password, returns a session  |
 | POST   | `/auth/logout`      | yes  | Revoke the calling session                |
 | GET    | `/accounts/me`      | yes  | The calling account                       |
+| GET    | `/accounts/{id}`    | yes  | Any member's profile                      |
+| PUT    | `/accounts/me/avatar` | yes | Replace the profile picture; body is the raw image |
+| DELETE | `/accounts/me/avatar` | yes | Remove the profile picture              |
+| GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
 Error codes so far: `validation_failed`, `username_taken`,
-`invalid_credentials`.
+`invalid_credentials`, `account_not_found`, `blob_not_found`,
+`unsupported_image`, `image_dimensions`, `image_too_large`.
 
 Usernames are 3 to 32 characters of letters, digits, underscore and dot, and
 unique per server regardless of case. Passwords are 8 to 128 characters.

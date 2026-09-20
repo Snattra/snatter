@@ -67,6 +67,7 @@ example `QUARKUS_HTTP_PORT=9000`.
 | `SNATTER_DB_USER`               | `snatter`                                  | Database user                   |
 | `SNATTER_DB_PASSWORD`           | none, required                             | Database password               |
 | `SNATTER_AUTH_SESSION_LIFETIME` | `P30D`                                     | How long a login stays valid    |
+| `SNATTER_STORAGE_ROOT`          | `./data` (`/var/lib/snatter` in the container) | Directory for uploaded content such as avatars |
 
 PostgreSQL is the only supported database. The schema is created and upgraded
 automatically at startup.

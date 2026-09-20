@@ -28,3 +28,4 @@ dist/
 
 # Tauri / Rust
 src-tauri/target/
+data/

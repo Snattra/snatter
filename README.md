@@ -47,7 +47,7 @@ docker compose up --build
 This builds the server from source and starts it together with PostgreSQL in
 the production profile. The server listens on http://localhost:8080; try
 `/api/v1/server-info` and `/q/health`. Database files persist in the
-`db-data` volume, so `docker compose down` keeps your data and
+`db-data` and `server-data` volumes, so `docker compose down` keeps your data and
 `docker compose down -v` wipes it.
 
 ## Contributing

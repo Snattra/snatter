@@ -28,6 +28,11 @@ COPY --from=build --chown=185 /build/target/quarkus-app/*.jar /deployments/
 COPY --from=build --chown=185 /build/target/quarkus-app/app/ /deployments/app/
 COPY --from=build --chown=185 /build/target/quarkus-app/quarkus/ /deployments/quarkus/
 
+# Uploaded content. Mount a volume here.
+USER root
+RUN mkdir -p /var/lib/snatter && chown 185:0 /var/lib/snatter
+ENV SNATTER_STORAGE_ROOT=/var/lib/snatter
+
 EXPOSE 8080
 USER 185
 ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"

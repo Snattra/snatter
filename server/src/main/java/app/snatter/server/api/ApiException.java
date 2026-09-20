@@ -31,6 +31,10 @@ public class ApiException extends RuntimeException {
         return new ApiException(401, code, message);
     }
 
+    public static ApiException notFound(String code, String message) {
+        return new ApiException(404, code, message);
+    }
+
     public static ApiException conflict(String code, String message) {
         return new ApiException(409, code, message);
     }

@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import java.util.function.Function;
 
 /** Small helpers for reading PostgreSQL column types that JDBC handles awkwardly. */
 public final class Rows {
@@ -20,5 +21,11 @@ public final class Rows {
 
     public static UUID uuid(ResultSet rs, String column) throws SQLException {
         return rs.getObject(column, UUID.class);
+    }
+
+    /** Reads a nullable UUID column into a typed id, or null. */
+    public static <T> T id(ResultSet rs, String column, Function<UUID, T> constructor) throws SQLException {
+        UUID value = uuid(rs, column);
+        return value == null ? null : constructor.apply(value);
     }
 }
