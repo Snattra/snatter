@@ -1,5 +1,7 @@
 package app.snatter.server.info;
 
+import app.snatter.server.settings.ServerSettings;
+import app.snatter.server.settings.ServerSettingsRepository;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -13,15 +15,23 @@ public class ServerInfoResource {
     public static final int API_VERSION = 1;
 
     private final String version;
+    private final ServerSettingsRepository settings;
 
     public ServerInfoResource(
-            @ConfigProperty(name = "quarkus.application.version") String version) {
+            @ConfigProperty(name = "quarkus.application.version") String version,
+            ServerSettingsRepository settings) {
         this.version = version;
+        this.settings = settings;
     }
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public ServerInfo get() {
-        return new ServerInfo("Snatter", version, API_VERSION);
+        ServerSettings s = settings.get();
+        return new ServerInfo(
+            "Snatter",
+            version,
+            API_VERSION,
+            new ServerInfo.Community(s.name(), s.description()));
     }
 }

@@ -8,10 +8,12 @@ AGPL-3.0 (see the repository root `LICENSE`).
 
 - JDK 26
 - Maven 3.9 or newer
+- Docker (or Podman) for dev mode and tests, which start a throwaway
+  PostgreSQL container automatically through Quarkus Dev Services
 
-[SDKMAN](https://sdkman.io) installs both: `sdk install java 26.0.2+1.1-tem`
-and `sdk install maven`. There is deliberately no Maven wrapper in this
-repository.
+[SDKMAN](https://sdkman.io) installs the JDK and Maven: `sdk install java
+26.0.2+1.1-tem` and `sdk install maven`. There is deliberately no Maven wrapper
+in this repository.
 
 ## Developing
 
@@ -23,11 +25,11 @@ mvn quarkus:dev
 
 The server listens on http://localhost:8080. Useful endpoints:
 
-| Path                   | Purpose                                   |
-|------------------------|-------------------------------------------|
-| `/api/v1/server-info`  | Name, version and API version of the server |
-| `/q/health`            | Health checks (`/live` and `/ready` too)  |
-| `/q/dev-ui`            | Quarkus Dev UI (dev mode only)            |
+| Path                   | Purpose                                     |
+|------------------------|---------------------------------------------|
+| `/api/v1/server-info`  | Software name, version, API version and the community name |
+| `/q/health`            | Health checks (`/live` and `/ready` too)    |
+| `/q/dev-ui`            | Quarkus Dev UI (dev mode only)              |
 
 Run the tests and build the runnable jar:
 
@@ -41,6 +43,32 @@ java -jar target/quarkus-app/quarkus-run.jar
 Defaults live in `src/main/resources/application.properties`. Every property
 can be overridden by an environment variable using Quarkus' naming rules, for
 example `QUARKUS_HTTP_PORT=9000`.
+
+Production database settings:
+
+| Variable              | Default                                      |
+|-----------------------|----------------------------------------------|
+| `SNATTER_DB_URL`      | `jdbc:postgresql://localhost:5432/snatter`   |
+| `SNATTER_DB_USER`     | `snatter`                                    |
+| `SNATTER_DB_PASSWORD` | none, required                               |
+
+## Database access
+
+PostgreSQL is the only supported database.
+
+- **Flyway owns the schema.** Migrations live in
+  `src/main/resources/db/migration` as `V<n>__<description>.sql` and run at
+  startup. Never edit a migration that has been committed; add a new one.
+- **Plain SQL through [JDBI 3](https://jdbi.org).** No ORM. Each feature
+  package has a repository class that injects `Jdbi`, writes SQL in text
+  blocks, and maps rows onto records with an explicit `RowMapper`.
+- **Transactions are JTA.** Put `@Transactional` on the service or repository
+  method and use `jdbi.withHandle` / `jdbi.useHandle` inside it. Agroal enlists
+  the connection in the transaction. Do not use `jdbi.inTransaction` or
+  `handle.begin()`; they fight the JTA-managed connection.
+- **Timestamps** are `TIMESTAMPTZ` in the database and `Instant` in Java. Read
+  them as `OffsetDateTime` and call `toInstant()`, because the PostgreSQL
+  driver does not convert `timestamptz` to `Instant` directly.
 
 ## Native executable
 
@@ -56,6 +84,7 @@ GraalVM. Native builds are not yet part of the regular workflow.
 ## Package layout
 
 Base package is `app.snatter.server`. Each feature gets its own sub-package
-(for example `info`, later `auth`, `channel`, `gateway`, `media`) containing
-its resources, services and persistence types together, rather than splitting
-by technical layer.
+(for example `info`, `settings`, later `auth`, `channel`, `gateway`, `media`)
+containing its resources, services and repositories together, rather than
+splitting by technical layer. Cross-cutting infrastructure such as the JDBI
+producer lives in `persistence`.
