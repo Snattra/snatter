@@ -1,22 +1,16 @@
 package app.snatter.server.account;
 
+import static app.snatter.server.account.AccountDtos.toDto;
+
+import app.snatter.api.AccountsApi;
 import app.snatter.server.api.ApiException;
 import app.snatter.server.auth.AccountPrincipal;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.DELETE;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.PUT;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
-@Path("/api/v1/accounts")
-@Produces(MediaType.APPLICATION_JSON)
 @Authenticated
-public class AccountResource {
+public class AccountResource implements AccountsApi {
 
     private final SecurityIdentity identity;
     private final AccountRepository accounts;
@@ -28,37 +22,28 @@ public class AccountResource {
         this.avatars = avatars;
     }
 
-    /** The account that owns the current session. */
-    @GET
-    @Path("/me")
-    public Account me() {
-        return accounts.findById(self())
+    @Override
+    public Response getCurrentAccount() {
+        Account account = accounts.findById(self())
             .orElseThrow(() -> new IllegalStateException("authenticated account no longer exists"));
+        return Response.ok(toDto(account)).build();
     }
 
-    /** Any member's public profile. */
-    @GET
-    @Path("/{id}")
-    public Account get(@PathParam("id") AccountId id) {
-        return accounts.findById(id)
+    @Override
+    public Response getAccount(AccountId id) {
+        Account account = accounts.findById(id)
             .orElseThrow(() -> ApiException.notFound("account_not_found", "No such account"));
+        return Response.ok(toDto(account)).build();
     }
 
-    /**
-     * Replaces the caller's profile picture. The body is the raw image; the
-     * declared Content-Type is ignored in favour of what the bytes contain.
-     */
-    @PUT
-    @Path("/me/avatar")
-    @Consumes(MediaType.WILDCARD)
-    public Account setAvatar(byte[] image) {
-        return avatars.set(self(), image);
+    @Override
+    public Response setAvatar(byte[] image) {
+        return Response.ok(toDto(avatars.set(self(), image))).build();
     }
 
-    @DELETE
-    @Path("/me/avatar")
-    public Account clearAvatar() {
-        return avatars.clear(self());
+    @Override
+    public Response clearAvatar() {
+        return Response.ok(toDto(avatars.clear(self()))).build();
     }
 
     private AccountId self() {

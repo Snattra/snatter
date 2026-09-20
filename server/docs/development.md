@@ -88,20 +88,42 @@ at the current blob; replacing or clearing an avatar deletes the old blob.
 
 ## HTTP API
 
-The contract is the OpenAPI document in `protocol/openapi/`, generated from
-the resource classes on every build. Review API changes there. In dev mode it
-is served at `/q/openapi` with Swagger UI at `/q/swagger-ui`. Annotate types
-whose JSON differs from their Java shape, such as the id records, with
-`@Schema` so the document matches the wire format.
+The API is specification-first. `protocol/openapi/openapi.yaml` is
+hand-written and is the contract. On every build the openapi-generator Maven
+plugin turns it into JAX-RS interfaces (`app.snatter.api.*Api`, one per tag)
+and request/response classes (`app.snatter.api.model.*Dto`) under
+`target/generated-sources/openapi`. Resource classes implement the
+interfaces, so a change to the contract that the code does not honour fails
+to compile. The same file is served verbatim at `/q/openapi`, with Swagger UI
+at `/q/swagger-ui` in dev mode; annotation scanning is disabled.
 
-All endpoints live under `/api/v1`. Errors have one shape:
+Conventions that follow from this:
+
+- **Resources implement a generated interface** and carry no JAX-RS
+  annotations of their own; paths, media types and parameter constraints come
+  from the contract. Security annotations such as `@Authenticated` go on the
+  implementing class or method.
+- **Generated types are DTOs**, suffixed `Dto` to keep them apart from domain
+  records. Map at the boundary, for example `AccountDtos.toDto(Account)`.
+  Typed ids (`AccountId`, `BlobId`) are the exception: the contract's
+  `AccountId` and `BlobId` schemas are mapped straight onto the hand-written
+  records, so DTOs and interface parameters use them directly.
+- **Methods return `Response`.** Build it with the DTO as entity and the
+  status the contract specifies.
+- **Bean Validation constraints live in the contract** (`minLength`,
+  `pattern`, `required`) and are generated onto the DTOs and interface
+  parameters. Do not repeat them on the implementing method.
+
+Errors have one shape, the `ApiError` schema:
 
 ```json
 {"error": "<stable_code>", "message": "human readable", "fields": {"username": "..."}}
 ```
 
 `fields` appears only for validation failures. Throw `api.ApiException` for
-domain errors; it carries the status and code.
+domain errors; it carries the status and code, and `ApiExceptionMappers`
+renders it. When adding a code, document it in the contract on the operation
+that produces it.
 
 | Method | Path                | Auth | Purpose                                   |
 |--------|---------------------|------|-------------------------------------------|

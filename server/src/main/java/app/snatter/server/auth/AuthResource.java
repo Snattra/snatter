@@ -1,52 +1,18 @@
 package app.snatter.server.auth;
 
-import app.snatter.server.account.Account;
+import app.snatter.api.AuthApi;
+import app.snatter.api.model.AuthResponseDto;
+import app.snatter.api.model.LoginRequestDto;
+import app.snatter.api.model.RegisterRequestDto;
+import app.snatter.server.account.AccountDtos;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.vertx.core.http.HttpServerRequest;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.time.Instant;
 
-@Path("/api/v1/auth")
-@Produces(MediaType.APPLICATION_JSON)
-public class AuthResource {
-
-    public record RegisterRequest(
-        @NotBlank
-        @Size(min = 3, max = 32)
-        @Pattern(regexp = "[A-Za-z0-9_.]+", message = "may only contain letters, digits, underscore and dot")
-        String username,
-
-        @NotNull
-        @Size(min = 8, max = 128)
-        String password,
-
-        @Size(max = 64)
-        String displayName) {
-    }
-
-    public record LoginRequest(
-        @NotBlank String username,
-        @NotNull String password) {
-    }
-
-    public record AuthResponse(String token, Instant expiresAt, Account account) {
-        static AuthResponse of(AuthService.Login login) {
-            return new AuthResponse(login.token(), login.expiresAt(), login.account());
-        }
-    }
+public class AuthResource implements AuthApi {
 
     private final AuthService auth;
     private final SecurityIdentity identity;
@@ -61,25 +27,21 @@ public class AuthResource {
         this.headers = headers;
     }
 
-    @POST
-    @Path("/register")
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response register(@Valid RegisterRequest body) {
+    @Override
+    public Response register(RegisterRequestDto body) {
         AuthService.Login login = auth.register(
-            body.username(), body.password(), body.displayName(), clientIp(), userAgent());
-        return Response.status(Response.Status.CREATED).entity(AuthResponse.of(login)).build();
+            body.getUsername(), body.getPassword(), body.getDisplayName(), clientIp(), userAgent());
+        return Response.status(Response.Status.CREATED).entity(toDto(login)).build();
     }
 
-    @POST
-    @Path("/login")
-    @Consumes(MediaType.APPLICATION_JSON)
-    public AuthResponse login(@Valid LoginRequest body) {
-        return AuthResponse.of(auth.login(body.username(), body.password(), clientIp(), userAgent()));
+    @Override
+    public Response login(LoginRequestDto body) {
+        AuthService.Login login = auth.login(body.getUsername(), body.getPassword(), clientIp(), userAgent());
+        return Response.ok(toDto(login)).build();
     }
 
     /** Revokes the session used to make this call. */
-    @POST
-    @Path("/logout")
+    @Override
     @Authenticated
     public Response logout() {
         AccountPrincipal principal = (AccountPrincipal) identity.getPrincipal();
@@ -87,8 +49,15 @@ public class AuthResource {
         return Response.noContent().build();
     }
 
+    private static AuthResponseDto toDto(AuthService.Login login) {
+        return new AuthResponseDto()
+            .token(login.token())
+            .expiresAt(login.expiresAt())
+            .account(AccountDtos.toDto(login.account()));
+    }
+
     private String clientIp() {
-        // Proxy headers are honoured only once quarkus.http.proxy.* is configured; see server README.
+        // Proxy headers are honoured only once quarkus.http.proxy.* is configured.
         return request.remoteAddress() == null ? null : request.remoteAddress().hostAddress();
     }
 

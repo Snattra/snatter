@@ -1,5 +1,6 @@
 package app.snatter.server.api;
 
+import app.snatter.api.model.ApiErrorDto;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.core.MediaType;
@@ -8,13 +9,14 @@ import java.util.Map;
 import java.util.TreeMap;
 import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
+/** Turns exceptions into the {@code ApiError} body defined in the OpenAPI contract. */
 public class ApiExceptionMappers {
 
     @ServerExceptionMapper
     public Response apiException(ApiException e) {
         return Response.status(e.status())
             .type(MediaType.APPLICATION_JSON)
-            .entity(ApiError.of(e.code(), e.getMessage()))
+            .entity(new ApiErrorDto().error(e.code()).message(e.getMessage()))
             .build();
     }
 
@@ -26,11 +28,11 @@ public class ApiExceptionMappers {
         }
         return Response.status(400)
             .type(MediaType.APPLICATION_JSON)
-            .entity(new ApiError("validation_failed", "Request is invalid", fields))
+            .entity(new ApiErrorDto().error("validation_failed").message("Request is invalid").fields(fields))
             .build();
     }
 
-    /** Turns {@code register.request.username} into {@code username}. */
+    /** Turns {@code register.registerRequestDto.username} into {@code username}. */
     private static String lastPathSegment(ConstraintViolation<?> v) {
         String path = v.getPropertyPath().toString();
         int dot = path.lastIndexOf('.');

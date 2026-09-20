@@ -1,282 +1,408 @@
----
-openapi: 3.1.0
-components:
-  schemas:
-    Account:
-      type: object
-      properties:
-        id:
-          $ref: "#/components/schemas/AccountId"
-        username:
-          type: string
-        displayName:
-          type: string
-        avatarId:
-          $ref: "#/components/schemas/BlobId"
-        createdAt:
-          $ref: "#/components/schemas/Instant"
-    AccountId:
-      type: string
-      format: uuid
-      pattern: "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
-      description: Account identifier
-    AuthResponse:
-      type: object
-      properties:
-        token:
-          type: string
-        expiresAt:
-          $ref: "#/components/schemas/Instant"
-        account:
-          $ref: "#/components/schemas/Account"
-    BlobId:
-      type: string
-      format: uuid
-      pattern: "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
-      description: Blob identifier
-    Community:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-    Instant:
-      type: string
-      format: date-time
-      examples:
-      - 2022-03-10T16:15:50Z
-    LoginRequest:
-      type: object
-      required:
-      - username
-      - password
-      properties:
-        username:
-          type: string
-          pattern: \S
-        password:
-          type: string
-    RegisterRequest:
-      type: object
-      required:
-      - username
-      - password
-      properties:
-        username:
-          type: string
-          pattern: "[A-Za-z0-9_.]+"
-          minLength: 3
-          maxLength: 32
-        password:
-          type: string
-          minLength: 8
-          maxLength: 128
-        displayName:
-          type: string
-          maxLength: 64
-    ServerInfo:
-      type: object
-      properties:
-        name:
-          type: string
-        version:
-          type: string
-        apiVersion:
-          type: integer
-          format: int32
-        community:
-          $ref: "#/components/schemas/Community"
-    SessionId:
-      type: string
-      format: uuid
-      pattern: "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
-      description: Session identifier
-  securitySchemes:
-    session:
-      type: http
-      description: Opaque session token issued by /api/v1/auth/login or /register
-      scheme: bearer
+openapi: 3.0.3
 info:
-  description: "HTTP API of a Snatter server. Authenticate with POST /api/v1/auth/login\
-    \ or /register and send the returned token as 'Authorization: Bearer <token>'."
+  title: Snatter API
+  version: "1"
+  description: |
+    HTTP API of a Snatter server.
+
+    Authenticate with `POST /api/v1/auth/register` or `POST /api/v1/auth/login`
+    and send the returned token on later calls as
+    `Authorization: Bearer <token>`. Tokens are opaque; do not parse them.
+
+    Every error response has the `ApiError` shape with a stable `error` code.
+    The API is versioned in the path; within a version, changes are additive.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
-  title: Snatter API
-  version: "1"
+
+servers:
+  - url: /
+
+tags:
+  - name: server
+    description: What this server is
+  - name: auth
+    description: Registration, login and sessions
+  - name: accounts
+    description: Members of this community
+  - name: blobs
+    description: Binary content such as profile pictures
+
 paths:
-  /api/v1/accounts/me:
+  /api/v1/server-info:
     get:
+      tags: [server]
+      operationId: getServerInfo
+      summary: Describe this server
+      description: Public. Clients call this first to learn what they are talking to.
       responses:
         "200":
-          description: OK
+          description: Server description
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Account"
-        "401":
-          description: Not Authorized
-        "403":
-          description: Not Allowed
-      summary: Me
-      tags:
-      - Account Resource
-      security:
-      - session: []
-  /api/v1/accounts/me/avatar:
-    put:
-      requestBody:
-        content:
-          '*/*':
-            schema:
-              type: string
-              format: binary
-        required: true
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Account"
-        "401":
-          description: Not Authorized
-        "403":
-          description: Not Allowed
-      summary: Set Avatar
-      tags:
-      - Account Resource
-      security:
-      - session: []
-    delete:
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Account"
-        "401":
-          description: Not Authorized
-        "403":
-          description: Not Allowed
-      summary: Clear Avatar
-      tags:
-      - Account Resource
-      security:
-      - session: []
-  /api/v1/accounts/{id}:
-    get:
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          $ref: "#/components/schemas/AccountId"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Account"
-        "401":
-          description: Not Authorized
-        "403":
-          description: Not Allowed
-      summary: Get
-      tags:
-      - Account Resource
-      security:
-      - session: []
-  /api/v1/auth/login:
+                $ref: "#/components/schemas/ServerInfo"
+
+  /api/v1/auth/register:
     post:
+      tags: [auth]
+      operationId: register
+      summary: Create a local account
+      description: Creates an account with a username and password and opens a session.
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/LoginRequest"
-        required: true
+              $ref: "#/components/schemas/RegisterRequest"
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Account created and session opened
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
         "400":
-          description: Bad Request
-      summary: Login
-      tags:
-      - Auth Resource
-  /api/v1/auth/logout:
-    post:
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: {}
-        "401":
-          description: Not Authorized
-        "403":
-          description: Not Allowed
-      summary: Logout
-      tags:
-      - Auth Resource
-      security:
-      - session: []
-  /api/v1/auth/register:
-    post:
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RegisterRequest"
-        required: true
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: {}
-        "400":
-          description: Bad Request
-      summary: Register
-      tags:
-      - Auth Resource
-  /api/v1/blobs/{id}:
-    get:
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          $ref: "#/components/schemas/BlobId"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema: {}
-      summary: Get
-      tags:
-      - Blob Resource
-  /api/v1/server-info:
-    get:
-      responses:
-        "200":
-          description: OK
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Username already in use (`username_taken`)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ServerInfo"
-      summary: Get
-      tags:
-      - Server Info Resource
-servers:
-- url: http://localhost:8080
-  description: Auto generated value
-- url: http://0.0.0.0:8080
-  description: Auto generated value
+                $ref: "#/components/schemas/ApiError"
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log in with username and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Session opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Unknown username or wrong password (`invalid_credentials`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke the calling session
+      security:
+        - session: []
+      responses:
+        "204":
+          description: Session revoked
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/accounts/me:
+    get:
+      tags: [accounts]
+      operationId: getCurrentAccount
+      summary: The calling account
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The account that owns the session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/accounts/{id}:
+    get:
+      tags: [accounts]
+      operationId: getAccount
+      summary: A member's profile
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      responses:
+        "200":
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/accounts/me/avatar:
+    put:
+      tags: [accounts]
+      operationId: setAvatar
+      summary: Replace the calling account's profile picture
+      description: |
+        The body is the raw image. PNG, JPEG, GIF and WebP are accepted, at most
+        1 MiB and between 32 and 1024 pixels on each side. The format is detected
+        from the bytes; the declared Content-Type is ignored. The server stores
+        the image as uploaded, so crop and scale before uploading.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              $ref: "#/components/schemas/Binary"
+          image/jpeg:
+            schema:
+              $ref: "#/components/schemas/Binary"
+          image/gif:
+            schema:
+              $ref: "#/components/schemas/Binary"
+          image/webp:
+            schema:
+              $ref: "#/components/schemas/Binary"
+          application/octet-stream:
+            schema:
+              $ref: "#/components/schemas/Binary"
+      responses:
+        "200":
+          description: Updated account, with the new `avatarId`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          description: Not a supported image (`unsupported_image`) or wrong size (`image_dimensions`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          description: Image larger than 1 MiB (`image_too_large`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      tags: [accounts]
+      operationId: clearAvatar
+      summary: Remove the calling account's profile picture
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Updated account, with `avatarId` null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/blobs/{id}:
+    get:
+      tags: [blobs]
+      operationId: getBlob
+      summary: Fetch binary content
+      description: |
+        Public. Blobs are immutable and their ids unguessable, so responses may be
+        cached indefinitely. `Account.avatarId` values are fetched here.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/BlobId"
+      responses:
+        "200":
+          description: The content, with its stored Content-Type
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: "`public, max-age=31536000, immutable`"
+          content:
+            "*/*":
+              schema:
+                $ref: "#/components/schemas/Binary"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    session:
+      type: http
+      scheme: bearer
+      description: Opaque session token from `/api/v1/auth/login` or `/register`
+
+  responses:
+    BadRequest:
+      description: Request is invalid (`validation_failed`, with per-field messages)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Unauthorized:
+      description: Missing, invalid or expired session token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: No such resource
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+  schemas:
+    AccountId:
+      type: string
+      format: uuid
+      description: Identifies an account on this server
+
+    BlobId:
+      type: string
+      format: uuid
+      description: Identifies a blob on this server
+
+    Binary:
+      type: string
+      format: binary
+
+    ServerInfo:
+      type: object
+      required: [name, version, apiVersion, community]
+      properties:
+        name:
+          type: string
+          description: Software name, always `Snatter`
+          example: Snatter
+        version:
+          type: string
+          description: Software version
+          example: 0.1.0
+        apiVersion:
+          type: integer
+          description: API compatibility version; bumped on incompatible changes
+          example: 1
+        community:
+          $ref: "#/components/schemas/Community"
+
+    Community:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: Snattra HQ
+        description:
+          type: string
+          nullable: true
+          maxLength: 1000
+
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: "^[A-Za-z0-9_.]+$"
+          description: Unique on this server regardless of case
+          example: robin
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+        displayName:
+          type: string
+          maxLength: 64
+          description: Defaults to the username
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: robin
+        password:
+          type: string
+          format: password
+
+    AuthResponse:
+      type: object
+      required: [token, expiresAt, account]
+      properties:
+        token:
+          type: string
+          description: Bearer token for later requests
+          example: snt_Zm9vYmFyYmF6cXV4...
+        expiresAt:
+          type: string
+          format: date-time
+        account:
+          $ref: "#/components/schemas/Account"
+
+    Account:
+      type: object
+      required: [id, username, displayName, createdAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/AccountId"
+        username:
+          type: string
+          example: robin
+        displayName:
+          type: string
+          example: Robin
+        avatarId:
+          allOf:
+            - $ref: "#/components/schemas/BlobId"
+          nullable: true
+          description: Profile picture, fetch at `/api/v1/blobs/{avatarId}`; null if none
+        createdAt:
+          type: string
+          format: date-time
+
+    ApiError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable code
+          example: username_taken
+        message:
+          type: string
+          description: Human-readable explanation
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+          description: Per-field messages, present for `validation_failed` only

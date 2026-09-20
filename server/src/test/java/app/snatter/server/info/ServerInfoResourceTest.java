@@ -1,6 +1,7 @@
 package app.snatter.server.info;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.emptyString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
@@ -40,5 +41,17 @@ class ServerInfoResourceTest {
             .then()
             .statusCode(200)
             .body("status", equalTo("UP"));
+    }
+
+    @Test
+    void servesTheHandWrittenContract() {
+        given()
+            .accept("application/yaml")
+            .when().get("/q/openapi")
+            .then()
+            .statusCode(200)
+            .body(containsString("title: Snatter API"))
+            .body(containsString("/api/v1/accounts/me/avatar:"))
+            .body(containsString("operationId: getServerInfo"));
     }
 }

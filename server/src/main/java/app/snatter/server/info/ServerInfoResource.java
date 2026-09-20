@@ -1,15 +1,14 @@
 package app.snatter.server.info;
 
+import app.snatter.api.ServerApi;
+import app.snatter.api.model.CommunityDto;
+import app.snatter.api.model.ServerInfoDto;
 import app.snatter.server.settings.ServerSettings;
 import app.snatter.server.settings.ServerSettingsRepository;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-@Path("/api/v1/server-info")
-public class ServerInfoResource {
+public class ServerInfoResource implements ServerApi {
 
     /** Bumped whenever the HTTP or WebSocket API changes incompatibly. */
     public static final int API_VERSION = 1;
@@ -24,14 +23,14 @@ public class ServerInfoResource {
         this.settings = settings;
     }
 
-    @GET
-    @Produces(MediaType.APPLICATION_JSON)
-    public ServerInfo get() {
+    @Override
+    public Response getServerInfo() {
         ServerSettings s = settings.get();
-        return new ServerInfo(
-            "Snatter",
-            version,
-            API_VERSION,
-            new ServerInfo.Community(s.name(), s.description()));
+        ServerInfoDto info = new ServerInfoDto()
+            .name("Snatter")
+            .version(version)
+            .apiVersion(API_VERSION)
+            .community(new CommunityDto().name(s.name()).description(s.description()));
+        return Response.ok(info).build();
     }
 }

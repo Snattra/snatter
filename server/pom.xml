@@ -29,9 +29,11 @@
         <quarkus.platform.version>3.39.4</quarkus.platform.version>
         <quarkus-jdbi.version>1.10.1</quarkus-jdbi.version>
         <skipITs>true</skipITs>
-        <!-- The OpenAPI document is the public API contract and lives in the
-             Apache-licensed protocol module. It is regenerated on every build. -->
-        <quarkus.smallrye-openapi.store-schema-directory>${project.basedir}/../protocol/openapi</quarkus.smallrye-openapi.store-schema-directory>
+        <!-- The hand-written OpenAPI document in the Apache-licensed protocol
+             module is the API contract. Server interfaces and DTOs are
+             generated from it on every build. -->
+        <openapi.spec>${project.basedir}/../protocol/openapi/openapi.yaml</openapi.spec>
+        <openapi-generator.version>7.25.0</openapi-generator.version>
         <surefire-plugin.version>3.5.6</surefire-plugin.version>
     </properties>
 
@@ -115,6 +117,83 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.openapitools</groupId>
+                <artifactId>openapi-generator-maven-plugin</artifactId>
+                <version>${openapi-generator.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-api</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <inputSpec>${openapi.spec}</inputSpec>
+                            <generatorName>jaxrs-spec</generatorName>
+                            <output>${project.build.directory}/generated-sources/openapi</output>
+                            <apiPackage>app.snatter.api</apiPackage>
+                            <modelPackage>app.snatter.api.model</modelPackage>
+                            <modelNameSuffix>Dto</modelNameSuffix>
+                            <generateSupportingFiles>false</generateSupportingFiles>
+                            <schemaMappings>
+                                <!-- Typed ids are hand-written value records, not generated. -->
+                                <schemaMapping>AccountId=app.snatter.server.account.AccountId</schemaMapping>
+                                <schemaMapping>BlobId=app.snatter.server.blob.BlobId</schemaMapping>
+                            </schemaMappings>
+                            <typeMappings>
+                                <typeMapping>DateTime=Instant</typeMapping>
+                                <!-- Raw request and response bodies arrive as byte arrays. -->
+                                <typeMapping>file=byte[]</typeMapping>
+                                <typeMapping>binary=byte[]</typeMapping>
+                            </typeMappings>
+                            <importMappings>
+                                <importMapping>Instant=java.time.Instant</importMapping>
+                            </importMappings>
+                            <configOptions>
+                                <library>quarkus</library>
+                                <interfaceOnly>true</interfaceOnly>
+                                <returnResponse>true</returnResponse>
+                                <useTags>true</useTags>
+                                <useJakartaEe>true</useJakartaEe>
+                                <useBeanValidation>true</useBeanValidation>
+                                <useSwaggerAnnotations>false</useSwaggerAnnotations>
+                                <useMicroProfileOpenAPIAnnotations>false</useMicroProfileOpenAPIAnnotations>
+                                <openApiNullable>false</openApiNullable>
+                                <dateLibrary>java8</dateLibrary>
+                                <!-- Response DTOs travel inside Response.entity(), where Quarkus
+                                     cannot see them, so register every model for native reflection. -->
+                                <additionalModelTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalModelTypeAnnotations>
+                                <generatePom>false</generatePom>
+                                <sourceFolder>src/main/java</sourceFolder>
+                            </configOptions>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- Serve the contract itself at /q/openapi (and Swagger UI in dev). -->
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-openapi-spec</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/META-INF</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/../protocol/openapi</directory>
+                                    <includes>
+                                        <include>openapi.yaml</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>quarkus-maven-plugin</artifactId>

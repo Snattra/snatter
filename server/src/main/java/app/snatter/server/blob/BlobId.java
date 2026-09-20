@@ -6,9 +6,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.Objects;
 import java.util.UUID;
-import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
-@Schema(implementation = UUID.class, description = "Blob identifier")
 public record BlobId(UUID value) implements Id {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)

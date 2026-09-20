@@ -1,9 +1,7 @@
 package app.snatter.server.blob;
 
+import app.snatter.api.BlobsApi;
 import app.snatter.server.api.ApiException;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.core.Response;
 import java.io.InputStream;
 
@@ -12,8 +10,7 @@ import java.io.InputStream;
  * endpoint is public and tells clients to cache forever. That also lets
  * {@code <img>} tags load avatars without an Authorization header.
  */
-@Path("/api/v1/blobs")
-public class BlobResource {
+public class BlobResource implements BlobsApi {
 
     private final BlobService blobs;
 
@@ -21,9 +18,8 @@ public class BlobResource {
         this.blobs = blobs;
     }
 
-    @GET
-    @Path("/{id}")
-    public Response get(@PathParam("id") BlobId id) {
+    @Override
+    public Response getBlob(BlobId id) {
         Blob blob = blobs.find(id)
             .orElseThrow(() -> ApiException.notFound("blob_not_found", "No such blob"));
         InputStream content = blobs.open(id)
