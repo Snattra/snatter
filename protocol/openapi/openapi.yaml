@@ -27,6 +27,8 @@ tags:
     description: Members of this community
   - name: blobs
     description: Binary content such as profile pictures
+  - name: invites
+    description: Invite links that let new people register
 
 paths:
   /api/v1/server-info:
@@ -148,7 +150,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "403":
-          description: Registration is not open on this server (`registration_closed`)
+          description: |
+            Registration needs an invite and none was given
+            (`registration_closed`), or the invite is unknown, revoked, expired
+            or used up (`invite_invalid`)
           content:
             application/json:
               schema:
@@ -313,6 +318,118 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/invites:
+    get:
+      tags: [invites]
+      operationId: listInvites
+      summary: List invites
+      description: The owner sees every invite; other members see the ones they created.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Invites, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [invites]
+      operationId: createInvite
+      summary: Create an invite
+      description: |
+        Allowed for every member while `ServerSettings.membersCanInvite` is
+        true, otherwise only for the owner. Omitted limits mean the invite
+        never expires or has unlimited uses.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteCreate"
+      responses:
+        "201":
+          description: The new invite
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invite"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/invites/{code}:
+    get:
+      tags: [invites]
+      operationId: previewInvite
+      summary: Look at an invite before registering
+      description: |
+        Public. Tells a prospective member which community the invite is for
+        and who sent it. Unknown or revoked codes answer 404; expired or used-up
+        codes answer 410.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/InviteCode"
+      responses:
+        "200":
+          description: What the invite leads to
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitePreview"
+        "404":
+          description: No such invite (`invite_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "410":
+          description: The invite has expired or has no uses left (`invite_unusable`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    delete:
+      tags: [invites]
+      operationId: revokeInvite
+      summary: Revoke an invite
+      description: Allowed for the invite's creator and for the owner.
+      security:
+        - session: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/InviteCode"
+      responses:
+        "204":
+          description: Revoked; the code can no longer be used
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No such invite (`invite_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /api/v1/blobs/{id}:
     get:
       tags: [blobs]
@@ -405,9 +522,77 @@ components:
       format: uuid
       description: Identifies a blob on this server
 
+    InviteCode:
+      type: string
+      pattern: "^[A-Za-z0-9]{8}$"
+      description: Identifies an invite; the last path segment of an invite link
+      example: k3Jd8QzP
+
     Binary:
       type: string
       format: binary
+
+    InviteCreate:
+      type: object
+      properties:
+        expiresInSeconds:
+          type: integer
+          format: int64
+          minimum: 60
+          maximum: 31536000
+          description: Lifetime from now; omit for an invite that never expires
+        maxUses:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+          description: How many registrations may use it; omit for unlimited
+
+    Invite:
+      type: object
+      required: [code, url, createdBy, createdAt, uses, revoked]
+      properties:
+        code:
+          $ref: "#/components/schemas/InviteCode"
+        url:
+          type: string
+          description: Full link, built from `ServerSettings.publicUrl` when set
+          example: https://chat.example.com/invite/k3Jd8QzP
+        createdBy:
+          allOf:
+            - $ref: "#/components/schemas/AccountId"
+          nullable: true
+          description: Null if the creator's account was deleted
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        maxUses:
+          type: integer
+          nullable: true
+        uses:
+          type: integer
+        revoked:
+          type: boolean
+
+    InvitePreview:
+      type: object
+      required: [code, community]
+      properties:
+        code:
+          $ref: "#/components/schemas/InviteCode"
+        community:
+          $ref: "#/components/schemas/Community"
+        inviter:
+          allOf:
+            - $ref: "#/components/schemas/Account"
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
 
     ServerInfo:
       type: object
@@ -463,7 +648,7 @@ components:
 
     RateLimits:
       type: object
-      required: [enabled, login, register, challenge]
+      required: [enabled, login, register, challenge, invite]
       properties:
         enabled:
           type: boolean
@@ -473,10 +658,14 @@ components:
           $ref: "#/components/schemas/RateLimitPolicy"
         challenge:
           $ref: "#/components/schemas/RateLimitPolicy"
+        invite:
+          allOf:
+            - $ref: "#/components/schemas/RateLimitPolicy"
+          description: Applies to the public invite preview
 
     ServerSettings:
       type: object
-      required: [name, registrationMode, challengeRequired, rateLimits]
+      required: [name, registrationMode, challengeRequired, membersCanInvite, rateLimits]
       properties:
         name:
           type: string
@@ -485,11 +674,20 @@ components:
           type: string
           nullable: true
           maxLength: 1000
+        publicUrl:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: Address clients reach this server at, used to build invite links
+          example: https://chat.example.com
         registrationMode:
           $ref: "#/components/schemas/RegistrationMode"
         challengeRequired:
           type: boolean
           description: Require a proof-of-work challenge on registration
+        membersCanInvite:
+          type: boolean
+          description: Whether every member may create invites, or only the owner
         rateLimits:
           $ref: "#/components/schemas/RateLimits"
 
@@ -505,9 +703,16 @@ components:
           type: string
           maxLength: 1000
           description: Empty string clears the description
+        publicUrl:
+          type: string
+          maxLength: 255
+          pattern: "^$|^https?://[^/\\s]+(/[^\\s]*)?$"
+          description: Empty string clears it; otherwise an http(s) URL, trailing slash ignored
         registrationMode:
           $ref: "#/components/schemas/RegistrationMode"
         challengeRequired:
+          type: boolean
+        membersCanInvite:
           type: boolean
         rateLimits:
           $ref: "#/components/schemas/RateLimits"
@@ -569,6 +774,10 @@ components:
           type: string
           maxLength: 2048
           description: Solved challenge payload; required when `ServerInfo.registration.challengeRequired` is true
+        inviteCode:
+          allOf:
+            - $ref: "#/components/schemas/InviteCode"
+          description: Required when `ServerInfo.registration.mode` is `invite_only`; validated if given otherwise
 
     LoginRequest:
       type: object

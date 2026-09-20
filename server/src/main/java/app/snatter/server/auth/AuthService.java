@@ -4,6 +4,9 @@ import app.snatter.server.account.Account;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.account.AccountRepository;
 import app.snatter.server.api.ApiException;
+import app.snatter.server.invite.Invite;
+import app.snatter.server.invite.InviteCode;
+import app.snatter.server.invite.InviteService;
 import app.snatter.server.settings.RegistrationMode;
 import app.snatter.server.settings.ServerSettings;
 import app.snatter.server.settings.ServerSettingsService;
@@ -36,22 +39,25 @@ public class AuthService {
     private final SessionRepository sessions;
     private final PasswordHasher hasher;
     private final AltchaService challenges;
+    private final InviteService invites;
     private final ServerSettingsService settings;
     private final AuthConfig config;
     private final SecureRandom random = new SecureRandom();
 
     public AuthService(AccountRepository accounts, SessionRepository sessions, PasswordHasher hasher,
-                       AltchaService challenges, ServerSettingsService settings, AuthConfig config) {
+                       AltchaService challenges, InviteService invites, ServerSettingsService settings,
+                       AuthConfig config) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.hasher = hasher;
         this.challenges = challenges;
+        this.invites = invites;
         this.settings = settings;
         this.config = config;
     }
 
-    /** What a new user submits. {@code displayName} and {@code altcha} may be null. */
-    public record Registration(String username, String password, String displayName, String altcha) {
+    /** What a new user submits. {@code displayName}, {@code altcha} and {@code inviteCode} may be null. */
+    public record Registration(String username, String password, String displayName, String altcha, InviteCode inviteCode) {
     }
 
     /** Result of a successful login or registration. */
@@ -72,8 +78,11 @@ public class AuthService {
         ServerSettings policy = settings.current();
         boolean firstAccount = policy.ownerId() == null && accounts.count() == 0;
 
+        Invite invite = null;
         if (!firstAccount) {
-            if (policy.registrationMode() != RegistrationMode.OPEN) {
+            if (registration.inviteCode() != null) {
+                invite = invites.redeem(registration.inviteCode());
+            } else if (policy.registrationMode() != RegistrationMode.OPEN) {
                 throw new ApiException(403, "registration_closed", "Registration on this server requires an invite");
             }
             if (policy.challengeRequired()) {
@@ -102,6 +111,9 @@ public class AuthService {
         }
         if (firstAccount) {
             settings.claimOwner(account.id());
+        }
+        if (invite != null) {
+            accounts.linkInvite(account.id(), invite.code().value(), invite.createdBy());
         }
         return openSession(account, ip, userAgent);
     }

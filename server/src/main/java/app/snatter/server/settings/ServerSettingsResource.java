@@ -67,11 +67,17 @@ public class ServerSettingsResource implements ServerApi {
         if (update.getDescription() != null) {
             s = s.withDescription(update.getDescription().isBlank() ? null : update.getDescription().strip());
         }
+        if (update.getPublicUrl() != null) {
+            s = s.withPublicUrl(update.getPublicUrl().isBlank() ? null : update.getPublicUrl().strip().replaceAll("/+$", ""));
+        }
         if (update.getRegistrationMode() != null) {
             s = s.withRegistrationMode(fromDto(update.getRegistrationMode()));
         }
         if (update.getChallengeRequired() != null) {
             s = s.withChallengeRequired(update.getChallengeRequired());
+        }
+        if (update.getMembersCanInvite() != null) {
+            s = s.withMembersCanInvite(update.getMembersCanInvite());
         }
         if (update.getRateLimits() != null) {
             s = s.withRateLimits(fromDto(update.getRateLimits()));
@@ -90,13 +96,16 @@ public class ServerSettingsResource implements ServerApi {
         return new ServerSettingsDto()
             .name(s.name())
             .description(s.description())
+            .publicUrl(s.publicUrl())
             .registrationMode(toDto(s.registrationMode()))
             .challengeRequired(s.challengeRequired())
+            .membersCanInvite(s.membersCanInvite())
             .rateLimits(new RateLimitsDto()
                 .enabled(s.rateLimits().enabled())
                 .login(toDto(s.rateLimits().login()))
                 .register(toDto(s.rateLimits().register()))
-                .challenge(toDto(s.rateLimits().challenge())));
+                .challenge(toDto(s.rateLimits().challenge()))
+                .invite(toDto(s.rateLimits().invite())));
     }
 
     private static RateLimitPolicyDto toDto(RateLimitPolicy p) {
@@ -112,7 +121,7 @@ public class ServerSettingsResource implements ServerApi {
     }
 
     private static RateLimits fromDto(RateLimitsDto d) {
-        return new RateLimits(d.getEnabled(), fromDto(d.getLogin()), fromDto(d.getRegister()), fromDto(d.getChallenge()));
+        return new RateLimits(d.getEnabled(), fromDto(d.getLogin()), fromDto(d.getRegister()), fromDto(d.getChallenge()), fromDto(d.getInvite()));
     }
 
     private static RateLimitPolicy fromDto(RateLimitPolicyDto d) {

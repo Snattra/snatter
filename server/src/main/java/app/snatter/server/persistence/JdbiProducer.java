@@ -21,7 +21,7 @@ public class JdbiProducer {
     @Singleton
     Jdbi jdbi(AgroalDataSource dataSource) {
         Jdbi jdbi = Jdbi.create(dataSource);
-        jdbi.registerArgument(new IdArgumentFactory());
+        jdbi.registerArgument(new ValueArgumentFactory());
         return jdbi;
     }
 }

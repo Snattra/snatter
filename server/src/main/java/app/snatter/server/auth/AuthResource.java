@@ -48,7 +48,7 @@ public class AuthResource implements AuthApi {
     @RateLimited("register")
     public RestResponse<AuthResponseDto> register(RegisterRequestDto body) {
         AuthService.Login login = auth.register(
-            new AuthService.Registration(body.getUsername(), body.getPassword(), body.getDisplayName(), body.getAltcha()),
+            new AuthService.Registration(body.getUsername(), body.getPassword(), body.getDisplayName(), body.getAltcha(), body.getInviteCode()),
             clientIp(), userAgent());
         return RestResponse.status(Response.Status.CREATED, toDto(login));
     }

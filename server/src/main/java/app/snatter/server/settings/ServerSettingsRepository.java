@@ -19,16 +19,23 @@ public class ServerSettingsRepository {
     private static final RowMapper<ServerSettings> MAPPER = (rs, ctx) -> new ServerSettings(
         rs.getString("name"),
         rs.getString("description"),
+        rs.getString("public_url"),
         id(rs, "owner_account_id", AccountId::new),
         RegistrationMode.fromDbValue(rs.getString("registration_mode")),
         rs.getBoolean("registration_challenge"),
+        rs.getBoolean("members_can_invite"),
         new RateLimits(
             rs.getBoolean("rate_limits_enabled"),
-            new RateLimitPolicy(rs.getInt("rate_limit_login_limit"), Duration.ofSeconds(rs.getInt("rate_limit_login_period"))),
-            new RateLimitPolicy(rs.getInt("rate_limit_register_limit"), Duration.ofSeconds(rs.getInt("rate_limit_register_period"))),
-            new RateLimitPolicy(rs.getInt("rate_limit_challenge_limit"), Duration.ofSeconds(rs.getInt("rate_limit_challenge_period")))),
+            policy(rs.getInt("rate_limit_login_limit"), rs.getInt("rate_limit_login_period")),
+            policy(rs.getInt("rate_limit_register_limit"), rs.getInt("rate_limit_register_period")),
+            policy(rs.getInt("rate_limit_challenge_limit"), rs.getInt("rate_limit_challenge_period")),
+            policy(rs.getInt("rate_limit_invite_limit"), rs.getInt("rate_limit_invite_period"))),
         instant(rs, "created_at"),
         instant(rs, "updated_at"));
+
+    private static RateLimitPolicy policy(int limit, int periodSeconds) {
+        return new RateLimitPolicy(limit, Duration.ofSeconds(periodSeconds));
+    }
 
     private final Jdbi jdbi;
 
@@ -39,11 +46,13 @@ public class ServerSettingsRepository {
     public ServerSettings get() {
         return jdbi.withHandle(h -> h
             .createQuery("""
-                SELECT name, description, owner_account_id, registration_mode, registration_challenge,
+                SELECT name, description, public_url, owner_account_id,
+                       registration_mode, registration_challenge, members_can_invite,
                        rate_limits_enabled,
                        rate_limit_login_limit, rate_limit_login_period,
                        rate_limit_register_limit, rate_limit_register_period,
                        rate_limit_challenge_limit, rate_limit_challenge_period,
+                       rate_limit_invite_limit, rate_limit_invite_period,
                        created_at, updated_at
                 FROM server_settings
                 WHERE id = :id
@@ -62,8 +71,10 @@ public class ServerSettingsRepository {
                 UPDATE server_settings
                 SET name = :name,
                     description = :description,
+                    public_url = :publicUrl,
                     registration_mode = :registrationMode,
                     registration_challenge = :challengeRequired,
+                    members_can_invite = :membersCanInvite,
                     rate_limits_enabled = :rateLimitsEnabled,
                     rate_limit_login_limit = :loginLimit,
                     rate_limit_login_period = :loginPeriod,
@@ -71,13 +82,17 @@ public class ServerSettingsRepository {
                     rate_limit_register_period = :registerPeriod,
                     rate_limit_challenge_limit = :challengeLimit,
                     rate_limit_challenge_period = :challengePeriod,
+                    rate_limit_invite_limit = :inviteLimit,
+                    rate_limit_invite_period = :invitePeriod,
                     updated_at = :now
                 WHERE id = :id
                 """)
             .bind("name", s.name())
             .bind("description", s.description())
+            .bind("publicUrl", s.publicUrl())
             .bind("registrationMode", s.registrationMode().dbValue())
             .bind("challengeRequired", s.challengeRequired())
+            .bind("membersCanInvite", s.membersCanInvite())
             .bind("rateLimitsEnabled", s.rateLimits().enabled())
             .bind("loginLimit", s.rateLimits().login().limit())
             .bind("loginPeriod", s.rateLimits().login().period().toSeconds())
@@ -85,6 +100,8 @@ public class ServerSettingsRepository {
             .bind("registerPeriod", s.rateLimits().register().period().toSeconds())
             .bind("challengeLimit", s.rateLimits().challenge().limit())
             .bind("challengePeriod", s.rateLimits().challenge().period().toSeconds())
+            .bind("inviteLimit", s.rateLimits().invite().limit())
+            .bind("invitePeriod", s.rateLimits().invite().period().toSeconds())
             .bind("now", Instant.now())
             .bind("id", SINGLETON_ID)
             .execute());

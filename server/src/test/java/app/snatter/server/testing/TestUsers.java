@@ -63,7 +63,8 @@ public final class TestUsers {
             "enabled", enabled,
             "login", Map.of("limit", loginLimit, "periodSeconds", loginPeriod),
             "register", Map.of("limit", registerLimit, "periodSeconds", registerPeriod),
-            "challenge", Map.of("limit", challengeLimit, "periodSeconds", challengePeriod));
+            "challenge", Map.of("limit", challengeLimit, "periodSeconds", challengePeriod),
+            "invite", Map.of("limit", 30, "periodSeconds", 60));
     }
 
     /** Registers a fresh user with a random username. */

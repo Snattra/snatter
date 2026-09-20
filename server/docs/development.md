@@ -15,9 +15,10 @@ splitting by technical layer:
 | `account`     | Accounts and the identity model                      |
 | `auth`        | Passwords, sessions, challenges, HTTP authentication |
 | `blob`        | Binary content: storage, metadata, image detection   |
+| `invite`      | Invite links and their redemption                    |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
-| `common`      | Domain-wide abstractions such as `Id`                |
+| `common`      | Domain-wide abstractions such as `Value` and `Id`    |
 | `persistence` | JDBI producer and small JDBC helpers                 |
 
 Planned: `channel`, `gateway`, `media`.
@@ -105,8 +106,9 @@ challenge difficulty, stays in `application.properties`.
 `AuthService.register` applies the policy in this order:
 
 1. The first account on an empty server is always accepted and becomes owner.
-2. Otherwise `registrationMode` must be `open`; `invite_only` yields
-   `registration_closed` (403). Invites are the next step.
+2. Otherwise an `inviteCode`, if given, is redeemed (`invite_invalid` when it
+   cannot be); without one `registrationMode` must be `open`, else
+   `registration_closed` (403).
 3. If `challengeRequired` is set, the request must carry a solved
    [ALTCHA](https://altcha.org) proof-of-work in `altcha`, verified by
    `AltchaService`: HMAC signature, `SHA-256(salt + number)`, expiry from the
@@ -115,6 +117,30 @@ challenge difficulty, stays in `application.properties`.
    any stored state.
 4. Username uniqueness, hashing and session creation as before.
 
+## Invites
+
+An invite is a row in `invite` keyed by an 8-character random code
+(`InviteCode`, a `CharSequence` value record so the contract's pattern can
+validate it as a path parameter). It may carry an expiry, a maximum number of
+uses, and a revocation time. `InviteRepository.redeem` counts a use in a
+single conditional `UPDATE ... RETURNING`, so concurrent registrations cannot
+overspend the last use. Redemption runs inside the registration transaction:
+if the registration fails afterwards, for example on a taken username, the
+use is rolled back with it.
+
+Every member may create invites while `membersCanInvite` is set, otherwise
+only the owner. The owner lists and revokes all invites; members only their
+own. `GET /api/v1/invites/{code}` is public so a client can show what the
+invite leads to before the person registers; it is rate limited under the
+`invite` policy and answers 404 for unknown or revoked codes and 410 for
+expired or used-up ones.
+
+Invite links are `<publicUrl>/invite/<code>`. `publicUrl` is an owner
+setting; when it is not set the link is built from the address the request
+arrived on. The `/invite/<code>` path is reserved for a landing page and is
+not served yet. Accounts remember the invite and inviter they came in with
+(`account.invite_code`, `account.invited_by`) for later moderation features.
+
 ## Rate limiting
 
 `@RateLimited("<policy>")` on a resource method applies the named policy from
@@ -122,7 +148,7 @@ challenge difficulty, stays in `application.properties`.
 Policies are token buckets; a refused request gets 429 with `Retry-After`
 and the `rate_limited` error. Buckets live in memory, so this protects a
 single server instance, and they are reset whenever the owner changes the
-policies. Policies exist for `login`, `register` and `challenge`.
+policies. Policies exist for `login`, `register`, `challenge` and `invite`.
 
 ## HTTP API
 
@@ -178,10 +204,15 @@ that produces it.
 | GET    | `/accounts/{id}`    | yes  | Any member's profile                      |
 | PUT    | `/accounts/me/avatar` | yes | Replace the profile picture; body is the raw image |
 | DELETE | `/accounts/me/avatar` | yes | Remove the profile picture              |
+| GET    | `/invites`           | yes  | List invites: all for the owner, own for members |
+| POST   | `/invites`           | yes  | Create an invite                          |
+| GET    | `/invites/{code}`    | no   | Preview an invite: community and inviter  |
+| DELETE | `/invites/{code}`    | yes  | Revoke, by creator or owner               |
 | GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
 Error codes so far: `validation_failed`, `username_taken`, `registration_closed`,
 `challenge_required`, `challenge_invalid`, `forbidden`, `rate_limited`,
+`invite_invalid`, `invite_not_found`, `invite_unusable`,
 `invalid_credentials`, `account_not_found`, `blob_not_found`,
 `unsupported_image`, `image_dimensions`, `image_too_large`.
 
@@ -219,8 +250,12 @@ types directly.
 
 Each id record provides `newId()`, `fromString(String)` for JAX-RS path
 parameters, and serialises to JSON as the plain UUID string. Repositories
-bind them directly with `.bind("id", accountId)`; `persistence.IdArgumentFactory`
-handles the conversion, so call sites never unwrap the value.
+bind them directly with `.bind("id", accountId)`;
+`persistence.ValueArgumentFactory` handles the conversion, so call sites never
+unwrap the value.
 
-Apply the same idea to other frequently passed values where a plain `String`
-invites mix-ups, once they earn it.
+The same pattern covers other single-value records through `common.Value<T>`,
+of which `Id` is the UUID case. `invite.InviteCode` wraps a `String` this
+way. A `String`-valued record that arrives as a path parameter with a pattern
+constraint in the contract must also implement `CharSequence`, or Bean
+Validation cannot apply the constraint to it.

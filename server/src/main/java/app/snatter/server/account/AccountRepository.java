@@ -109,6 +109,16 @@ public class AccountRepository {
             .findOne());
     }
 
+    /** Records which invite let the account in and who created it. */
+    public void linkInvite(AccountId id, String inviteCode, AccountId invitedBy) {
+        jdbi.useHandle(h -> h
+            .createUpdate("UPDATE account SET invite_code = :code, invited_by = :invitedBy WHERE id = :id")
+            .bind("id", id)
+            .bind("code", inviteCode)
+            .bind("invitedBy", invitedBy)
+            .execute());
+    }
+
     /** Sets or clears (null) the avatar. Returns false if the account does not exist. */
     public boolean setAvatar(AccountId id, BlobId avatarId) {
         return jdbi.withHandle(h -> h

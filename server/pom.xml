@@ -139,6 +139,7 @@
                                 <!-- Typed ids are hand-written value records, not generated. -->
                                 <schemaMapping>AccountId=app.snatter.server.account.AccountId</schemaMapping>
                                 <schemaMapping>BlobId=app.snatter.server.blob.BlobId</schemaMapping>
+                                <schemaMapping>InviteCode=app.snatter.server.invite.InviteCode</schemaMapping>
                             </schemaMappings>
                             <typeMappings>
                                 <typeMapping>DateTime=Instant</typeMapping>
