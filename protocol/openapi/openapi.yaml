@@ -31,6 +31,8 @@ tags:
     description: Invite links that let new people register
   - name: roles
     description: Roles bundle permissions and are assigned to members
+  - name: channels
+    description: Text and voice channels and their permission overwrites
 
 paths:
   /api/v1/server-info:
@@ -52,7 +54,7 @@ paths:
       tags: [server]
       operationId: getServerSettings
       summary: Read the server settings
-      description: Requires the `MANAGE_SERVER` permission.
+      description: Requires the `MANAGE_SERVER` permission, which `ADMINISTRATOR` does not imply.
       security:
         - session: []
       responses:
@@ -612,8 +614,9 @@ paths:
       summary: The caller's effective permissions
       description: |
         The union of the caller's roles and the default role, or every
-        permission for the server owner. Clients use this to show or hide
-        controls.
+        permission for the server owner. `ADMINISTRATOR` brings every
+        permission except `MANAGE_SERVER` with it. Clients use this to show or
+        hide controls; inside a channel, use the channel's permissions.
       security:
         - session: []
       responses:
@@ -625,6 +628,323 @@ paths:
                 $ref: "#/components/schemas/PermissionSet"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/channels:
+    get:
+      tags: [channels]
+      operationId: listChannels
+      summary: List channels
+      description: |
+        The channels the caller can see (`VIEW_CHANNELS` in that channel),
+        ordered by position.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Visible channels, top first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Channel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [channels]
+      operationId: createChannel
+      summary: Create a channel
+      description: |
+        Requires `MANAGE_CHANNELS`. The channel is placed last. Voice
+        channels start at the server's default bitrate unless one is given.
+        `bitrate` and `userLimit` are rejected for text channels
+        (`not_a_voice_channel`), and so is a bitrate above
+        `ServerInfo.voice.maxBitrate` (`bitrate_too_high`).
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelCreate"
+      responses:
+        "201":
+          description: The new channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/channels/{id}:
+    get:
+      tags: [channels]
+      operationId: getChannel
+      summary: Fetch a channel
+      description: Channels the caller cannot see answer `channel_not_found`.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+      responses:
+        "200":
+          description: The channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [channels]
+      operationId: updateChannel
+      summary: Change a channel
+      description: |
+        Requires `MANAGE_CHANNELS` in the channel. Absent fields stay
+        unchanged; the type cannot be changed. Moving a channel shifts the
+        channels between its old and new place by one. Voice settings follow
+        the rules of creation.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelUpdate"
+      responses:
+        "200":
+          description: The updated channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [channels]
+      operationId: deleteChannel
+      summary: Delete a channel
+      description: Requires `MANAGE_CHANNELS` in the channel. Its overwrites go with it.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/channels/{id}/permissions:
+    get:
+      tags: [channels]
+      operationId: getMyChannelPermissions
+      summary: The caller's effective permissions in a channel
+      description: |
+        Server-level permissions refined by the channel's overwrites. Clients
+        use this to show or hide controls such as the message box or the
+        channel settings.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+      responses:
+        "200":
+          description: Effective permissions in the channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionSet"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/channels/{id}/overwrites/roles/{roleId}:
+    put:
+      tags: [channels]
+      operationId: setRoleOverwrite
+      summary: Set a role's overwrite in a channel
+      description: |
+        Replaces the overwrite for members holding the role; use the default
+        role's id to address everyone. Empty `allow` and `deny` remove it.
+        Requires `MANAGE_ROLES` in the channel and a role below the caller's
+        highest (`role_hierarchy`). Only channel-scoped permissions may appear,
+        never both allowed and denied (`invalid_overwrite`), and the caller
+        may only change permissions they hold in the channel
+        (`permission_escalation`).
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/RoleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionOverwriteUpdate"
+      responses:
+        "200":
+          description: The channel with its updated overwrites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [channels]
+      operationId: removeRoleOverwrite
+      summary: Remove a role's overwrite from a channel
+      description: Same rules as setting it. Idempotent.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/RoleId"
+      responses:
+        "204":
+          description: The role has no overwrite in the channel
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/channels/{id}/overwrites/accounts/{accountId}:
+    put:
+      tags: [channels]
+      operationId: setAccountOverwrite
+      summary: Set a member's overwrite in a channel
+      description: |
+        Replaces the overwrite for one member, which takes precedence over
+        role overwrites. This is how channel moderators are appointed, for
+        example by allowing `MANAGE_MESSAGES`, `MUTE_MEMBERS` and
+        `MOVE_MEMBERS`. Empty `allow` and `deny` remove it. The rules of role
+        overwrites apply, and the member's highest role must be below the
+        caller's unless it is the caller (`role_hierarchy`).
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionOverwriteUpdate"
+      responses:
+        "200":
+          description: The channel with its updated overwrites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Channel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [channels]
+      operationId: removeAccountOverwrite
+      summary: Remove a member's overwrite from a channel
+      description: Same rules as setting it. Idempotent.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      responses:
+        "204":
+          description: The member has no overwrite in the channel
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/blobs/{id}:
     get:
@@ -686,7 +1006,7 @@ components:
       description: |
         The caller is signed in but not allowed to do this: missing permission
         (`forbidden`), role at or above their own (`role_hierarchy`), or
-        granting a permission they lack (`permission_escalation`)
+        granting or changing a permission they lack (`permission_escalation`)
       content:
         application/json:
           schema:
@@ -726,11 +1046,20 @@ components:
       format: uuid
       description: Identifies a role on this server
 
+    ChannelId:
+      type: string
+      format: uuid
+      description: Identifies a channel on this server
+
     Permission:
       type: string
       description: |
-        Server-level permissions. Channel-level overrides will refine the
-        channel-oriented ones later.
+        Roles grant permissions server-wide. Channel overwrites refine the
+        channel-scoped ones per channel: `VIEW_CHANNELS`, `MANAGE_CHANNELS`,
+        `MANAGE_ROLES` (managing the channel's overwrites), `SEND_MESSAGES`,
+        `MANAGE_MESSAGES`, `CONNECT`, `SPEAK`, `STREAM`, `MUTE_MEMBERS` and
+        `MOVE_MEMBERS`. `ADMINISTRATOR` implies every permission except
+        `MANAGE_SERVER` and ignores channel overwrites.
       enum:
         - MANAGE_SERVER
         - MANAGE_ROLES
@@ -747,6 +1076,7 @@ components:
         - STREAM
         - MUTE_MEMBERS
         - MOVE_MEMBERS
+        - ADMINISTRATOR
 
     PermissionSet:
       type: object
@@ -759,6 +1089,145 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Permission"
+
+    ChannelType:
+      type: string
+      enum: [text, voice, voice_text]
+      description: |
+        `text`: messages only. `voice`: voice only, without messages.
+        `voice_text`: voice with its own messages alongside.
+
+    Channel:
+      type: object
+      required: [id, type, name, position, overwrites, createdAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/ChannelId"
+        type:
+          $ref: "#/components/schemas/ChannelType"
+        name:
+          type: string
+          example: general
+        topic:
+          type: string
+          nullable: true
+        position:
+          type: integer
+          description: 0 is the top; positions are contiguous across all channels
+        bitrate:
+          type: integer
+          nullable: true
+          description: Audio bitrate in bits per second; voice channels only
+          example: 64000
+        userLimit:
+          type: integer
+          nullable: true
+          description: Most members connected at once, 0 for no limit; voice channels only
+        overwrites:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionOverwrite"
+        createdAt:
+          type: string
+          format: date-time
+
+    ChannelCreate:
+      type: object
+      required: [type, name]
+      properties:
+        type:
+          $ref: "#/components/schemas/ChannelType"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^\s*\S.*$'
+          description: Surrounding whitespace is removed
+        topic:
+          type: string
+          maxLength: 1024
+        bitrate:
+          type: integer
+          minimum: 8000
+          maximum: 510000
+          description: Voice channels only; defaults to `ServerInfo.voice.defaultBitrate`
+        userLimit:
+          type: integer
+          minimum: 0
+          maximum: 99
+          description: Voice channels only; defaults to 0, no limit
+
+    ChannelUpdate:
+      type: object
+      description: Partial update; absent fields stay unchanged
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '^\s*\S.*$'
+        topic:
+          type: string
+          maxLength: 1024
+          description: Empty string clears the topic
+        bitrate:
+          type: integer
+          minimum: 8000
+          maximum: 510000
+        userLimit:
+          type: integer
+          minimum: 0
+          maximum: 99
+        position:
+          type: integer
+          minimum: 0
+          description: New place in the list; values past the end move it last
+
+    PermissionOverwrite:
+      type: object
+      required: [allow, deny]
+      description: |
+        Refines permissions in one channel for the members of a role or for
+        one member; exactly one of `roleId` and `accountId` is set. Effective
+        permissions are computed from the server-level ones by applying, in
+        order, the default role's overwrite, the combined overwrites of the
+        member's other roles, then the member's own; within each step denials
+        are applied before allowances. Without `VIEW_CHANNELS` no
+        channel-scoped permission remains. The owner and administrators are
+        not affected.
+      properties:
+        roleId:
+          allOf:
+            - $ref: "#/components/schemas/RoleId"
+          nullable: true
+          description: The role whose members this applies to; the default role's id means everyone
+        accountId:
+          allOf:
+            - $ref: "#/components/schemas/AccountId"
+          nullable: true
+          description: The one member this applies to
+        allow:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+        deny:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+
+    PermissionOverwriteUpdate:
+      type: object
+      required: [allow, deny]
+      properties:
+        allow:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+        deny:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+          description: A permission may not be both allowed and denied
 
     Role:
       type: object
@@ -901,10 +1370,12 @@ components:
 
     ServerInfo:
       type: object
-      required: [name, version, apiVersion, community, registration]
+      required: [name, version, apiVersion, community, registration, voice]
       properties:
         registration:
           $ref: "#/components/schemas/RegistrationInfo"
+        voice:
+          $ref: "#/components/schemas/VoiceInfo"
         name:
           type: string
           description: Software name, always `Snatter`
@@ -926,6 +1397,19 @@ components:
       description: |
         `open`: anyone may register. `invite_only`: registration needs an
         invite (the first account on a fresh server is always allowed).
+
+    VoiceInfo:
+      type: object
+      required: [defaultBitrate, maxBitrate]
+      properties:
+        defaultBitrate:
+          type: integer
+          description: Bitrate of new voice channels, in bits per second
+          example: 64000
+        maxBitrate:
+          type: integer
+          description: Highest bitrate a channel may be set to on this server
+          example: 256000
 
     RegistrationInfo:
       type: object

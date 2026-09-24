@@ -9,6 +9,8 @@ import app.snatter.api.model.RegistrationModeDto;
 import app.snatter.api.model.ServerInfoDto;
 import app.snatter.api.model.ServerSettingsDto;
 import app.snatter.api.model.ServerSettingsUpdateDto;
+import app.snatter.api.model.VoiceInfoDto;
+import app.snatter.server.channel.VoiceConfig;
 import io.quarkus.security.PermissionsAllowed;
 import java.time.Duration;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -22,12 +24,15 @@ public class ServerSettingsResource implements ServerApi {
 
     private final String version;
     private final ServerSettingsService settings;
+    private final VoiceConfig voice;
 
     public ServerSettingsResource(
             @ConfigProperty(name = "quarkus.application.version") String version,
-            ServerSettingsService settings) {
+            ServerSettingsService settings,
+            VoiceConfig voice) {
         this.version = version;
         this.settings = settings;
+        this.voice = voice;
     }
 
     @Override
@@ -40,7 +45,10 @@ public class ServerSettingsResource implements ServerApi {
             .community(new CommunityDto().name(s.name()).description(s.description()))
             .registration(new RegistrationInfoDto()
                 .mode(toDto(s.registrationMode()))
-                .challengeRequired(s.challengeRequired())));
+                .challengeRequired(s.challengeRequired()))
+            .voice(new VoiceInfoDto()
+                .defaultBitrate(voice.newChannelBitrate())
+                .maxBitrate(voice.maxBitrate())));
     }
 
     @Override

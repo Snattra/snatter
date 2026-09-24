@@ -37,10 +37,9 @@ public class SessionIdentityProvider implements IdentityProvider<SessionTokenAut
             AuthService.Authenticated a = auth.authenticate(request.token())
                 .orElseThrow(() -> new AuthenticationFailedException("Invalid or expired session token"));
             RoleService.Resolution resolution = roles.resolve(a.account().id());
-            boolean owner = resolution.highestPosition() == Integer.MAX_VALUE;
             AccountPrincipal principal = new AccountPrincipal(
                 a.account().id(), a.account().username(), a.session().id(),
-                owner, resolution.permissions(), resolution.highestPosition());
+                resolution.owner(), resolution.permissions(), resolution.highestPosition(), resolution.roleIds());
             return QuarkusSecurityIdentity.builder()
                 .setPrincipal(principal)
                 .addPermissionChecker(permission -> Uni.createFrom().item(principal.hasNamed(permission.getName())))

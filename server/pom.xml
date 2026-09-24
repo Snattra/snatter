@@ -141,6 +141,7 @@
                                 <schemaMapping>BlobId=BlobId</schemaMapping>
                                 <schemaMapping>InviteCode=InviteCode</schemaMapping>
                                 <schemaMapping>RoleId=RoleId</schemaMapping>
+                                <schemaMapping>ChannelId=ChannelId</schemaMapping>
                             </schemaMappings>
                             <typeMappings>
                                 <typeMapping>DateTime=Instant</typeMapping>
@@ -155,6 +156,7 @@
                                 <importMapping>BlobId=app.snatter.server.blob.BlobId</importMapping>
                                 <importMapping>InviteCode=app.snatter.server.invite.InviteCode</importMapping>
                                 <importMapping>RoleId=app.snatter.server.role.RoleId</importMapping>
+                                <importMapping>ChannelId=app.snatter.server.channel.ChannelId</importMapping>
                             </importMappings>
                             <configOptions>
                                 <library>quarkus</library>

@@ -1,7 +1,6 @@
 package app.snatter.server.role;
 
 import app.snatter.api.RolesApi;
-import app.snatter.api.model.PermissionDto;
 import app.snatter.api.model.PermissionSetDto;
 import app.snatter.api.model.RoleCreateDto;
 import app.snatter.api.model.RoleDto;
@@ -12,7 +11,6 @@ import io.quarkus.security.Authenticated;
 import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.ws.rs.core.Response;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import org.jboss.resteasy.reactive.RestResponse;
@@ -36,14 +34,14 @@ public class RoleResource implements RolesApi {
     @Override
     @PermissionsAllowed("MANAGE_ROLES")
     public RestResponse<RoleDto> createRole(RoleCreateDto body) {
-        Set<Permission> permissions = body.getPermissions() == null ? Set.of() : fromDto(body.getPermissions());
+        Set<Permission> permissions = body.getPermissions() == null ? Set.of() : PermissionDtos.fromDto(body.getPermissions());
         return RestResponse.status(Response.Status.CREATED, toDto(roles.create(actor(), body.getName(), body.getColor(), permissions)));
     }
 
     @Override
     @PermissionsAllowed("MANAGE_ROLES")
     public RestResponse<RoleDto> updateRole(RoleId id, RoleUpdateDto body) {
-        Set<Permission> permissions = body.getPermissions() == null ? null : fromDto(body.getPermissions());
+        Set<Permission> permissions = body.getPermissions() == null ? null : PermissionDtos.fromDto(body.getPermissions());
         return RestResponse.ok(toDto(roles.update(actor(), id, body.getName(), body.getColor(), body.getPosition(), permissions)));
     }
 
@@ -74,7 +72,7 @@ public class RoleResource implements RolesApi {
         AccountPrincipal actor = actor();
         return RestResponse.ok(new PermissionSetDto()
             .owner(actor.owner())
-            .permissions(toDto(actor.permissions())));
+            .permissions(PermissionDtos.toDto(actor.permissions())));
     }
 
     private AccountPrincipal actor() {
@@ -87,20 +85,8 @@ public class RoleResource implements RolesApi {
             .name(role.name())
             .color(role.color())
             .position(role.position())
-            .permissions(toDto(role.permissions()))
+            .permissions(PermissionDtos.toDto(role.permissions()))
             .isDefault(role.isDefault())
             .createdAt(role.createdAt());
-    }
-
-    static List<PermissionDto> toDto(Set<Permission> permissions) {
-        return permissions.stream().sorted().map(p -> PermissionDto.fromValue(p.name())).toList();
-    }
-
-    static Set<Permission> fromDto(List<PermissionDto> permissions) {
-        EnumSet<Permission> set = EnumSet.noneOf(Permission.class);
-        for (PermissionDto p : permissions) {
-            set.add(Permission.valueOf(p.toString()));
-        }
-        return set;
     }
 }

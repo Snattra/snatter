@@ -5,8 +5,8 @@ import java.util.EnumSet;
 import java.util.Set;
 
 /**
- * Server-level permissions. Each has a fixed bit in the {@code role.permissions}
- * bitmask; never renumber. The API exposes them by name.
+ * Permissions. Each has a fixed bit in the {@code role.permissions} and
+ * channel overwrite bitmasks; never renumber. The API exposes them by name.
  */
 public enum Permission {
     MANAGE_SERVER(0),
@@ -23,11 +23,24 @@ public enum Permission {
     SPEAK(11),
     STREAM(12),
     MUTE_MEMBERS(13),
-    MOVE_MEMBERS(14);
+    MOVE_MEMBERS(14),
+    ADMINISTRATOR(15);
 
     /** What a fresh server's default role grants. */
     public static final Set<Permission> DEFAULT_ROLE = Set.of(
         CREATE_INVITE, VIEW_CHANNELS, SEND_MESSAGES, CONNECT, SPEAK, STREAM);
+
+    /** What {@link #ADMINISTRATOR} brings with it: everything but the owner's server settings. */
+    public static final Set<Permission> ADMINISTRATOR_IMPLIES = Set.copyOf(EnumSet.complementOf(EnumSet.of(MANAGE_SERVER)));
+
+    /**
+     * Permissions that channel overwrites can refine. In a channel,
+     * {@link #MANAGE_ROLES} means managing that channel's overwrites and
+     * {@link #MANAGE_CHANNELS} editing or deleting that channel.
+     */
+    public static final Set<Permission> CHANNEL_SCOPED = Set.of(
+        VIEW_CHANNELS, MANAGE_CHANNELS, MANAGE_ROLES, SEND_MESSAGES, MANAGE_MESSAGES,
+        CONNECT, SPEAK, STREAM, MUTE_MEMBERS, MOVE_MEMBERS);
 
     private final int bit;
 

@@ -8,6 +8,7 @@ import app.snatter.server.settings.ServerSettingsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -19,8 +20,14 @@ import java.util.Set;
 @ApplicationScoped
 public class RoleService {
 
-    /** What an account is allowed to do, derived from its roles. */
-    public record Resolution(Set<Permission> permissions, int highestPosition) {
+    /**
+     * What an account is allowed to do, derived from its roles.
+     *
+     * @param roleIds         assigned roles, excluding the default role
+     * @param highestPosition position of the most senior assigned role, 0 with none,
+     *                        {@code Integer.MAX_VALUE} for the owner
+     */
+    public record Resolution(boolean owner, Set<Permission> permissions, int highestPosition, Set<RoleId> roleIds) {
     }
 
     private final RoleRepository roles;
@@ -33,18 +40,27 @@ public class RoleService {
         this.settings = settings;
     }
 
-    /** Effective permissions of an account: its roles plus the default role, or everything for the owner. */
+    /**
+     * Effective permissions of an account: its roles plus the default role,
+     * widened by {@link Permission#ADMINISTRATOR}, or everything for the owner.
+     */
     public Resolution resolve(AccountId accountId) {
         if (settings.current().isOwner(accountId)) {
-            return new Resolution(Permission.all(), Integer.MAX_VALUE);
+            return new Resolution(true, Permission.all(), Integer.MAX_VALUE, Set.of());
         }
-        EnumSet<Permission> effective = EnumSet.copyOf(roles.findDefault().permissions());
+        EnumSet<Permission> effective = EnumSet.noneOf(Permission.class);
+        effective.addAll(roles.findDefault().permissions());
+        Set<RoleId> roleIds = new HashSet<>();
         int highest = 0;
         for (Role role : roles.findByAccount(accountId)) {
             effective.addAll(role.permissions());
+            roleIds.add(role.id());
             highest = Math.max(highest, role.position());
         }
-        return new Resolution(effective, highest);
+        if (effective.contains(Permission.ADMINISTRATOR)) {
+            effective.addAll(Permission.ADMINISTRATOR_IMPLIES);
+        }
+        return new Resolution(false, effective, highest, Set.copyOf(roleIds));
     }
 
     public List<Role> list() {

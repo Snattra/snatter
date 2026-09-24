@@ -70,6 +70,8 @@ example `QUARKUS_HTTP_PORT=9000`.
 | `SNATTER_STORAGE_ROOT`          | `./data` (`/var/lib/snatter` in the container) | Directory for uploaded content such as avatars |
 | `SNATTER_REGISTRATION_CHALLENGE_MAX_NUMBER` | `100000` | Difficulty of the registration proof-of-work challenge |
 | `SNATTER_REGISTRATION_CHALLENGE_TTL` | `PT10M` | How long a challenge stays valid |
+| `SNATTER_VOICE_DEFAULT_BITRATE` | `64000` | Bitrate of new voice channels, bits per second |
+| `SNATTER_VOICE_MAX_BITRATE` | `256000` | Highest bitrate a channel may be set to (Opus allows up to 510000) |
 
 PostgreSQL is the only supported database. The schema is created and upgraded
 automatically at startup.

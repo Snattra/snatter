@@ -17,12 +17,13 @@ splitting by technical layer:
 | `blob`        | Binary content: storage, metadata, image detection   |
 | `invite`      | Invite links and their redemption                    |
 | `role`        | Permissions, roles, assignment, hierarchy rules      |
+| `channel`     | Channels, ordering, overwrites, channel permissions  |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
 | `persistence` | JDBI producer and small JDBC helpers                 |
 
-Planned: `channel`, `gateway`, `media`.
+Planned: `gateway`, `message`, `media`.
 
 ## Database
 
@@ -94,9 +95,11 @@ at the current blob; replacing or clearing an avatar deletes the old blob.
 The first account registered on a fresh server becomes the **server owner**,
 recorded in `server_settings.owner_account_id`. The owner holds every
 permission, is exempt from the role hierarchy rules, and cannot be demoted.
-Everything else is decided by permissions; see "Roles and permissions".
+Only the owner changes the server settings unless they grant `MANAGE_SERVER`
+explicitly; administrators do not have it. Everything else is decided by
+permissions; see "Roles and permissions".
 
-Everything an administrator can change at runtime lives in the
+Everything the owner can change at runtime lives in the
 `server_settings` row and is read through `ServerSettingsService`, which
 caches the row in memory and fires a `Changed` event on updates. Request paths
 never query the table. Tuning that only an operator would touch, such as the
@@ -112,6 +115,13 @@ the **default role** that every member has implicitly; it is never listed in
 `Account.roleIds` and cannot be assigned, removed or deleted, only its
 permissions change. A member's effective permissions are the union of the
 default role and their assigned roles; the owner has all of them.
+
+**Administrators.** The `ADMINISTRATOR` permission implies every other
+permission except `MANAGE_SERVER` (`Permission.ADMINISTRATOR_IMPLIES`),
+including permissions added in later versions, and makes channel overwrites
+not apply. It does not lift the role hierarchy. A fresh server has an `Admin`
+role at the top of the hierarchy that carries only `ADMINISTRATOR`; it is an
+ordinary role otherwise and can be renamed, moved or deleted.
 
 `SessionIdentityProvider` resolves the effective permissions once per request
 through `RoleService.resolve` and puts them on the `AccountPrincipal`
@@ -131,8 +141,64 @@ enforces both for everyone except the owner:
 - **No escalation.** You may only grant permissions you hold yourself
   (`permission_escalation`).
 
-Channel-level permission overrides will refine the channel-oriented
-permissions later; the server-level set is the baseline.
+The server-level set is the baseline that channel overwrites refine; see
+"Channels".
+
+## Channels
+
+A channel (`channel` table) is `text`, `voice` or `voice_text`. Voice
+channels, and only they, have a bitrate in bits per second and a user limit,
+0 meaning none; the table enforces this. New voice channels get
+`snatter.voice.default-bitrate` and no channel may exceed
+`snatter.voice.max-bitrate`; both are published in `ServerInfo.voice` for
+clients. The type is fixed at creation. A fresh server has a `general` text
+channel and a `General` voice channel.
+
+Channels form one flat list ordered by `position`, 0 at the top, and
+positions are always contiguous. `ChannelRepository` takes a
+`SHARE ROW EXCLUSIVE` lock on the table for every operation that changes
+positions (create, move, delete), so concurrent writers renumber from the
+same list while readers are not blocked. Categories will group channels
+later.
+
+**Overwrites** (`channel_overwrite`) refine the channel-scoped permissions
+(`Permission.CHANNEL_SCOPED`) for the members of one role or for one account.
+Each row references either a role or an account, so deleting either removes
+its overwrites. `ChannelPermissions.of` computes a member's permissions in a
+channel as Discord does:
+
+1. start from the member's server-level permissions;
+2. apply the default role's overwrite;
+3. apply the overwrites of all the member's other roles, combined;
+4. apply the member's own overwrite;
+5. without `VIEW_CHANNELS`, drop every channel-scoped permission.
+
+Each step removes its denied permissions first and then adds its allowed
+ones, so a role allow beats an everyone deny and a member deny beats a role
+allow. The owner and administrators skip all of this. In a channel,
+`MANAGE_CHANNELS` means editing or deleting that channel and `MANAGE_ROLES`
+means editing its overwrites.
+
+`ChannelService` treats a channel the caller cannot view as nonexistent
+(`channel_not_found`). A private channel is an overwrite denying
+`VIEW_CHANNELS` to the default role plus one allowing it to a role or member.
+A **channel moderator** is a member (or role) whose overwrite allows
+moderation permissions such as `MANAGE_MESSAGES`, `MUTE_MEMBERS` and
+`MOVE_MEMBERS`, and perhaps `MANAGE_CHANNELS`, in that channel; clients may
+present this as a preset, and the server has no separate concept for it.
+
+Changing overwrites follows the role rules, for everyone except the owner:
+the target role, or the target member's highest role, must be below the
+caller's highest role unless the member is the caller (`role_hierarchy`);
+and every permission whose state the change touches must be one the caller
+holds in the channel (`permission_escalation`). Bits the caller does not hold
+may stay in an overwrite they edit, but they cannot add, flip or remove them.
+
+**Events.** `ChannelService` fires `ChannelEvent`s (`Created`, `Renamed`,
+`TopicChanged`, `Deleted`) synchronously inside the transaction that made the
+change. Nothing observes them yet; system notices in a channel's messages
+and pushes over the gateway will be observers, so a notice commits or rolls
+back together with its change.
 
 ## Registration policy
 
@@ -251,12 +317,23 @@ that produces it.
 | PUT    | `/accounts/{id}/roles/{roleId}` | MANAGE_ROLES | Assign a role         |
 | DELETE | `/accounts/{id}/roles/{roleId}` | MANAGE_ROLES | Remove a role         |
 | GET    | `/accounts/me/permissions` | yes | Effective permissions of the caller |
+| GET    | `/channels`          | yes  | Channels the caller can see, in order     |
+| POST   | `/channels`          | MANAGE_CHANNELS | Create a channel at the bottom |
+| GET    | `/channels/{id}`     | yes  | One visible channel with its overwrites   |
+| PATCH  | `/channels/{id}`     | MANAGE_CHANNELS in channel | Rename, topic, voice settings, position |
+| DELETE | `/channels/{id}`     | MANAGE_CHANNELS in channel | Delete a channel    |
+| GET    | `/channels/{id}/permissions` | yes | Effective permissions of the caller in the channel |
+| PUT    | `/channels/{id}/overwrites/roles/{roleId}` | MANAGE_ROLES in channel | Set a role overwrite; empty removes |
+| DELETE | `/channels/{id}/overwrites/roles/{roleId}` | MANAGE_ROLES in channel | Remove a role overwrite |
+| PUT    | `/channels/{id}/overwrites/accounts/{accountId}` | MANAGE_ROLES in channel | Set a member overwrite; empty removes |
+| DELETE | `/channels/{id}/overwrites/accounts/{accountId}` | MANAGE_ROLES in channel | Remove a member overwrite |
 | GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
 Error codes so far: `validation_failed`, `username_taken`, `registration_closed`,
 `challenge_required`, `challenge_invalid`, `forbidden`, `rate_limited`,
 `invite_invalid`, `invite_not_found`, `invite_unusable`, `role_not_found`,
 `role_hierarchy`, `permission_escalation`, `default_role`,
+`channel_not_found`, `not_a_voice_channel`, `bitrate_too_high`, `invalid_overwrite`,
 `invalid_credentials`, `account_not_found`, `blob_not_found`,
 `unsupported_image`, `image_dimensions`, `image_too_large`.
 

@@ -20,6 +20,9 @@ public record Role(
         Instant createdAt,
         Instant updatedAt) {
 
+    /** Id of the default role, seeded by the roles migration. */
+    public static final RoleId DEFAULT_ID = RoleId.fromString("00000000-0000-7000-8000-000000000001");
+
     public Role withName(String name) {
         return new Role(id, name, color, position, permissions, isDefault, createdAt, updatedAt);
     }
