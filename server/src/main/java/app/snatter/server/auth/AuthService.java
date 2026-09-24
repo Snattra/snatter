@@ -1,6 +1,7 @@
 package app.snatter.server.auth;
 
 import app.snatter.server.account.Account;
+import app.snatter.server.account.AccountEvent;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.account.AccountRepository;
 import app.snatter.server.api.ApiException;
@@ -11,6 +12,7 @@ import app.snatter.server.settings.RegistrationMode;
 import app.snatter.server.settings.ServerSettings;
 import app.snatter.server.settings.ServerSettingsService;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -42,11 +44,12 @@ public class AuthService {
     private final InviteService invites;
     private final ServerSettingsService settings;
     private final AuthConfig config;
+    private final Event<AccountEvent> events;
     private final SecureRandom random = new SecureRandom();
 
     public AuthService(AccountRepository accounts, SessionRepository sessions, PasswordHasher hasher,
                        AltchaService challenges, InviteService invites, ServerSettingsService settings,
-                       AuthConfig config) {
+                       AuthConfig config, Event<AccountEvent> events) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.hasher = hasher;
@@ -54,6 +57,7 @@ public class AuthService {
         this.invites = invites;
         this.settings = settings;
         this.config = config;
+        this.events = events;
     }
 
     /** What a new user submits. {@code displayName}, {@code altcha} and {@code inviteCode} may be null. */
@@ -115,6 +119,7 @@ public class AuthService {
         if (invite != null) {
             accounts.linkInvite(account.id(), invite.code().value(), invite.createdBy());
         }
+        events.fire(new AccountEvent.Registered(account.id()));
         return openSession(account, ip, userAgent);
     }
 

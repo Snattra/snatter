@@ -35,8 +35,7 @@ public class ChannelRepository {
         rs.getString("name"),
         rs.getString("topic"),
         rs.getInt("position"),
-        rs.getObject("bitrate", Integer.class),
-        rs.getObject("user_limit", Integer.class),
+        voice(rs.getObject("bitrate", Integer.class), rs.getObject("user_limit", Integer.class)),
         List.of(),
         instant(rs, "created_at"),
         instant(rs, "updated_at"));
@@ -109,13 +108,13 @@ public class ChannelRepository {
                 .bind("name", channel.name())
                 .bind("topic", channel.topic())
                 .bind("position", position)
-                .bind("bitrate", channel.bitrate())
-                .bind("userLimit", channel.userLimit())
+                .bind("bitrate", channel.voice() == null ? null : channel.voice().bitrate())
+                .bind("userLimit", channel.voice() == null ? null : channel.voice().userLimit())
                 .bind("createdAt", channel.createdAt())
                 .bind("updatedAt", channel.updatedAt())
                 .execute();
             return new Channel(channel.id(), channel.type(), channel.name(), channel.topic(), position,
-                channel.bitrate(), channel.userLimit(), List.of(), channel.createdAt(), channel.updatedAt());
+                channel.voice(), List.of(), channel.createdAt(), channel.updatedAt());
         });
     }
 
@@ -130,8 +129,8 @@ public class ChannelRepository {
             .bind("id", channel.id())
             .bind("name", channel.name())
             .bind("topic", channel.topic())
-            .bind("bitrate", channel.bitrate())
-            .bind("userLimit", channel.userLimit())
+            .bind("bitrate", channel.voice() == null ? null : channel.voice().bitrate())
+            .bind("userLimit", channel.voice() == null ? null : channel.voice().userLimit())
             .bind("now", Instant.now())
             .execute());
     }
@@ -204,8 +203,12 @@ public class ChannelRepository {
         h.execute("LOCK TABLE channel IN SHARE ROW EXCLUSIVE MODE");
     }
 
+    private static VoiceSettings voice(Integer bitrate, Integer userLimit) {
+        return bitrate == null ? null : new VoiceSettings(bitrate, userLimit);
+    }
+
     private static Channel withOverwrites(Channel c, List<PermissionOverwrite> overwrites) {
-        return new Channel(c.id(), c.type(), c.name(), c.topic(), c.position(), c.bitrate(), c.userLimit(),
+        return new Channel(c.id(), c.type(), c.name(), c.topic(), c.position(), c.voice(),
             overwrites, c.createdAt(), c.updatedAt());
     }
 }

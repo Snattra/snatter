@@ -110,8 +110,8 @@ public class ChannelResource implements ChannelsApi {
             .name(channel.name())
             .topic(channel.topic())
             .position(channel.position())
-            .bitrate(channel.bitrate())
-            .userLimit(channel.userLimit())
+            .bitrate(channel.voice() == null ? null : channel.voice().bitrate())
+            .userLimit(channel.voice() == null ? null : channel.voice().userLimit())
             .overwrites(channel.overwrites().stream().map(ChannelResource::toDto).toList())
             .createdAt(channel.createdAt());
     }

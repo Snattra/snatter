@@ -10,7 +10,11 @@ import app.snatter.api.model.ServerInfoDto;
 import app.snatter.api.model.ServerSettingsDto;
 import app.snatter.api.model.ServerSettingsUpdateDto;
 import app.snatter.api.model.VoiceInfoDto;
+import app.snatter.server.account.AccountId;
+import app.snatter.server.auth.AccountPrincipal;
+import app.snatter.server.channel.ChannelId;
 import app.snatter.server.channel.VoiceConfig;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.PermissionsAllowed;
 import java.time.Duration;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -25,14 +29,21 @@ public class ServerSettingsResource implements ServerApi {
     private final String version;
     private final ServerSettingsService settings;
     private final VoiceConfig voice;
+    private final SecurityIdentity identity;
 
     public ServerSettingsResource(
             @ConfigProperty(name = "quarkus.application.version") String version,
             ServerSettingsService settings,
-            VoiceConfig voice) {
+            VoiceConfig voice,
+            SecurityIdentity identity) {
         this.version = version;
         this.settings = settings;
         this.voice = voice;
+        this.identity = identity;
+    }
+
+    private AccountId actor() {
+        return ((AccountPrincipal) identity.getPrincipal()).accountId();
     }
 
     @Override
@@ -79,7 +90,10 @@ public class ServerSettingsResource implements ServerApi {
         if (update.getRateLimits() != null) {
             s = s.withRateLimits(fromDto(update.getRateLimits()));
         }
-        return RestResponse.ok(toDto(settings.update(s)));
+        if (update.getSystemChannelId() != null) {
+            s = s.withSystemChannelId(update.getSystemChannelId().isEmpty() ? null : ChannelId.fromString(update.getSystemChannelId()));
+        }
+        return RestResponse.ok(toDto(settings.update(actor(), s)));
     }
 
     static ServerSettingsDto toDto(ServerSettings s) {
@@ -94,7 +108,8 @@ public class ServerSettingsResource implements ServerApi {
                 .login(toDto(s.rateLimits().login()))
                 .register(toDto(s.rateLimits().register()))
                 .challenge(toDto(s.rateLimits().challenge()))
-                .invite(toDto(s.rateLimits().invite())));
+                .invite(toDto(s.rateLimits().invite())))
+            .systemChannelId(s.systemChannelId());
     }
 
     private static RateLimitPolicyDto toDto(RateLimitPolicy p) {

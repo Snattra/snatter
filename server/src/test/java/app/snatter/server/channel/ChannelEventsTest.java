@@ -1,5 +1,6 @@
 package app.snatter.server.channel;
 
+import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -8,6 +9,7 @@ import app.snatter.server.api.ApiException;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.auth.SessionId;
 import app.snatter.server.role.Permission;
+import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.util.List;
@@ -18,8 +20,12 @@ import org.junit.jupiter.api.Test;
 @QuarkusTest
 class ChannelEventsTest {
 
-    private static final AccountPrincipal OWNER = new AccountPrincipal(AccountId.newId(), "owner",
-        new SessionId(UUID.randomUUID()), true, Permission.all(), Integer.MAX_VALUE, Set.of());
+    /** The real owner account, since system notices reference their author. */
+    private static AccountPrincipal owner() {
+        String id = given().header("Authorization", "Bearer " + TestUsers.ownerToken()).get("/api/v1/accounts/me").path("id");
+        return new AccountPrincipal(AccountId.fromString(id), TestUsers.OWNER_USERNAME,
+            new SessionId(UUID.randomUUID()), true, Permission.all(), Integer.MAX_VALUE, Set.of());
+    }
 
     @Inject
     ChannelService channels;
@@ -29,13 +35,14 @@ class ChannelEventsTest {
 
     @Test
     void changesThatBecomeNoticesAreFired() {
-        AccountId actor = OWNER.accountId();
-        Channel channel = channels.create(OWNER, ChannelType.TEXT, "events", null, null, null, List.of());
+        AccountPrincipal owner = owner();
+        AccountId actor = owner.accountId();
+        Channel channel = channels.create(owner, ChannelType.TEXT, "events", null, null, null, List.of());
         ChannelId id = channel.id();
 
-        channels.update(OWNER, id, new ChannelService.Changes("renamed", "a topic", null, null, null));
-        channels.update(OWNER, id, new ChannelService.Changes("renamed", "", null, null, 0));
-        channels.delete(OWNER, id);
+        channels.update(owner, id, new ChannelService.Changes("renamed", "a topic", null, null, null));
+        channels.update(owner, id, new ChannelService.Changes("renamed", "", null, null, 0));
+        channels.delete(owner, id);
 
         assertEquals(List.of(
             new ChannelEvent.Created(id, actor, ChannelType.TEXT, "events"),
@@ -47,14 +54,15 @@ class ChannelEventsTest {
 
     @Test
     void rejectedChangesFireNothing() {
-        Channel channel = channels.create(OWNER, ChannelType.VOICE, "quiet", null, null, null, List.of());
+        AccountPrincipal owner = owner();
+        Channel channel = channels.create(owner, ChannelType.VOICE, "quiet", null, null, null, List.of());
         try {
             assertThrows(ApiException.class, () ->
-                channels.update(OWNER, channel.id(), new ChannelService.Changes("loud", null, 999_000, null, null)));
-            assertEquals(List.of(new ChannelEvent.Created(channel.id(), OWNER.accountId(), ChannelType.VOICE, "quiet")),
+                channels.update(owner, channel.id(), new ChannelService.Changes("loud", null, 999_000, null, null)));
+            assertEquals(List.of(new ChannelEvent.Created(channel.id(), owner.accountId(), ChannelType.VOICE, "quiet")),
                 recorded.about(channel.id()));
         } finally {
-            channels.delete(OWNER, channel.id());
+            channels.delete(owner, channel.id());
         }
     }
 }

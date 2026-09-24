@@ -142,6 +142,7 @@
                                 <schemaMapping>InviteCode=InviteCode</schemaMapping>
                                 <schemaMapping>RoleId=RoleId</schemaMapping>
                                 <schemaMapping>ChannelId=ChannelId</schemaMapping>
+                                <schemaMapping>MessageId=MessageId</schemaMapping>
                             </schemaMappings>
                             <typeMappings>
                                 <typeMapping>DateTime=Instant</typeMapping>
@@ -157,6 +158,7 @@
                                 <importMapping>InviteCode=app.snatter.server.invite.InviteCode</importMapping>
                                 <importMapping>RoleId=app.snatter.server.role.RoleId</importMapping>
                                 <importMapping>ChannelId=app.snatter.server.channel.ChannelId</importMapping>
+                                <importMapping>MessageId=app.snatter.server.message.MessageId</importMapping>
                             </importMappings>
                             <configOptions>
                                 <library>quarkus</library>
@@ -173,10 +175,15 @@
                                 <!-- Absent arrays must arrive as null so partial updates can tell
                                      "unchanged" from "set to empty". -->
                                 <containerDefaultToNull>true</containerDefaultToNull>
+                                <!-- oneOf with a discriminator becomes a sealed interface with final
+                                     implementations, so Java code can switch over it exhaustively. -->
+                                <useOneOfInterfaces>true</useOneOfInterfaces>
+                                <useSealed>true</useSealed>
                                 <dateLibrary>java8</dateLibrary>
                                 <!-- Response DTOs travel inside Response.entity(), where Quarkus
                                      cannot see them, so register every model for native reflection. -->
                                 <additionalModelTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalModelTypeAnnotations>
+                                <additionalOneOfTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalOneOfTypeAnnotations>
                                 <generatePom>false</generatePom>
                                 <sourceFolder>src/main/java</sourceFolder>
                             </configOptions>

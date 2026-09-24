@@ -1,10 +1,17 @@
 package app.snatter.server.settings;
 
 import app.snatter.server.account.AccountId;
+import app.snatter.server.api.ApiException;
+import app.snatter.server.channel.Channel;
+import app.snatter.server.channel.ChannelEvent;
+import app.snatter.server.channel.ChannelRepository;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
+import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.event.TransactionPhase;
 import jakarta.transaction.Transactional;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -16,16 +23,18 @@ import java.util.concurrent.atomic.AtomicReference;
 @Startup
 public class ServerSettingsService {
 
-    /** Fired after settings have been updated. */
-    public record Changed(ServerSettings settings) {
+    /** Fired inside the transaction that updated the settings. */
+    public record Changed(ServerSettings before, ServerSettings after, AccountId actor) {
     }
 
     private final ServerSettingsRepository repository;
+    private final ChannelRepository channels;
     private final Event<Changed> changed;
     private final AtomicReference<ServerSettings> current = new AtomicReference<>();
 
-    public ServerSettingsService(ServerSettingsRepository repository, Event<Changed> changed) {
+    public ServerSettingsService(ServerSettingsRepository repository, ChannelRepository channels, Event<Changed> changed) {
         this.repository = repository;
+        this.channels = channels;
         this.changed = changed;
         this.current.set(repository.get());
     }
@@ -35,11 +44,19 @@ public class ServerSettingsService {
     }
 
     @Transactional
-    public ServerSettings update(ServerSettings settings) {
+    public ServerSettings update(AccountId actor, ServerSettings settings) {
+        ServerSettings before = current();
+        if (settings.systemChannelId() != null && !settings.systemChannelId().equals(before.systemChannelId())) {
+            Channel channel = channels.find(settings.systemChannelId())
+                .orElseThrow(() -> ApiException.badRequest("channel_not_found", "No such channel"));
+            if (!channel.type().hasMessages()) {
+                throw ApiException.badRequest("voice_only_channel", "Notices need a channel with messages");
+            }
+        }
         repository.update(settings);
         ServerSettings fresh = repository.get();
         current.set(fresh);
-        changed.fire(new Changed(fresh));
+        changed.fire(new Changed(before, fresh, actor));
         return fresh;
     }
 
@@ -51,5 +68,12 @@ public class ServerSettingsService {
             current.set(repository.get());
         }
         return claimed;
+    }
+
+    /** Deleting the system channel clears the setting in the database; follow suit. */
+    void onChannelDeleted(@Observes(during = TransactionPhase.AFTER_SUCCESS) ChannelEvent.Deleted deleted) {
+        if (Objects.equals(deleted.channelId(), current().systemChannelId())) {
+            current.set(repository.get());
+        }
     }
 }

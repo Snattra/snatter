@@ -18,12 +18,13 @@ splitting by technical layer:
 | `invite`      | Invite links and their redemption                    |
 | `role`        | Permissions, roles, assignment, hierarchy rules      |
 | `channel`     | Channels, ordering, overwrites, channel permissions  |
+| `message`     | Messages, replies, paging, system notices            |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
 | `persistence` | JDBI producer and small JDBC helpers                 |
 
-Planned: `gateway`, `message`, `media`.
+Planned: `gateway`, `media`.
 
 ## Database
 
@@ -40,7 +41,8 @@ Planned: `gateway`, `message`, `media`.
 - **Timestamps** are `TIMESTAMPTZ` in the database and `Instant` in Java. Use
   the helpers in `persistence.Rows` to read them.
 - **Ids** are UUID version 7 wrapped in typed records such as `AccountId`;
-  see "Typed identifiers" below.
+  see "Typed identifiers" below. `persistence.Ids` makes them strictly
+  increasing within the process, so they also order rows such as messages.
 
 ## Identity and authentication
 
@@ -201,9 +203,68 @@ may stay in an overwrite they edit, but they cannot add, flip or remove them.
 
 **Events.** `ChannelService` fires `ChannelEvent`s (`Created`, `Renamed`,
 `TopicChanged`, `Deleted`) synchronously inside the transaction that made the
-change. Nothing observes them yet; system notices in a channel's messages
-and pushes over the gateway will be observers, so a notice commits or rolls
-back together with its change.
+change. `message.SystemNotices` observes them to write system messages, so a
+notice commits or rolls back together with its change; the gateway will push
+them the same way.
+
+## Messages
+
+A message (`message` table) belongs to a channel whose type keeps messages;
+every message operation on a voice-only channel fails with
+`voice_only_channel`. `Message` is a sealed interface: a `UserMessage` has
+content and may reply to another message, a `SystemMessage` carries a
+`SystemNotice`, itself sealed with one record per notice type holding exactly
+that notice's values. In the table the kind is the `kind` column and a
+notice is `system_type` plus its values in `system_data` (JSONB);
+`MessageRepository` is the only place that knows these names. Clients render
+notice text from the type, so it can be translated, and must show unknown
+types generically.
+
+**Content** is at most 4000 characters, trimmed, and never blank. It is plain
+text that clients render as Markdown. Mentions are tokens in the text,
+`<@accountId>`, `<@&roleId>` and `<#channelId>`, so a later notification
+feature can find them without any stored message changing format.
+
+**Order and paging.** Message ids are UUID version 7 from `persistence.Ids`,
+which are strictly increasing within the server process (a counter follows
+the millisecond timestamp), so the id alone orders a channel's messages and
+is the paging cursor. `GET .../messages` returns pages oldest first: the
+latest `limit` messages, the ones just `before` an id when scrolling back, or
+the ones just `after` an id when catching up. A deleted message still works
+as a cursor.
+
+**Replies** store `reply_to_id` without a foreign key, so a reply keeps
+pointing at a deleted message; the response then has `replyToId` and a null
+`replyTo` preview. Only a user message in the same channel can be replied to
+(`invalid_reply`).
+
+**Editing and deleting.** Authors edit their own user messages; only the new
+text is kept, with `edited_at` set. Deletion is permanent. Authors delete
+their own user messages, and `MANAGE_MESSAGES` in the channel deletes any
+message there, notices included. When an account is deleted its messages stay
+with a null author.
+
+**System notices** are written by `message.SystemNotices`, which observes
+`ChannelEvent`, `AccountEvent` and `ServerSettingsService.Changed` inside the
+transaction that made the change:
+
+| Notice                      | Where               | Author                |
+|-----------------------------|---------------------|-----------------------|
+| `channel_created`           | the new channel     | who created it        |
+| `channel_renamed`           | the channel         | who renamed it        |
+| `channel_topic_changed`     | the channel         | who changed it        |
+| `member_joined`             | the system channel  | the new member        |
+| `server_renamed`            | the system channel  | the owner             |
+| `registration_mode_changed` | the system channel  | the owner             |
+
+The system channel is the `systemChannelId` server setting, the seeded
+`general` channel on a new server. It must be a channel with messages;
+setting it to an empty string turns server-wide notices off, and deleting the
+channel does the same.
+
+`createMessage` accepts a client-chosen `nonce` and returns it with the
+stored message, so a client can replace its pending copy. The gateway will
+echo it the same way.
 
 ## Registration policy
 
@@ -280,6 +341,13 @@ Conventions that follow from this:
   the body type is checked by the compiler while status and headers stay
   under the resource's control. Binary bodies are `InputStream` in both
   directions.
+- **Unions are sealed.** A schema with several shapes is a `oneOf` with a
+  `discriminator` and a `mapping` (for example `Message` on `kind`,
+  `SystemNotice` on `type`), shared properties coming from an `allOf` base.
+  The generator (`useOneOfInterfaces`, `useSealed`) turns it into a sealed
+  DTO interface with a final class per shape, and Jackson writes the
+  discriminator from the class, so resources never set it. Model the domain
+  as a matching sealed interface and map with an exhaustive `switch`.
 - **Partial updates** use `*Update` schemas where every field is optional.
   Generated DTOs leave absent arrays `null` (`containerDefaultToNull`), so a
   null field means "unchanged" and an empty array means "set to empty".
@@ -332,6 +400,11 @@ that produces it.
 | DELETE | `/channels/{id}/overwrites/roles/{roleId}` | MANAGE_ROLES in channel | Remove a role overwrite |
 | PUT    | `/channels/{id}/overwrites/accounts/{accountId}` | MANAGE_ROLES in channel | Set a member overwrite; empty removes |
 | DELETE | `/channels/{id}/overwrites/accounts/{accountId}` | MANAGE_ROLES in channel | Remove a member overwrite |
+| GET    | `/channels/{id}/messages` | yes | A page of messages, oldest first; `before`, `after`, `limit` |
+| POST   | `/channels/{id}/messages` | SEND_MESSAGES in channel | Send a message, optionally as a reply |
+| GET    | `/channels/{id}/messages/{messageId}` | yes | One message |
+| PATCH  | `/channels/{id}/messages/{messageId}` | author | Edit your own message |
+| DELETE | `/channels/{id}/messages/{messageId}` | author or MANAGE_MESSAGES in channel | Delete a message |
 | GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
 Error codes so far: `validation_failed`, `username_taken`, `registration_closed`,
@@ -339,6 +412,7 @@ Error codes so far: `validation_failed`, `username_taken`, `registration_closed`
 `invite_invalid`, `invite_not_found`, `invite_unusable`, `role_not_found`,
 `role_hierarchy`, `permission_escalation`, `default_role`,
 `channel_not_found`, `not_a_voice_channel`, `bitrate_too_high`, `invalid_overwrite`,
+`voice_only_channel`, `message_not_found`, `invalid_reply`, `invalid_paging`,
 `invalid_credentials`, `account_not_found`, `blob_not_found`,
 `unsupported_image`, `image_dimensions`, `image_too_large`.
 

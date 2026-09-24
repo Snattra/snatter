@@ -33,6 +33,8 @@ tags:
     description: Roles bundle permissions and are assigned to members
   - name: channels
     description: Text and voice channels and their permission overwrites
+  - name: messages
+    description: Messages and system notices in text channels
 
 paths:
   /api/v1/server-info:
@@ -954,6 +956,201 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/channels/{id}/messages:
+    get:
+      tags: [messages]
+      operationId: listMessages
+      summary: Read a channel's messages
+      description: |
+        A page of messages in chronological order, oldest first. Without a
+        cursor it is the latest `limit` messages; with `before` the `limit`
+        messages just before that one, for scrolling back; with `after` the
+        `limit` messages just after it, for catching up. `before` and `after`
+        cannot be combined (`invalid_paging`). The cursor message need not
+        exist any more. Voice-only channels have no messages
+        (`voice_only_channel`).
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+        - name: before
+          in: query
+          schema:
+            $ref: "#/components/schemas/MessageId"
+        - name: after
+          in: query
+          schema:
+            $ref: "#/components/schemas/MessageId"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Messages, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [messages]
+      operationId: createMessage
+      summary: Send a message
+      description: |
+        Requires `SEND_MESSAGES` in the channel. A reply must refer to a
+        user message in the same channel (`invalid_reply`). Voice-only
+        channels have no messages (`voice_only_channel`).
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageCreate"
+      responses:
+        "201":
+          description: The message, with the request's `nonce`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/channels/{id}/messages/{messageId}:
+    get:
+      tags: [messages]
+      operationId: getMessage
+      summary: Fetch one message
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/MessageId"
+      responses:
+        "200":
+          description: The message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [messages]
+      operationId: editMessage
+      summary: Edit a message
+      description: |
+        Only the author may edit, and only user messages (`forbidden`). The
+        previous text is not kept; `editedAt` records that it changed.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/MessageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageUpdate"
+      responses:
+        "200":
+          description: The edited message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [messages]
+      operationId: deleteMessage
+      summary: Delete a message
+      description: |
+        The author may delete their own user messages; `MANAGE_MESSAGES` in
+        the channel allows deleting any message, system notices included.
+        Deletion is permanent. Replies to it keep `replyToId` but get a null
+        `replyTo`.
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/MessageId"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/blobs/{id}:
     get:
       tags: [blobs]
@@ -1058,6 +1255,225 @@ components:
       type: string
       format: uuid
       description: Identifies a channel on this server
+
+    MessageId:
+      type: string
+      format: uuid
+      description: |
+        Identifies a message. Ids increase with time, so they order messages
+        and serve as paging cursors.
+
+    MessageReference:
+      type: object
+      required: [id]
+      description: The message replied to, enough to show a preview
+      properties:
+        id:
+          $ref: "#/components/schemas/MessageId"
+        authorId:
+          allOf:
+            - $ref: "#/components/schemas/AccountId"
+          nullable: true
+        content:
+          type: string
+
+    Message:
+      description: |
+        A message in a channel, told apart by `kind`: `user` for a member's
+        message, `system` for a notice the server wrote about something that
+        happened.
+      oneOf:
+        - $ref: "#/components/schemas/UserMessage"
+        - $ref: "#/components/schemas/SystemMessage"
+      discriminator:
+        propertyName: kind
+        mapping:
+          user: "#/components/schemas/UserMessage"
+          system: "#/components/schemas/SystemMessage"
+
+    MessageBase:
+      type: object
+      description: What every kind of message has
+      required: [kind, id, channelId, createdAt]
+      properties:
+        kind:
+          type: string
+          description: "`user` or `system`"
+        id:
+          $ref: "#/components/schemas/MessageId"
+        channelId:
+          $ref: "#/components/schemas/ChannelId"
+        authorId:
+          allOf:
+            - $ref: "#/components/schemas/AccountId"
+          nullable: true
+          description: |
+            The writer, or for a notice the member who caused it. Null once
+            that account is deleted.
+        createdAt:
+          type: string
+          format: date-time
+
+    UserMessage:
+      allOf:
+        - $ref: "#/components/schemas/MessageBase"
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: string
+              description: |
+                Plain text with Markdown formatting rendered by clients.
+                Mentions are tokens in the text: `<@accountId>` for a member,
+                `<@&roleId>` for a role and `<#channelId>` for a channel.
+            replyToId:
+              allOf:
+                - $ref: "#/components/schemas/MessageId"
+              nullable: true
+              description: The message this replies to, kept after that message is deleted
+            replyTo:
+              allOf:
+                - $ref: "#/components/schemas/MessageReference"
+              nullable: true
+              description: Preview of the message replied to; null if there is none or it was deleted
+            nonce:
+              type: string
+              nullable: true
+              description: The sender's `nonce`, only in the response to sending it
+            editedAt:
+              type: string
+              format: date-time
+              nullable: true
+
+    SystemMessage:
+      allOf:
+        - $ref: "#/components/schemas/MessageBase"
+        - type: object
+          required: [notice]
+          properties:
+            notice:
+              $ref: "#/components/schemas/SystemNotice"
+
+    SystemNotice:
+      description: |
+        What a system message is about, told apart by `type`. Channel notices
+        appear in the channel concerned, the others in the server's system
+        channel. Clients render the text themselves so it can be translated,
+        and should show types they do not know generically, as new ones will
+        be added.
+      oneOf:
+        - $ref: "#/components/schemas/ChannelCreatedNotice"
+        - $ref: "#/components/schemas/ChannelRenamedNotice"
+        - $ref: "#/components/schemas/ChannelTopicChangedNotice"
+        - $ref: "#/components/schemas/MemberJoinedNotice"
+        - $ref: "#/components/schemas/ServerRenamedNotice"
+        - $ref: "#/components/schemas/RegistrationModeChangedNotice"
+      discriminator:
+        propertyName: type
+        mapping:
+          channel_created: "#/components/schemas/ChannelCreatedNotice"
+          channel_renamed: "#/components/schemas/ChannelRenamedNotice"
+          channel_topic_changed: "#/components/schemas/ChannelTopicChangedNotice"
+          member_joined: "#/components/schemas/MemberJoinedNotice"
+          server_renamed: "#/components/schemas/ServerRenamedNotice"
+          registration_mode_changed: "#/components/schemas/RegistrationModeChangedNotice"
+
+    ChannelCreatedNotice:
+      type: object
+      description: The channel was created by the author
+      required: [type]
+      properties:
+        type:
+          type: string
+
+    ChannelRenamedNotice:
+      type: object
+      description: The author renamed the channel
+      required: [type, from, to]
+      properties:
+        type:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+
+    ChannelTopicChangedNotice:
+      type: object
+      description: The author set, changed or cleared the channel's topic
+      required: [type]
+      properties:
+        type:
+          type: string
+        from:
+          type: string
+          nullable: true
+          description: Null when there was no topic
+        to:
+          type: string
+          nullable: true
+          description: Null when the topic was cleared
+
+    MemberJoinedNotice:
+      type: object
+      description: The author registered on the server
+      required: [type]
+      properties:
+        type:
+          type: string
+
+    ServerRenamedNotice:
+      type: object
+      description: The author renamed the community
+      required: [type, from, to]
+      properties:
+        type:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+
+    RegistrationModeChangedNotice:
+      type: object
+      description: The author changed who may register
+      required: [type, from, to]
+      properties:
+        type:
+          type: string
+        from:
+          $ref: "#/components/schemas/RegistrationMode"
+        to:
+          $ref: "#/components/schemas/RegistrationMode"
+
+    MessageCreate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: '^\s*\S[\s\S]*$'
+          description: See `Message.content`. Surrounding whitespace is removed.
+        replyToId:
+          $ref: "#/components/schemas/MessageId"
+        nonce:
+          type: string
+          maxLength: 64
+          description: |
+            Chosen by the client and returned with the message, so a client can
+            match its pending message to the stored one.
+
+    MessageUpdate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          pattern: '^\s*\S[\s\S]*$'
 
     Permission:
       type: string
@@ -1489,6 +1905,14 @@ components:
           description: Require a proof-of-work challenge on registration
         rateLimits:
           $ref: "#/components/schemas/RateLimits"
+        systemChannelId:
+          allOf:
+            - $ref: "#/components/schemas/ChannelId"
+          nullable: true
+          description: |
+            Channel that receives server-wide notices such as members joining
+            or the registration mode changing; null for none. Deleting the
+            channel turns them off.
 
     ServerSettingsUpdate:
       type: object
@@ -1513,6 +1937,14 @@ components:
           type: boolean
         rateLimits:
           $ref: "#/components/schemas/RateLimits"
+        systemChannelId:
+          type: string
+          pattern: '^$|^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          description: |
+            Id of a text or voice-and-text channel for server-wide notices; an
+            empty string turns them off. An unknown channel is rejected
+            (`channel_not_found`), and so is a voice-only one
+            (`voice_only_channel`).
 
     Challenge:
       type: object

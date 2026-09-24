@@ -37,7 +37,7 @@ class ChannelPermissionsTest {
     }
 
     private static Channel channel(PermissionOverwrite... overwrites) {
-        return new Channel(ChannelId.newId(), ChannelType.VOICE_TEXT, "c", null, 0, 64000, 0,
+        return new Channel(ChannelId.newId(), ChannelType.VOICE_TEXT, "c", null, 0, new VoiceSettings(64000, 0),
             List.of(overwrites), Instant.now(), Instant.now());
     }
 

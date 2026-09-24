@@ -79,8 +79,9 @@ public class ChannelService {
             name.strip(),
             blankToNull(topic),
             0,
-            type.hasVoice() ? Objects.requireNonNullElse(bitrate, voice.newChannelBitrate()) : null,
-            type.hasVoice() ? Objects.requireNonNullElse(userLimit, 0) : null,
+            type.hasVoice()
+                ? new VoiceSettings(Objects.requireNonNullElse(bitrate, voice.newChannelBitrate()), Objects.requireNonNullElse(userLimit, 0))
+                : null,
             List.of(),
             now,
             now);
@@ -116,10 +117,10 @@ public class ChannelService {
             after = after.withTopic(blankToNull(changes.topic()));
         }
         if (changes.bitrate() != null) {
-            after = after.withBitrate(changes.bitrate());
+            after = after.withVoice(after.voice().withBitrate(changes.bitrate()));
         }
         if (changes.userLimit() != null) {
-            after = after.withUserLimit(changes.userLimit());
+            after = after.withVoice(after.voice().withUserLimit(changes.userLimit()));
         }
         if (!after.equals(before)) {
             channels.update(after);
