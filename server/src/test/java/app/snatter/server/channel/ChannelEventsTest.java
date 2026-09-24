@@ -30,7 +30,7 @@ class ChannelEventsTest {
     @Test
     void changesThatBecomeNoticesAreFired() {
         AccountId actor = OWNER.accountId();
-        Channel channel = channels.create(OWNER, ChannelType.TEXT, "events", null, null, null);
+        Channel channel = channels.create(OWNER, ChannelType.TEXT, "events", null, null, null, List.of());
         ChannelId id = channel.id();
 
         channels.update(OWNER, id, new ChannelService.Changes("renamed", "a topic", null, null, null));
@@ -47,7 +47,7 @@ class ChannelEventsTest {
 
     @Test
     void rejectedChangesFireNothing() {
-        Channel channel = channels.create(OWNER, ChannelType.VOICE, "quiet", null, null, null);
+        Channel channel = channels.create(OWNER, ChannelType.VOICE, "quiet", null, null, null, List.of());
         try {
             assertThrows(ApiException.class, () ->
                 channels.update(OWNER, channel.id(), new ChannelService.Changes("loud", null, 999_000, null, null)));

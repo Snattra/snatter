@@ -660,6 +660,14 @@ paths:
         `bitrate` and `userLimit` are rejected for text channels
         (`not_a_voice_channel`), and so is a bitrate above
         `ServerInfo.voice.maxBitrate` (`bitrate_too_high`).
+
+        `overwrites` are applied in the same transaction, so a private
+        channel is never visible to anyone else, not even briefly. Giving
+        any requires `MANAGE_ROLES` too, and they follow the rules of
+        setting an overwrite, judged against the caller's permissions in the
+        new channel before any overwrite applies. Each role or member may
+        appear once and exactly one of `roleId` and `accountId` must be set
+        (`invalid_overwrite`).
       security:
         - session: []
       requestBody:
@@ -1156,6 +1164,11 @@ components:
           minimum: 0
           maximum: 99
           description: Voice channels only; defaults to 0, no limit
+        overwrites:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionOverwrite"
+          description: Initial overwrites, for example to create a private channel
 
     ChannelUpdate:
       type: object

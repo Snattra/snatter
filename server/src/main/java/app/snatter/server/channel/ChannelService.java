@@ -12,6 +12,7 @@ import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -60,12 +61,19 @@ public class ChannelService {
         return ChannelPermissions.of(member, requireVisible(member, id));
     }
 
-    /** Needs server-level {@code MANAGE_CHANNELS}, checked by the caller. */
+    /**
+     * Needs server-level {@code MANAGE_CHANNELS}, checked by the caller. The
+     * overwrites are stored in the same transaction, so the channel is never
+     * visible without them. Each is judged against the actor's permissions in
+     * the new channel before any overwrite applies, so that denying everyone
+     * a permission does not stop the actor from granting it to others.
+     */
     @Transactional
-    public Channel create(AccountPrincipal actor, ChannelType type, String name, String topic, Integer bitrate, Integer userLimit) {
+    public Channel create(AccountPrincipal actor, ChannelType type, String name, String topic, Integer bitrate,
+                          Integer userLimit, List<PermissionOverwrite> overwrites) {
         requireVoiceSettingsFit(type, bitrate, userLimit);
         Instant now = Instant.now();
-        Channel channel = channels.insertLast(new Channel(
+        Channel channel = new Channel(
             ChannelId.newId(),
             type,
             name.strip(),
@@ -75,9 +83,23 @@ public class ChannelService {
             type.hasVoice() ? Objects.requireNonNullElse(userLimit, 0) : null,
             List.of(),
             now,
-            now));
+            now);
+
+        Set<Permission> held = ChannelPermissions.of(actor, channel);
+        Set<PermissionOverwrite> targets = new HashSet<>();
+        for (PermissionOverwrite overwrite : overwrites) {
+            if (!targets.add(overwrite.cleared())) {
+                throw ApiException.badRequest("invalid_overwrite", "Each role or member may have only one overwrite");
+            }
+            requireMayChange(actor, held, overwrite.cleared(), overwrite);
+        }
+
+        channel = channels.insertLast(channel);
+        for (PermissionOverwrite overwrite : overwrites) {
+            channels.saveOverwrite(channel.id(), overwrite);
+        }
         events.fire(new ChannelEvent.Created(channel.id(), actor.accountId(), channel.type(), channel.name()));
-        return channel;
+        return overwrites.isEmpty() ? channel : requireExisting(channel.id());
     }
 
     @Transactional
@@ -130,19 +152,26 @@ public class ChannelService {
     @Transactional
     public Channel setOverwrite(AccountPrincipal actor, ChannelId id, PermissionOverwrite overwrite) {
         Channel channel = requireVisible(actor, id);
-        Set<Permission> held = ChannelPermissions.of(actor, channel);
+        PermissionOverwrite current = channel.overwriteFor(overwrite).orElse(overwrite.cleared());
+        requireMayChange(actor, ChannelPermissions.of(actor, channel), current, overwrite);
+        channels.saveOverwrite(id, overwrite);
+        return requireExisting(id);
+    }
+
+    /**
+     * Whether the actor, holding {@code held} in the channel, may replace
+     * {@code current} with {@code replacement} for the same role or member.
+     */
+    private void requireMayChange(AccountPrincipal actor, Set<Permission> held,
+                                  PermissionOverwrite current, PermissionOverwrite replacement) {
         if (!held.contains(Permission.MANAGE_ROLES)) {
             throw new ApiException(403, "forbidden", "You need MANAGE_ROLES in this channel to change its overwrites");
         }
-        requireValid(overwrite);
-        requireTargetBelow(actor, overwrite);
-
-        PermissionOverwrite current = channel.overwriteFor(overwrite).orElse(overwrite.cleared());
-        if (!actor.owner() && !held.containsAll(changed(current, overwrite))) {
+        requireValid(replacement);
+        requireTargetBelow(actor, replacement);
+        if (!actor.owner() && !held.containsAll(changed(current, replacement))) {
             throw new ApiException(403, "permission_escalation", "You can only change permissions you hold in this channel");
         }
-        channels.saveOverwrite(id, overwrite);
-        return requireExisting(id);
     }
 
     private void requireTargetBelow(AccountPrincipal actor, PermissionOverwrite target) {

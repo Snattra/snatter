@@ -349,4 +349,83 @@ class ChannelResourceTest {
                 .delete("/api/v1/accounts/" + admin.id() + "/roles/" + adminRole).then().statusCode(204);
         }
     }
+
+    private static Map<String, Object> forRole(String role, List<String> allow, List<String> deny) {
+        return Map.of("roleId", role, "allow", allow, "deny", deny);
+    }
+
+    private static Map<String, Object> forAccount(String account, List<String> allow, List<String> deny) {
+        return Map.of("accountId", account, "allow", allow, "deny", deny);
+    }
+
+    @Test
+    void privateChannelsAreCreatedPrivateInOneStep() {
+        String everyone = TestUsers.defaultRoleId();
+        // A manager below the top: denying everyone first must not stop them letting themselves in.
+        String manager = TestUsers.createRole("Creator " + UUID.randomUUID(), "MANAGE_CHANNELS", "MANAGE_ROLES");
+        TestUsers.User mgr = TestUsers.register();
+        TestUsers.assignRole(mgr.id(), manager);
+        TestUsers.User friend = TestUsers.register();
+        String channel = null;
+        try {
+            channel = create(mgr.token(), Map.of("type", "voice_text", "name", "secret", "overwrites", List.of(
+                    forRole(everyone, List.of(), List.of("VIEW_CHANNELS")),
+                    forAccount(mgr.id(), List.of("VIEW_CHANNELS"), List.of()),
+                    forAccount(friend.id(), List.of("VIEW_CHANNELS"), List.of()))))
+                .then().statusCode(201)
+                .body("overwrites.size()", equalTo(3))
+                .body("overwrites.find { it.roleId == '" + everyone + "' }.deny", contains("VIEW_CHANNELS"))
+                .extract().path("id");
+
+            assertEquals(true, visibleIds(mgr.token()).contains(channel));
+            assertEquals(true, visibleIds(friend.token()).contains(channel));
+            assertEquals(false, visibleIds(TestUsers.register().token()).contains(channel));
+        } finally {
+            if (channel != null) {
+                deleteChannel(channel);
+            }
+            TestUsers.deleteRole(manager);
+        }
+    }
+
+    @Test
+    void creationOverwritesFollowTheOverwriteRulesAndLeaveNothingBehindOnFailure() {
+        String owner = TestUsers.ownerToken();
+        String everyone = TestUsers.defaultRoleId();
+        String senior = TestUsers.createRole("Senior " + UUID.randomUUID());
+        String channelsOnly = TestUsers.createRole("Builder " + UUID.randomUUID(), "MANAGE_CHANNELS");
+        String manager = TestUsers.createRole("Manager " + UUID.randomUUID(), "MANAGE_CHANNELS", "MANAGE_ROLES");
+        TestUsers.User builder = TestUsers.register();
+        TestUsers.assignRole(builder.id(), channelsOnly);
+        TestUsers.User mgr = TestUsers.register();
+        TestUsers.assignRole(mgr.id(), manager);
+        int before = visibleIds(owner).size();
+        try {
+            List<String> hide = List.of("VIEW_CHANNELS");
+            create(builder.token(), Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(everyone, List.of(), hide))))
+                .then().statusCode(403).body("error", equalTo("forbidden"));
+            create(mgr.token(), Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(senior, List.of(), hide))))
+                .then().statusCode(403).body("error", equalTo("role_hierarchy"));
+            create(mgr.token(), Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(everyone, List.of("MUTE_MEMBERS"), List.of()))))
+                .then().statusCode(403).body("error", equalTo("permission_escalation"));
+            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(
+                    forRole(everyone, List.of(), hide), forRole(everyone, List.of("SPEAK"), List.of()))))
+                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
+            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(
+                    Map.of("roleId", everyone, "accountId", mgr.id(), "allow", List.of(), "deny", hide))))
+                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
+            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(Map.of("allow", List.of(), "deny", hide))))
+                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
+            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(everyone, List.of("BAN_MEMBERS"), List.of()))))
+                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
+            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(UUID.randomUUID().toString(), List.of(), hide))))
+                .then().statusCode(404).body("error", equalTo("role_not_found"));
+
+            assertEquals(before, visibleIds(owner).size(), "rejected creations leave no channel behind");
+        } finally {
+            TestUsers.deleteRole(senior);
+            TestUsers.deleteRole(channelsOnly);
+            TestUsers.deleteRole(manager);
+        }
+    }
 }

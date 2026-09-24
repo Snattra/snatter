@@ -182,6 +182,11 @@ means editing its overwrites.
 `ChannelService` treats a channel the caller cannot view as nonexistent
 (`channel_not_found`). A private channel is an overwrite denying
 `VIEW_CHANNELS` to the default role plus one allowing it to a role or member.
+Create it with those overwrites in the create request, which stores them in
+the same transaction, so the channel is never visible to anyone else. Such
+overwrites are checked like any other, against the creator's permissions in
+the new channel before any of them applies, so denying everyone first does
+not stop the creator from letting themselves or others in.
 A **channel moderator** is a member (or role) whose overwrite allows
 moderation permissions such as `MANAGE_MESSAGES`, `MUTE_MEMBERS` and
 `MOVE_MEMBERS`, and perhaps `MANAGE_CHANNELS`, in that channel; clients may
@@ -318,7 +323,7 @@ that produces it.
 | DELETE | `/accounts/{id}/roles/{roleId}` | MANAGE_ROLES | Remove a role         |
 | GET    | `/accounts/me/permissions` | yes | Effective permissions of the caller |
 | GET    | `/channels`          | yes  | Channels the caller can see, in order     |
-| POST   | `/channels`          | MANAGE_CHANNELS | Create a channel at the bottom |
+| POST   | `/channels`          | MANAGE_CHANNELS | Create a channel at the bottom, optionally with overwrites (then also MANAGE_ROLES) |
 | GET    | `/channels/{id}`     | yes  | One visible channel with its overwrites   |
 | PATCH  | `/channels/{id}`     | MANAGE_CHANNELS in channel | Rename, topic, voice settings, position |
 | DELETE | `/channels/{id}`     | MANAGE_CHANNELS in channel | Delete a channel    |
