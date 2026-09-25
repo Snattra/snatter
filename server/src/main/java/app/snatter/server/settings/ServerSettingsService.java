@@ -5,6 +5,7 @@ import app.snatter.server.api.ApiException;
 import app.snatter.server.channel.Channel;
 import app.snatter.server.channel.ChannelEvent;
 import app.snatter.server.channel.ChannelRepository;
+import app.snatter.server.role.RoleRepository;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -29,12 +30,15 @@ public class ServerSettingsService {
 
     private final ServerSettingsRepository repository;
     private final ChannelRepository channels;
+    private final RoleRepository roles;
     private final Event<Changed> changed;
     private final AtomicReference<ServerSettings> current = new AtomicReference<>();
 
-    public ServerSettingsService(ServerSettingsRepository repository, ChannelRepository channels, Event<Changed> changed) {
+    public ServerSettingsService(ServerSettingsRepository repository, ChannelRepository channels, RoleRepository roles,
+                                 Event<Changed> changed) {
         this.repository = repository;
         this.channels = channels;
+        this.roles = roles;
         this.changed = changed;
         this.current.set(repository.get());
     }
@@ -52,6 +56,9 @@ public class ServerSettingsService {
             if (!channel.type().hasMessages()) {
                 throw ApiException.badRequest("voice_only_channel", "Notices need a channel with messages");
             }
+        }
+        if (settings.newMemberRoleId() != null && roles.find(settings.newMemberRoleId()).isEmpty()) {
+            throw ApiException.badRequest("role_not_found", "No such role");
         }
         repository.update(settings);
         ServerSettings fresh = repository.get();

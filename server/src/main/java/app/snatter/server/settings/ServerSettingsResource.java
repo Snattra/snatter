@@ -10,6 +10,7 @@ import app.snatter.api.model.ServerSettingsUpdateDto;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.ChannelId;
+import app.snatter.server.role.RoleId;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.PermissionsAllowed;
 import java.time.Duration;
@@ -68,6 +69,9 @@ public class ServerSettingsResource implements ServerApi {
         if (update.getSystemChannelId() != null) {
             s = s.withSystemChannelId(update.getSystemChannelId().isEmpty() ? null : ChannelId.fromString(update.getSystemChannelId()));
         }
+        if (update.getNewMemberRoleId() != null) {
+            s = s.withNewMemberRoleId(update.getNewMemberRoleId().isEmpty() ? null : RoleId.fromString(update.getNewMemberRoleId()));
+        }
         return RestResponse.ok(toDto(settings.update(actor(), s)));
     }
 
@@ -84,7 +88,8 @@ public class ServerSettingsResource implements ServerApi {
                 .register(toDto(s.rateLimits().register()))
                 .challenge(toDto(s.rateLimits().challenge()))
                 .invite(toDto(s.rateLimits().invite())))
-            .systemChannelId(s.systemChannelId());
+            .systemChannelId(s.systemChannelId())
+            .newMemberRoleId(s.newMemberRoleId());
     }
 
     private static RateLimitPolicyDto toDto(RateLimitPolicy p) {

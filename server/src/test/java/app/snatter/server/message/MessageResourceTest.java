@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
@@ -175,43 +176,41 @@ class MessageResourceTest {
     }
 
     @Test
-    void channelPermissionsGovernReadingSendingAndModerating() {
+    void rolesGovernReadingSendingAndModerating() {
         String owner = TestUsers.ownerToken();
-        String everyone = TestUsers.defaultRoleId();
-        String readOnly = createChannel("text", "announcements");
-        String hidden = createChannel("text", "hidden");
+        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
+        String channel = createChannel("text", "moderated");
+        String hidden = as(owner).body(Map.of("type", "text", "name", "hidden", "requiredRoleIds", List.of(crew)))
+            .post("/api/v1/channels").then().statusCode(201).extract().path("id");
         TestUsers.User member = TestUsers.register();
-        TestUsers.User mod = TestUsers.register();
+        TestUsers.User mod = TestUsers.registerWithPermissions("MANAGE_MESSAGES");
         try {
-            as(owner).body(Map.of("allow", List.of(), "deny", List.of("SEND_MESSAGES")))
-                .put("/api/v1/channels/" + readOnly + "/overwrites/roles/" + everyone).then().statusCode(200);
-            as(owner).body(Map.of("allow", List.of(), "deny", List.of("VIEW_CHANNELS")))
-                .put("/api/v1/channels/" + hidden + "/overwrites/roles/" + everyone).then().statusCode(200);
-            as(owner).body(Map.of("allow", List.of("MANAGE_MESSAGES"), "deny", List.of()))
-                .put("/api/v1/channels/" + readOnly + "/overwrites/accounts/" + mod.id()).then().statusCode(200);
-
-            String announcement = send(owner, readOnly, "patch notes");
-            list(member.token(), readOnly, "").then().statusCode(200).body("[-1].id", equalTo(announcement));
-            send(member.token(), readOnly, Map.of("content", "first!")).then().statusCode(403).body("error", equalTo("forbidden"));
-
             list(member.token(), hidden, "").then().statusCode(404).body("error", equalTo("channel_not_found"));
             send(member.token(), hidden, Map.of("content", "hello?")).then().statusCode(404);
 
             list(member.token(), GENERAL_VOICE, "").then().statusCode(400).body("error", equalTo("voice_only_channel"));
             send(member.token(), GENERAL_VOICE, Map.of("content", "hello?")).then().statusCode(400).body("error", equalTo("voice_only_channel"));
 
-            // The channel's moderator may delete anyone's messages and notices there, but not edit them.
-            String notice = list(mod.token(), readOnly, "").then().extract().path("[0].id");
-            as(mod.token()).body(Map.of("content", "edited")).patch("/api/v1/channels/" + readOnly + "/messages/" + announcement)
+            // Without the User role, and so without SEND_MESSAGES, a member can still read.
+            String announcement = send(owner, channel, "patch notes");
+            TestUsers.unassignRole(member.id(), TestUsers.USER_ROLE);
+            list(member.token(), channel, "").then().statusCode(200).body("[-1].id", equalTo(announcement));
+            send(member.token(), channel, Map.of("content", "first!")).then().statusCode(403).body("error", equalTo("forbidden"));
+
+            // A moderator may delete anyone's messages and notices, but not edit them.
+            String notice = list(mod.token(), channel, "").then().extract().path("[0].id");
+            as(mod.token()).body(Map.of("content", "edited")).patch("/api/v1/channels/" + channel + "/messages/" + announcement)
                 .then().statusCode(403);
-            as(owner).body(Map.of("content", "edited")).patch("/api/v1/channels/" + readOnly + "/messages/" + notice)
+            as(owner).body(Map.of("content", "edited")).patch("/api/v1/channels/" + channel + "/messages/" + notice)
                 .then().statusCode(403);
-            as(mod.token()).delete("/api/v1/channels/" + readOnly + "/messages/" + announcement).then().statusCode(204);
-            as(mod.token()).delete("/api/v1/channels/" + readOnly + "/messages/" + notice).then().statusCode(204);
-            list(member.token(), readOnly, "").then().body("size()", equalTo(0));
+            as(member.token()).delete("/api/v1/channels/" + channel + "/messages/" + announcement).then().statusCode(403);
+            as(mod.token()).delete("/api/v1/channels/" + channel + "/messages/" + announcement).then().statusCode(204);
+            as(mod.token()).delete("/api/v1/channels/" + channel + "/messages/" + notice).then().statusCode(204);
+            list(member.token(), channel, "").then().body("size()", equalTo(0));
         } finally {
-            deleteChannel(readOnly);
+            deleteChannel(channel);
             deleteChannel(hidden);
+            TestUsers.deleteRole(crew);
         }
     }
 

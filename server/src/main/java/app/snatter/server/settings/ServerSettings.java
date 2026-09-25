@@ -2,6 +2,7 @@ package app.snatter.server.settings;
 
 import app.snatter.server.account.AccountId;
 import app.snatter.server.channel.ChannelId;
+import app.snatter.server.role.RoleId;
 import java.time.Instant;
 
 /**
@@ -10,6 +11,7 @@ import java.time.Instant;
  * @param ownerId         the server owner, or null on a fresh server with no accounts yet
  * @param publicUrl       address clients reach this server at, without trailing slash, or null
  * @param systemChannelId channel for server-wide notices, or null for none
+ * @param newMemberRoleId role given to accounts when they register, or null for none
  */
 public record ServerSettings(
         String name,
@@ -20,6 +22,7 @@ public record ServerSettings(
         boolean challengeRequired,
         RateLimits rateLimits,
         ChannelId systemChannelId,
+        RoleId newMemberRoleId,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -28,30 +31,34 @@ public record ServerSettings(
     }
 
     public ServerSettings withName(String name) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, systemChannelId, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, systemChannelId, newMemberRoleId, createdAt, updatedAt);
     }
 
     public ServerSettings withDescription(String description) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, systemChannelId, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, systemChannelId, newMemberRoleId, createdAt, updatedAt);
     }
 
     public ServerSettings withPublicUrl(String publicUrl) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, systemChannelId, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, systemChannelId, newMemberRoleId, createdAt, updatedAt);
     }
 
     public ServerSettings withRegistrationMode(RegistrationMode mode) {
-        return new ServerSettings(name, description, publicUrl, ownerId, mode, challengeRequired, rateLimits, systemChannelId, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, mode, challengeRequired, rateLimits, systemChannelId, newMemberRoleId, createdAt, updatedAt);
     }
 
     public ServerSettings withChallengeRequired(boolean required) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, required, rateLimits, systemChannelId, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, required, rateLimits, systemChannelId, newMemberRoleId, createdAt, updatedAt);
     }
 
     public ServerSettings withRateLimits(RateLimits limits) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, limits, systemChannelId, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, limits, systemChannelId, newMemberRoleId, createdAt, updatedAt);
     }
 
     public ServerSettings withSystemChannelId(ChannelId channelId) {
-        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, channelId, createdAt, updatedAt);
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, channelId, newMemberRoleId, createdAt, updatedAt);
+    }
+
+    public ServerSettings withNewMemberRoleId(RoleId roleId) {
+        return new ServerSettings(name, description, publicUrl, ownerId, registrationMode, challengeRequired, rateLimits, systemChannelId, roleId, createdAt, updatedAt);
     }
 }

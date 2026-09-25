@@ -9,7 +9,7 @@ import java.util.List;
  * A member of this community.
  *
  * @param avatarId blob holding the profile picture, or null if none is set
- * @param roleIds  explicitly assigned roles; the default role is implicit
+ * @param roleIds  assigned roles
  */
 public record Account(
         AccountId id,

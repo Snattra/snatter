@@ -1,6 +1,8 @@
 package app.snatter.server.channel;
 
 import app.snatter.server.account.AccountId;
+import app.snatter.server.role.RoleId;
+import java.util.Set;
 
 /**
  * Something that happened to a channel, fired synchronously as a CDI event
@@ -31,8 +33,8 @@ public sealed interface ChannelEvent {
     record VoiceSettingsChanged(ChannelId channelId, AccountId actor, VoiceSettings from, VoiceSettings to) implements ChannelEvent {
     }
 
-    /** The overwrite for one role or member was set; an empty one means it was removed. */
-    record OverwriteChanged(ChannelId channelId, AccountId actor, PermissionOverwrite overwrite) implements ChannelEvent {
+    /** Who may see the channel changed; an empty set means everyone. */
+    record RequiredRolesChanged(ChannelId channelId, AccountId actor, Set<RoleId> from, Set<RoleId> to) implements ChannelEvent {
     }
 
     record Deleted(ChannelId channelId, AccountId actor, String name) implements ChannelEvent {

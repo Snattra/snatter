@@ -42,7 +42,7 @@ class GatewayTest {
     }
 
     private static Predicate<JsonPath> channel(String id) {
-        return frame -> id.equals(frame.getString("channel.channel.id"));
+        return frame -> id.equals(frame.getString("channel.id"));
     }
 
     @Test
@@ -55,10 +55,9 @@ class GatewayTest {
             assertFalse(ready.getBoolean("permissions.owner"));
             assertTrue(ready.getList("permissions.permissions").contains("SEND_MESSAGES"));
             assertEquals("Snatter", ready.getString("server.name"));
-            assertTrue(ready.getBoolean("roles[-1].isDefault"));
+            assertTrue(ready.getList("roles.name").containsAll(List.of("User", "Moderator", "Admin")));
             assertTrue(ready.getList("members.id").contains(member.id()));
-            assertEquals("general", ready.getString("channels.find { it.channel.id == '" + GENERAL_TEXT + "' }.channel.name"));
-            assertTrue(ready.getList("channels.find { it.channel.id == '" + GENERAL_TEXT + "' }.permissions").contains("SEND_MESSAGES"));
+            assertEquals("general", ready.getString("channels.find { it.id == '" + GENERAL_TEXT + "' }.name"));
         }
     }
 
@@ -118,11 +117,11 @@ class GatewayTest {
         String owner = TestUsers.ownerToken();
         TestUsers.User insider = TestUsers.register();
         TestUsers.User outsider = TestUsers.register();
+        String insiders = TestUsers.createRole("Insiders " + UUID.randomUUID());
+        TestUsers.assignRole(insider.id(), insiders);
         try (GatewayTestClient insiderGateway = GatewayTestClient.identified(insider.token());
              GatewayTestClient outsiderGateway = GatewayTestClient.identified(outsider.token())) {
-            String secret = createChannel(Map.of("type", "text", "name", "secret", "overwrites", List.of(
-                Map.of("roleId", TestUsers.defaultRoleId(), "allow", List.of(), "deny", List.of("VIEW_CHANNELS")),
-                Map.of("accountId", insider.id(), "allow", List.of("VIEW_CHANNELS"), "deny", List.of()))));
+            String secret = createChannel(Map.of("type", "text", "name", "secret", "requiredRoleIds", List.of(insiders)));
             try {
                 insiderGateway.await("channel_created", channel(secret));
                 String whisper = send(owner, secret, Map.of("content", "psst")).then().statusCode(201).extract().path("id");
@@ -137,32 +136,26 @@ class GatewayTest {
                 deleteChannel(secret);
             }
             insiderGateway.await("channel_deleted", f -> secret.equals(f.getString("channelId")));
+        } finally {
+            TestUsers.deleteRole(insiders);
         }
     }
 
     @Test
-    void roleAndOverwriteChangesArriveAsDifferences() {
+    void roleAndChannelAccessChangesArriveAsDifferences() {
         String owner = TestUsers.ownerToken();
         TestUsers.User member = TestUsers.register();
         String seers = TestUsers.createRole("Seers " + UUID.randomUUID(), "KICK_MEMBERS");
-        String hidden = createChannel(Map.of("type", "text", "name", "for seers", "overwrites", List.of(
-            Map.of("roleId", TestUsers.defaultRoleId(), "allow", List.of(), "deny", List.of("VIEW_CHANNELS")),
-            Map.of("roleId", seers, "allow", List.of("VIEW_CHANNELS"), "deny", List.of()))));
+        String hidden = createChannel(Map.of("type", "text", "name", "for seers", "requiredRoleIds", List.of(seers)));
         boolean roleDeleted = false;
         try (GatewayTestClient gateway = GatewayTestClient.identified(member.token())) {
-            assertFalse(gateway.ready().getList("channels.channel.id").contains(hidden));
+            assertFalse(gateway.ready().getList("channels.id").contains(hidden));
             assertTrue(gateway.ready().getList("roles.id").contains(seers));
 
             TestUsers.assignRole(member.id(), seers);
             gateway.await("member_updated", f -> member.id().equals(f.getString("member.id")) && f.getList("member.roleIds").contains(seers));
             assertTrue(gateway.await("permissions_changed").getList("permissions.permissions").contains("KICK_MEMBERS"));
             gateway.await("channel_created", channel(hidden));
-
-            // Denying the member in the channel updates their permissions there.
-            as(owner).body(Map.of("allow", List.of(), "deny", List.of("SEND_MESSAGES")))
-                .put("/api/v1/channels/" + hidden + "/overwrites/accounts/" + member.id()).then().statusCode(200);
-            JsonPath updated = gateway.await("channel_updated", channel(hidden));
-            assertFalse(updated.getList("channel.permissions").contains("SEND_MESSAGES"));
 
             TestUsers.patchRole(owner, seers, Map.of("name", "Renamed seers")).then().statusCode(200);
             assertEquals("Renamed seers", gateway.await("role_updated", f -> seers.equals(f.getString("role.id"))).getString("role.name"));
@@ -171,6 +164,10 @@ class GatewayTest {
                 .then().statusCode(204);
             gateway.await("channel_deleted", f -> hidden.equals(f.getString("channelId")));
             assertFalse(gateway.await("permissions_changed").getList("permissions.permissions").contains("KICK_MEMBERS"));
+
+            // Making the channel public reveals it.
+            as(owner).body(Map.of("requiredRoleIds", List.of())).patch("/api/v1/channels/" + hidden).then().statusCode(200);
+            assertEquals(List.of(), gateway.await("channel_created", channel(hidden)).getList("channel.requiredRoleIds"));
 
             TestUsers.deleteRole(seers);
             roleDeleted = true;
@@ -195,24 +192,24 @@ class GatewayTest {
                     && "channel_created".equals(f.getString("message.notice.type")));
 
                 as(owner).body(Map.of("name", "big lounge", "bitrate", 96000)).patch("/api/v1/channels/" + channel).then().statusCode(200);
-                JsonPath updated = gateway.await("channel_updated", f -> channel.equals(f.getString("channel.channel.id"))
-                    && "big lounge".equals(f.getString("channel.channel.name")));
-                assertEquals(96000, updated.getInt("channel.channel.bitrate"));
+                JsonPath updated = gateway.await("channel_updated", f -> channel.equals(f.getString("channel.id"))
+                    && "big lounge".equals(f.getString("channel.name")));
+                assertEquals(96000, updated.getInt("channel.bitrate"));
                 JsonPath notice = gateway.await("message_created", f -> "channel_renamed".equals(f.getString("message.notice.type")));
                 assertEquals("big lounge", notice.getString("message.notice.to"));
 
                 // Moving a channel to the top shifts the others; each moved channel is updated.
                 as(owner).body(Map.of("position", 0)).patch("/api/v1/channels/" + channel).then().statusCode(200);
-                gateway.await("channel_updated", f -> channel.equals(f.getString("channel.channel.id"))
-                    && f.getInt("channel.channel.position") == 0);
-                gateway.await("channel_updated", f -> GENERAL_TEXT.equals(f.getString("channel.channel.id"))
-                    && f.getInt("channel.channel.position") == 1);
+                gateway.await("channel_updated", f -> channel.equals(f.getString("channel.id"))
+                    && f.getInt("channel.position") == 0);
+                gateway.await("channel_updated", f -> GENERAL_TEXT.equals(f.getString("channel.id"))
+                    && f.getInt("channel.position") == 1);
             } finally {
                 deleteChannel(channel);
             }
             gateway.await("channel_deleted", f -> channel.equals(f.getString("channelId")));
-            gateway.await("channel_updated", f -> GENERAL_TEXT.equals(f.getString("channel.channel.id"))
-                && f.getInt("channel.channel.position") == 0);
+            gateway.await("channel_updated", f -> GENERAL_TEXT.equals(f.getString("channel.id"))
+                && f.getInt("channel.position") == 0);
         }
     }
 

@@ -39,7 +39,7 @@ public class SystemNotices {
             case ChannelEvent.Renamed renamed -> new SystemNotice.ChannelRenamed(renamed.from(), renamed.to());
             case ChannelEvent.TopicChanged topic -> new SystemNotice.ChannelTopicChanged(topic.from(), topic.to());
             case ChannelEvent.Deleted _, ChannelEvent.Moved _, ChannelEvent.VoiceSettingsChanged _,
-                 ChannelEvent.OverwriteChanged _ -> null;
+                 ChannelEvent.RequiredRolesChanged _ -> null;
         };
         if (notice != null) {
             post(event.channelId(), event.actor(), notice);

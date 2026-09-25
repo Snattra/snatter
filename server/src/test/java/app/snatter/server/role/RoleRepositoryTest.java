@@ -30,8 +30,8 @@ class RoleRepositoryTest {
         Role manager = roles.insertAtBottom(RoleId.newId(), "Manager", null, Set.of(Permission.MANAGE_ROLES, Permission.KICK_MEMBERS));
         Role admin = roles.insertAtBottom(RoleId.newId(), "Admin", null, Set.of(Permission.MANAGE_SERVER));
         try {
-            assertEquals(1, roles.find(admin.id()).orElseThrow().position());
-            assertEquals(2, roles.find(manager.id()).orElseThrow().position());
+            assertEquals(0, roles.find(admin.id()).orElseThrow().position());
+            assertEquals(1, roles.find(manager.id()).orElseThrow().position());
 
             roles.moveTo(admin.id(), 5);
             roles.moveTo(manager.id(), 3);

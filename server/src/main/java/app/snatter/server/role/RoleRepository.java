@@ -8,6 +8,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -20,12 +21,11 @@ public class RoleRepository {
         rs.getString("color"),
         rs.getInt("position"),
         Permission.fromMask(rs.getLong("permissions")),
-        rs.getBoolean("is_default"),
         instant(rs, "created_at"),
         instant(rs, "updated_at"));
 
     private static final String SELECT = """
-        SELECT id, name, color, position, permissions, is_default, created_at, updated_at
+        SELECT id, name, color, position, permissions, created_at, updated_at
         FROM role
         """;
 
@@ -35,7 +35,7 @@ public class RoleRepository {
         this.jdbi = jdbi;
     }
 
-    /** All roles, most senior first, the default role last. */
+    /** All roles, highest position first. */
     public List<Role> findAll() {
         return jdbi.withHandle(h -> h
             .createQuery(SELECT + "ORDER BY position DESC, created_at")
@@ -51,19 +51,11 @@ public class RoleRepository {
             .findOne());
     }
 
-    public Role findDefault() {
-        return jdbi.withHandle(h -> h
-            .createQuery(SELECT + "WHERE is_default")
-            .map(MAPPER)
-            .findOne()
-            .orElseThrow(() -> new IllegalStateException("default role is missing; database migrations did not run")));
-    }
-
-    /** Roles explicitly assigned to the account, most senior first. Excludes the default role. */
+    /** Roles assigned to the account, highest position first. */
     public List<Role> findByAccount(AccountId accountId) {
         return jdbi.withHandle(h -> h
             .createQuery("""
-                SELECT r.id, r.name, r.color, r.position, r.permissions, r.is_default, r.created_at, r.updated_at
+                SELECT r.id, r.name, r.color, r.position, r.permissions, r.created_at, r.updated_at
                 FROM role r
                 JOIN account_role ar ON ar.role_id = r.id
                 WHERE ar.account_id = :accountId
@@ -74,14 +66,14 @@ public class RoleRepository {
             .list());
     }
 
-    /** Inserts a role at position 1, moving every other non-default role up one. Run in a transaction. */
-    public Role insertAtBottom(RoleId id, String name, String color, java.util.Set<Permission> permissions) {
+    /** Inserts a role at position 0, moving every other role up one. Run in a transaction. */
+    public Role insertAtBottom(RoleId id, String name, String color, Set<Permission> permissions) {
         Instant now = Instant.now();
         jdbi.useHandle(h -> {
-            h.createUpdate("UPDATE role SET position = position + 1 WHERE NOT is_default").execute();
+            h.createUpdate("UPDATE role SET position = position + 1").execute();
             h.createUpdate("""
-                INSERT INTO role (id, name, color, position, permissions, is_default, created_at, updated_at)
-                VALUES (:id, :name, :color, 1, :permissions, FALSE, :now, :now)
+                INSERT INTO role (id, name, color, position, permissions, created_at, updated_at)
+                VALUES (:id, :name, :color, 0, :permissions, :now, :now)
                 """)
                 .bind("id", id)
                 .bind("name", name)
@@ -90,7 +82,7 @@ public class RoleRepository {
                 .bind("now", now)
                 .execute();
         });
-        return new Role(id, name, color, 1, java.util.Set.copyOf(permissions), false, now, now);
+        return new Role(id, name, color, 0, Set.copyOf(permissions), now, now);
     }
 
     public void update(Role role) {
@@ -111,7 +103,7 @@ public class RoleRepository {
     /** Moves a role to a position, shifting roles at or above it up by one. Run in a transaction. */
     public void moveTo(RoleId id, int position) {
         jdbi.useHandle(h -> {
-            h.createUpdate("UPDATE role SET position = position + 1 WHERE position >= :position AND id <> :id AND NOT is_default")
+            h.createUpdate("UPDATE role SET position = position + 1 WHERE position >= :position AND id <> :id")
                 .bind("position", position)
                 .bind("id", id)
                 .execute();
@@ -125,9 +117,18 @@ public class RoleRepository {
 
     public boolean delete(RoleId id) {
         return jdbi.withHandle(h -> h
-            .createUpdate("DELETE FROM role WHERE id = :id AND NOT is_default")
+            .createUpdate("DELETE FROM role WHERE id = :id")
             .bind("id", id)
             .execute()) == 1;
+    }
+
+    /** Whether any channel lists the role among its required roles. */
+    public boolean isRequiredByChannel(RoleId id) {
+        return jdbi.withHandle(h -> h
+            .createQuery("SELECT EXISTS (SELECT 1 FROM channel_required_role WHERE role_id = :id)")
+            .bind("id", id)
+            .mapTo(Boolean.class)
+            .one());
     }
 
     public void assign(AccountId accountId, RoleId roleId) {

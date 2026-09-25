@@ -86,7 +86,6 @@ public class RoleResource implements RolesApi {
             .color(role.color())
             .position(role.position())
             .permissions(PermissionDtos.toDto(role.permissions()))
-            .isDefault(role.isDefault())
             .createdAt(role.createdAt());
     }
 }

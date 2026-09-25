@@ -1,7 +1,6 @@
 package app.snatter.server.channel;
 
 import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
@@ -49,20 +48,6 @@ class ChannelResourceTest {
         return as(token).body(body).patch("/api/v1/channels/" + channel);
     }
 
-    private static Response roleOverwrite(String token, String channel, String role, List<String> allow, List<String> deny) {
-        return as(token).body(Map.of("allow", allow, "deny", deny))
-            .put("/api/v1/channels/" + channel + "/overwrites/roles/" + role);
-    }
-
-    private static Response accountOverwrite(String token, String channel, String account, List<String> allow, List<String> deny) {
-        return as(token).body(Map.of("allow", allow, "deny", deny))
-            .put("/api/v1/channels/" + channel + "/overwrites/accounts/" + account);
-    }
-
-    private static Response permissionsIn(String token, String channel) {
-        return as(token).get("/api/v1/channels/" + channel + "/permissions");
-    }
-
     private static List<String> visibleIds(String token) {
         return as(token).get("/api/v1/channels").then().statusCode(200).extract().path("id");
     }
@@ -90,7 +75,7 @@ class ChannelResourceTest {
             .body("topic", equalTo("hang out"))
             .body("bitrate", equalTo(defaultBitrate))
             .body("userLimit", equalTo(0))
-            .body("overwrites", equalTo(List.of()))
+            .body("requiredRoleIds", equalTo(List.of()))
             .extract().path("id");
         String text = null;
         try {
@@ -168,160 +153,106 @@ class ChannelResourceTest {
     }
 
     @Test
-    void privateChannelsAreHiddenFromEveryoneElse() {
+    void privateChannelsAreVisibleOnlyToTheirRoles() {
         String owner = TestUsers.ownerToken();
-        String channel = createChannel("text", "crew only");
         String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
-        String admins = TestUsers.createRole("Admins " + UUID.randomUUID(), "ADMINISTRATOR");
+        String guests = TestUsers.createRole("Guests " + UUID.randomUUID());
+        String channel = create(owner, Map.of("type", "text", "name", "crew only", "requiredRoleIds", List.of(crew, guests)))
+            .then().statusCode(201)
+            .body("requiredRoleIds", containsInAnyOrder(crew, guests))
+            .extract().path("id");
         try {
-            roleOverwrite(owner, channel, TestUsers.defaultRoleId(), List.of(), List.of("VIEW_CHANNELS")).then().statusCode(200);
-            roleOverwrite(owner, channel, crew, List.of("VIEW_CHANNELS"), List.of()).then().statusCode(200)
-                .body("overwrites.size()", equalTo(2))
-                .body("overwrites.find { it.roleId == '" + crew + "' }.allow", contains("VIEW_CHANNELS"))
-                .body("overwrites.find { it.roleId == '" + crew + "' }.accountId", nullValue());
-
             TestUsers.User outsider = TestUsers.register();
             assertEquals(false, visibleIds(outsider.token()).contains(channel));
             as(outsider.token()).get("/api/v1/channels/" + channel).then().statusCode(404).body("error", equalTo("channel_not_found"));
-            permissionsIn(outsider.token(), channel).then().statusCode(404);
-            patch(outsider.token(), channel, Map.of("name", "x")).then().statusCode(404);
 
-            TestUsers.User member = TestUsers.register();
-            TestUsers.assignRole(member.id(), crew);
-            assertEquals(true, visibleIds(member.token()).contains(channel));
-            permissionsIn(member.token(), channel).then().statusCode(200)
-                .body("permissions", hasItems("VIEW_CHANNELS", "SEND_MESSAGES"));
+            TestUsers.User crewMember = TestUsers.register();
+            TestUsers.assignRole(crewMember.id(), crew);
+            assertEquals(true, visibleIds(crewMember.token()).contains(channel));
+            TestUsers.User guest = TestUsers.register();
+            TestUsers.assignRole(guest.id(), guests);
+            assertEquals(true, visibleIds(guest.token()).contains(channel), "any one of the required roles is enough");
+            assertEquals(true, visibleIds(owner).contains(channel), "the owner sees every channel");
 
+            // Administrators manage the channels they see, but do not see every channel.
             TestUsers.User admin = TestUsers.register();
-            TestUsers.assignRole(admin.id(), admins);
-            assertEquals(true, visibleIds(admin.token()).contains(channel));
-            assertEquals(true, visibleIds(owner).contains(channel));
+            TestUsers.assignRole(admin.id(), TestUsers.ADMIN_ROLE);
+            assertEquals(false, visibleIds(admin.token()).contains(channel));
+            patch(admin.token(), channel, Map.of("name", "x")).then().statusCode(404);
+            as(admin.token()).delete("/api/v1/channels/" + channel).then().statusCode(404);
 
-            as(owner).delete("/api/v1/channels/" + channel + "/overwrites/roles/" + TestUsers.defaultRoleId()).then().statusCode(204);
-            as(owner).delete("/api/v1/channels/" + channel + "/overwrites/roles/" + TestUsers.defaultRoleId()).then().statusCode(204);
+            patch(owner, channel, Map.of("requiredRoleIds", List.of())).then().statusCode(200).body("requiredRoleIds", equalTo(List.of()));
             assertEquals(true, visibleIds(outsider.token()).contains(channel));
         } finally {
             deleteChannel(channel);
             TestUsers.deleteRole(crew);
-            TestUsers.deleteRole(admins);
+            TestUsers.deleteRole(guests);
         }
     }
 
     @Test
-    void channelModeratorsManageOnlyTheirChannel() {
+    void requiredRolesMustExistAndIncludeOneOfTheCallers() {
         String owner = TestUsers.ownerToken();
-        String theirs = createChannel("voice_text", "modded");
-        String other = createChannel("voice_text", "other");
-        TestUsers.User mod = TestUsers.register();
+        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
+        String builders = TestUsers.createRole("Builders " + UUID.randomUUID(), "MANAGE_CHANNELS");
+        TestUsers.User builder = TestUsers.register();
+        TestUsers.assignRole(builder.id(), builders);
+        int before = visibleIds(owner).size();
+        String channel = null;
         try {
-            accountOverwrite(owner, theirs, mod.id(), List.of("MANAGE_CHANNELS", "MANAGE_MESSAGES", "MUTE_MEMBERS", "MOVE_MEMBERS"), List.of())
-                .then().statusCode(200)
-                .body("overwrites[0].accountId", equalTo(mod.id()))
-                .body("overwrites[0].roleId", nullValue());
+            create(owner, Map.of("type", "text", "name", "x", "requiredRoleIds", List.of(UUID.randomUUID().toString())))
+                .then().statusCode(400).body("error", equalTo("invalid_required_role"));
+            // Nobody but the owner can lock themselves out.
+            create(builder.token(), Map.of("type", "text", "name", "x", "requiredRoleIds", List.of(crew)))
+                .then().statusCode(400).body("error", equalTo("required_role_not_held"));
+            assertEquals(before, visibleIds(owner).size(), "rejected creations leave no channel behind");
 
-            permissionsIn(mod.token(), theirs).then().statusCode(200).body("owner", equalTo(false))
-                .body("permissions", hasItems("MANAGE_CHANNELS", "MANAGE_MESSAGES", "MUTE_MEMBERS", "MOVE_MEMBERS"));
-            permissionsIn(mod.token(), other).then().statusCode(200)
-                .body("permissions", not(hasItem("MANAGE_MESSAGES")));
-            as(mod.token()).get("/api/v1/accounts/me/permissions").then()
-                .body("permissions", not(hasItem("MANAGE_MESSAGES")));
+            channel = create(builder.token(), Map.of("type", "text", "name", "builders", "requiredRoleIds", List.of(builders)))
+                .then().statusCode(201).extract().path("id");
+            patch(builder.token(), channel, Map.of("requiredRoleIds", List.of(crew)))
+                .then().statusCode(400).body("error", equalTo("required_role_not_held"));
+            patch(builder.token(), channel, Map.of("requiredRoleIds", List.of(crew, builders)))
+                .then().statusCode(200).body("requiredRoleIds", containsInAnyOrder(crew, builders));
 
-            patch(mod.token(), theirs, Map.of("topic", "moderated")).then().statusCode(200).body("topic", equalTo("moderated"));
-            patch(mod.token(), other, Map.of("topic", "nope")).then().statusCode(403).body("error", equalTo("forbidden"));
-            as(mod.token()).delete("/api/v1/channels/" + other).then().statusCode(403);
-            create(mod.token(), Map.of("type", "text", "name", "nope")).then().statusCode(403);
-            // Moderating a channel does not include handing out its overwrites.
-            accountOverwrite(mod.token(), theirs, TestUsers.register().id(), List.of("MANAGE_MESSAGES"), List.of())
-                .then().statusCode(403).body("error", equalTo("forbidden"));
+            // Changing channels needs MANAGE_CHANNELS.
+            TestUsers.User member = TestUsers.register();
+            patch(member.token(), GENERAL_TEXT, Map.of("topic", "nope")).then().statusCode(403).body("error", equalTo("forbidden"));
+            as(member.token()).delete("/api/v1/channels/" + GENERAL_TEXT).then().statusCode(403);
         } finally {
-            deleteChannel(theirs);
-            deleteChannel(other);
+            if (channel != null) {
+                deleteChannel(channel);
+            }
+            TestUsers.deleteRole(crew);
+            TestUsers.deleteRole(builders);
         }
     }
 
     @Test
-    void overwritesFollowTheRoleRules() {
+    void rolesThatChannelsRequireCannotBeDeleted() {
         String owner = TestUsers.ownerToken();
-        String channel = createChannel("voice_text", "rules");
-        // Created first so it ends up above the manager's role.
-        String senior = TestUsers.createRole("Senior " + UUID.randomUUID());
-        String manager = TestUsers.createRole("Manager " + UUID.randomUUID(), "MANAGE_ROLES", "MANAGE_MESSAGES");
-        TestUsers.User mgr = TestUsers.register();
-        TestUsers.assignRole(mgr.id(), manager);
-        TestUsers.User member = TestUsers.register();
+        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
+        String channel = create(owner, Map.of("type", "text", "name", "crew", "requiredRoleIds", List.of(crew)))
+            .then().statusCode(201).extract().path("id");
         try {
-            roleOverwrite(owner, channel, manager, List.of("KICK_MEMBERS"), List.of())
-                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
-            roleOverwrite(owner, channel, manager, List.of("SPEAK"), List.of("SPEAK"))
-                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
-            roleOverwrite(owner, channel, UUID.randomUUID().toString(), List.of("SPEAK"), List.of())
-                .then().statusCode(404).body("error", equalTo("role_not_found"));
-            accountOverwrite(owner, channel, UUID.randomUUID().toString(), List.of("SPEAK"), List.of())
-                .then().statusCode(404).body("error", equalTo("account_not_found"));
-            roleOverwrite(owner, UUID.randomUUID().toString(), manager, List.of("SPEAK"), List.of())
-                .then().statusCode(404).body("error", equalTo("channel_not_found"));
-
-            // Below the manager: the default role and plain members.
-            roleOverwrite(mgr.token(), channel, TestUsers.defaultRoleId(), List.of(), List.of("SEND_MESSAGES")).then().statusCode(200);
-            accountOverwrite(mgr.token(), channel, member.id(), List.of("MANAGE_MESSAGES"), List.of()).then().statusCode(200);
-            permissionsIn(member.token(), channel).then()
-                .body("permissions", hasItem("MANAGE_MESSAGES"))
-                .body("permissions", not(hasItem("SEND_MESSAGES")));
-            // The manager is one of everyone too, so no longer holds SEND_MESSAGES here to hand out.
-            accountOverwrite(mgr.token(), channel, member.id(), List.of("MANAGE_MESSAGES", "SEND_MESSAGES"), List.of())
-                .then().statusCode(403).body("error", equalTo("permission_escalation"));
-            // At or above the manager.
-            roleOverwrite(mgr.token(), channel, senior, List.of("SPEAK"), List.of())
-                .then().statusCode(403).body("error", equalTo("role_hierarchy"));
-            roleOverwrite(mgr.token(), channel, manager, List.of("SPEAK"), List.of())
-                .then().statusCode(403).body("error", equalTo("role_hierarchy"));
-            TestUsers.User seniorMember = TestUsers.register();
-            TestUsers.assignRole(seniorMember.id(), senior);
-            accountOverwrite(mgr.token(), channel, seniorMember.id(), List.of("SPEAK"), List.of())
-                .then().statusCode(403).body("error", equalTo("role_hierarchy"));
-            // Only permissions the manager holds in the channel.
-            accountOverwrite(mgr.token(), channel, member.id(), List.of("MUTE_MEMBERS"), List.of())
-                .then().statusCode(403).body("error", equalTo("permission_escalation"));
-
-            // The owner adds a bit the manager lacks; the manager may still change the rest but not that bit.
-            accountOverwrite(owner, channel, member.id(), List.of("MANAGE_MESSAGES", "MUTE_MEMBERS"), List.of()).then().statusCode(200);
-            accountOverwrite(mgr.token(), channel, member.id(), List.of("MUTE_MEMBERS"), List.of("MANAGE_MESSAGES"))
-                .then().statusCode(200)
-                .body("overwrites.find { it.accountId == '" + member.id() + "' }.allow", contains("MUTE_MEMBERS"))
-                .body("overwrites.find { it.accountId == '" + member.id() + "' }.deny", contains("MANAGE_MESSAGES"));
-            as(mgr.token()).delete("/api/v1/channels/" + channel + "/overwrites/accounts/" + member.id())
-                .then().statusCode(403).body("error", equalTo("permission_escalation"));
-            as(owner).delete("/api/v1/channels/" + channel + "/overwrites/accounts/" + member.id()).then().statusCode(204);
-
-            // Deleting a role removes its overwrites.
-            roleOverwrite(owner, channel, senior, List.of("STREAM"), List.of()).then().statusCode(200);
-            TestUsers.deleteRole(senior);
-            senior = null;
-            as(owner).get("/api/v1/channels/" + channel).then().statusCode(200)
-                .body("overwrites.roleId", containsInAnyOrder(TestUsers.defaultRoleId()));
+            as(owner).delete("/api/v1/roles/" + crew).then().statusCode(409).body("error", equalTo("role_in_use"));
+            patch(owner, channel, Map.of("requiredRoleIds", List.of())).then().statusCode(200);
+            TestUsers.deleteRole(crew);
         } finally {
             deleteChannel(channel);
-            TestUsers.deleteRole(manager);
-            if (senior != null) {
-                TestUsers.deleteRole(senior);
-            }
         }
     }
 
     @Test
     void administratorsHoldEverythingButServerSettings() {
         TestUsers.User admin = TestUsers.register();
-        String adminRole = given().header("Authorization", "Bearer " + TestUsers.ownerToken()).get("/api/v1/roles")
-            .then().statusCode(200)
-            .body("find { it.name == 'Admin' }.permissions", contains("ADMINISTRATOR"))
-            .extract().path("find { it.name == 'Admin' }.id");
+        String adminRole = TestUsers.ADMIN_ROLE;
         TestUsers.assignRole(admin.id(), adminRole);
         String channel = null;
-        String lower = null;
+        String deputy = null;
         try {
             as(admin.token()).get("/api/v1/accounts/me/permissions").then().statusCode(200)
                 .body("owner", equalTo(false))
-                .body("permissions", hasItems("ADMINISTRATOR", "MANAGE_ROLES", "MANAGE_CHANNELS", "KICK_MEMBERS", "BAN_MEMBERS"))
+                .body("permissions", hasItems("MANAGE_ROLES", "MANAGE_CHANNELS", "MANAGE_MESSAGES", "KICK_MEMBERS", "BAN_MEMBERS"))
                 .body("permissions", not(hasItem("MANAGE_SERVER")));
             as(admin.token()).get("/api/v1/server-settings").then().statusCode(403);
             Map<String, Object> rename = new HashMap<>();
@@ -330,11 +261,10 @@ class ChannelResourceTest {
 
             channel = create(admin.token(), Map.of("type", "text", "name", "admin made"))
                 .then().statusCode(201).extract().path("id");
-            accountOverwrite(admin.token(), channel, admin.id(), List.of(), List.of("VIEW_CHANNELS")).then().statusCode(200);
-            assertEquals(true, visibleIds(admin.token()).contains(channel), "administrators ignore overwrites");
 
             // Admins may create further admin-level roles, but not hand out server settings.
-            lower = as(admin.token()).body(Map.of("name", "Deputy", "permissions", List.of("ADMINISTRATOR")))
+            List<String> adminPermissions = as(admin.token()).get("/api/v1/accounts/me/permissions").then().extract().path("permissions");
+            deputy = as(admin.token()).body(Map.of("name", "Deputy", "permissions", adminPermissions))
                 .post("/api/v1/roles").then().statusCode(201).extract().path("id");
             as(admin.token()).body(Map.of("name", "Settings", "permissions", List.of("MANAGE_SERVER")))
                 .post("/api/v1/roles").then().statusCode(403).body("error", equalTo("permission_escalation"));
@@ -342,90 +272,11 @@ class ChannelResourceTest {
             if (channel != null) {
                 deleteChannel(channel);
             }
-            if (lower != null) {
-                TestUsers.deleteRole(lower);
+            if (deputy != null) {
+                TestUsers.deleteRole(deputy);
             }
             given().header("Authorization", "Bearer " + TestUsers.ownerToken())
                 .delete("/api/v1/accounts/" + admin.id() + "/roles/" + adminRole).then().statusCode(204);
-        }
-    }
-
-    private static Map<String, Object> forRole(String role, List<String> allow, List<String> deny) {
-        return Map.of("roleId", role, "allow", allow, "deny", deny);
-    }
-
-    private static Map<String, Object> forAccount(String account, List<String> allow, List<String> deny) {
-        return Map.of("accountId", account, "allow", allow, "deny", deny);
-    }
-
-    @Test
-    void privateChannelsAreCreatedPrivateInOneStep() {
-        String everyone = TestUsers.defaultRoleId();
-        // A manager below the top: denying everyone first must not stop them letting themselves in.
-        String manager = TestUsers.createRole("Creator " + UUID.randomUUID(), "MANAGE_CHANNELS", "MANAGE_ROLES");
-        TestUsers.User mgr = TestUsers.register();
-        TestUsers.assignRole(mgr.id(), manager);
-        TestUsers.User friend = TestUsers.register();
-        String channel = null;
-        try {
-            channel = create(mgr.token(), Map.of("type", "voice_text", "name", "secret", "overwrites", List.of(
-                    forRole(everyone, List.of(), List.of("VIEW_CHANNELS")),
-                    forAccount(mgr.id(), List.of("VIEW_CHANNELS"), List.of()),
-                    forAccount(friend.id(), List.of("VIEW_CHANNELS"), List.of()))))
-                .then().statusCode(201)
-                .body("overwrites.size()", equalTo(3))
-                .body("overwrites.find { it.roleId == '" + everyone + "' }.deny", contains("VIEW_CHANNELS"))
-                .extract().path("id");
-
-            assertEquals(true, visibleIds(mgr.token()).contains(channel));
-            assertEquals(true, visibleIds(friend.token()).contains(channel));
-            assertEquals(false, visibleIds(TestUsers.register().token()).contains(channel));
-        } finally {
-            if (channel != null) {
-                deleteChannel(channel);
-            }
-            TestUsers.deleteRole(manager);
-        }
-    }
-
-    @Test
-    void creationOverwritesFollowTheOverwriteRulesAndLeaveNothingBehindOnFailure() {
-        String owner = TestUsers.ownerToken();
-        String everyone = TestUsers.defaultRoleId();
-        String senior = TestUsers.createRole("Senior " + UUID.randomUUID());
-        String channelsOnly = TestUsers.createRole("Builder " + UUID.randomUUID(), "MANAGE_CHANNELS");
-        String manager = TestUsers.createRole("Manager " + UUID.randomUUID(), "MANAGE_CHANNELS", "MANAGE_ROLES");
-        TestUsers.User builder = TestUsers.register();
-        TestUsers.assignRole(builder.id(), channelsOnly);
-        TestUsers.User mgr = TestUsers.register();
-        TestUsers.assignRole(mgr.id(), manager);
-        int before = visibleIds(owner).size();
-        try {
-            List<String> hide = List.of("VIEW_CHANNELS");
-            create(builder.token(), Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(everyone, List.of(), hide))))
-                .then().statusCode(403).body("error", equalTo("forbidden"));
-            create(mgr.token(), Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(senior, List.of(), hide))))
-                .then().statusCode(403).body("error", equalTo("role_hierarchy"));
-            create(mgr.token(), Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(everyone, List.of("MUTE_MEMBERS"), List.of()))))
-                .then().statusCode(403).body("error", equalTo("permission_escalation"));
-            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(
-                    forRole(everyone, List.of(), hide), forRole(everyone, List.of("SPEAK"), List.of()))))
-                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
-            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(
-                    Map.of("roleId", everyone, "accountId", mgr.id(), "allow", List.of(), "deny", hide))))
-                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
-            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(Map.of("allow", List.of(), "deny", hide))))
-                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
-            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(everyone, List.of("BAN_MEMBERS"), List.of()))))
-                .then().statusCode(400).body("error", equalTo("invalid_overwrite"));
-            create(owner, Map.of("type", "text", "name", "x", "overwrites", List.of(forRole(UUID.randomUUID().toString(), List.of(), hide))))
-                .then().statusCode(404).body("error", equalTo("role_not_found"));
-
-            assertEquals(before, visibleIds(owner).size(), "rejected creations leave no channel behind");
-        } finally {
-            TestUsers.deleteRole(senior);
-            TestUsers.deleteRole(channelsOnly);
-            TestUsers.deleteRole(manager);
         }
     }
 }

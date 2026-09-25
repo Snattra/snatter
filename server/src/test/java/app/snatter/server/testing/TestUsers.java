@@ -146,6 +146,11 @@ public final class TestUsers {
 
     // --- Roles ---------------------------------------------------------------
 
+    /** The standard roles seeded by the roles migration; new members get {@link #USER_ROLE}. */
+    public static final String USER_ROLE = "00000000-0000-7000-8000-000000000001";
+    public static final String ADMIN_ROLE = "00000000-0000-7000-8000-000000000002";
+    public static final String MODERATOR_ROLE = "00000000-0000-7000-8000-000000000003";
+
     /** Creates a role as the owner and returns its id. */
     public static String createRole(String name, String... permissions) {
         return given()
@@ -179,17 +184,17 @@ public final class TestUsers {
             .then().statusCode(204);
     }
 
-    public static String defaultRoleId() {
-        return given()
+    public static void unassignRole(String accountId, String roleId) {
+        given()
             .header("Authorization", "Bearer " + ownerToken())
-            .get("/api/v1/roles")
-            .then().statusCode(200)
-            .extract().path("find { it.isDefault }.id");
+            .delete("/api/v1/accounts/" + accountId + "/roles/" + roleId)
+            .then().statusCode(204);
     }
 
-    /** A fresh member holding exactly the given permissions through a new role. */
+    /** A fresh member holding exactly the given permissions through a new role, without the User role. */
     public static User registerWithPermissions(String... permissions) {
         User user = register();
+        unassignRole(user.id(), USER_ROLE);
         assignRole(user.id(), createRole("perm_" + UUID.randomUUID().toString().substring(0, 8), permissions));
         return user;
     }

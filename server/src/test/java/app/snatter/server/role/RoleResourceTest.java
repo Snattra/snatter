@@ -4,6 +4,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.not;
@@ -12,6 +13,7 @@ import static org.hamcrest.Matchers.nullValue;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,15 +31,22 @@ class RoleResourceTest {
     }
 
     @Test
-    void defaultRoleIsLastAndGrantsTheBaseline() {
+    void newMembersGetTheUserRoleAndTheStandardRolesExist() {
         TestUsers.User member = TestUsers.register();
+        Object[] allButServerSettings = Arrays.stream(Permission.values())
+            .filter(p -> p != Permission.MANAGE_SERVER).map(Enum::name).toArray();
         given().header("Authorization", "Bearer " + member.token()).get("/api/v1/roles")
             .then().statusCode(200)
-            .body("[-1].isDefault", equalTo(true))
-            .body("[-1].position", equalTo(0))
-            .body("[-1].permissions", hasItems("CREATE_INVITE", "VIEW_CHANNELS", "SEND_MESSAGES", "CONNECT", "SPEAK", "STREAM"))
-            .body("[-1].permissions", not(hasItem("MANAGE_SERVER")));
+            .body("find { it.id == '" + TestUsers.USER_ROLE + "' }.name", equalTo("User"))
+            .body("find { it.id == '" + TestUsers.USER_ROLE + "' }.permissions",
+                containsInAnyOrder("CREATE_INVITE", "SEND_MESSAGES", "CONNECT", "SPEAK", "STREAM"))
+            .body("find { it.id == '" + TestUsers.MODERATOR_ROLE + "' }.permissions",
+                containsInAnyOrder("CREATE_INVITE", "SEND_MESSAGES", "CONNECT", "SPEAK", "STREAM",
+                    "KICK_MEMBERS", "BAN_MEMBERS", "MANAGE_MESSAGES", "MUTE_MEMBERS", "MOVE_MEMBERS"))
+            .body("find { it.id == '" + TestUsers.ADMIN_ROLE + "' }.permissions", containsInAnyOrder(allButServerSettings));
 
+        given().header("Authorization", "Bearer " + member.token()).get("/api/v1/accounts/me")
+            .then().body("roleIds", contains(TestUsers.USER_ROLE));
         permissionsOf(member.token()).then().statusCode(200)
             .body("owner", equalTo(false))
             .body("permissions", not(hasItem("MANAGE_ROLES")))
@@ -58,15 +67,15 @@ class RoleResourceTest {
         try {
             given().header("Authorization", "Bearer " + member.token()).get("/api/v1/roles")
                 .then()
-                .body("find { it.id == '" + second + "' }.position", equalTo(1))
-                .body("find { it.id == '" + first + "' }.position", equalTo(2))
+                .body("find { it.id == '" + second + "' }.position", equalTo(0))
+                .body("find { it.id == '" + first + "' }.position", equalTo(1))
                 .body("find { it.id == '" + first + "' }.permissions", contains("KICK_MEMBERS"))
                 .body("find { it.id == '" + first + "' }.color", nullValue());
 
             TestUsers.assignRole(member.id(), first);
             TestUsers.assignRole(member.id(), first); // idempotent
             given().header("Authorization", "Bearer " + member.token()).get("/api/v1/accounts/me")
-                .then().body("roleIds", contains(first));
+                .then().body("roleIds", containsInAnyOrder(TestUsers.USER_ROLE, first));
             permissionsOf(member.token()).then().body("permissions", hasItem("KICK_MEMBERS"));
 
             given().header("Authorization", "Bearer " + TestUsers.ownerToken())
@@ -79,12 +88,9 @@ class RoleResourceTest {
     }
 
     @Test
-    void managersAreBoundByHierarchyAndCannotEscalate() {
-        // Owner sets up: a senior "Admin" role above a "Manager" role that holds MANAGE_ROLES + KICK_MEMBERS.
+    void managersOnlyManageRolesWithinTheirOwnPermissions() {
         String manager = TestUsers.createRole("Manager " + UUID.randomUUID(), "MANAGE_ROLES", "KICK_MEMBERS");
         String admin = TestUsers.createRole("Admin " + UUID.randomUUID(), "MANAGE_SERVER", "BAN_MEMBERS");
-        TestUsers.patchRole(TestUsers.ownerToken(), admin, Map.of("position", 5)).then().statusCode(200).body("position", equalTo(5));
-        TestUsers.patchRole(TestUsers.ownerToken(), manager, Map.of("position", 3)).then().statusCode(200);
         TestUsers.User mgr = TestUsers.register();
         TestUsers.assignRole(mgr.id(), manager);
         permissionsOf(mgr.token()).then().statusCode(200).body("permissions", hasItems("MANAGE_ROLES", "KICK_MEMBERS"));
@@ -93,32 +99,26 @@ class RoleResourceTest {
         try {
             // Can create a role with a subset of own permissions; it lands at the bottom.
             created = create(mgr.token(), Map.of("name", "Helper", "permissions", List.of("KICK_MEMBERS")))
-                .then().statusCode(201).body("position", equalTo(1)).extract().path("id");
+                .then().statusCode(201).body("position", equalTo(0)).extract().path("id");
             // Cannot grant what they do not hold.
             create(mgr.token(), Map.of("name", "Sneaky", "permissions", List.of("BAN_MEMBERS")))
                 .then().statusCode(403).body("error", equalTo("permission_escalation"));
             TestUsers.patchRole(mgr.token(), created, Map.of("permissions", List.of("MANAGE_SERVER")))
                 .then().statusCode(403).body("error", equalTo("permission_escalation"));
-            // Cannot touch roles at or above their own.
-            TestUsers.patchRole(mgr.token(), admin, Map.of("name", "Pwned")).then().statusCode(403).body("error", equalTo("role_hierarchy"));
-            TestUsers.patchRole(mgr.token(), manager, Map.of("name", "Self")).then().statusCode(403).body("error", equalTo("role_hierarchy"));
+            // Cannot touch a role holding permissions they lack.
+            TestUsers.patchRole(mgr.token(), admin, Map.of("name", "Pwned")).then().statusCode(403).body("error", equalTo("permission_escalation"));
             given().header("Authorization", "Bearer " + mgr.token()).delete("/api/v1/roles/" + admin)
-                .then().statusCode(403).body("error", equalTo("role_hierarchy"));
+                .then().statusCode(403).body("error", equalTo("permission_escalation"));
             given().header("Authorization", "Bearer " + mgr.token()).put("/api/v1/accounts/" + target.id() + "/roles/" + admin)
-                .then().statusCode(403).body("error", equalTo("role_hierarchy"));
-            // Cannot move a role up to or past themselves (creating Helper shifted every role up by one).
-            int managerPosition = given().header("Authorization", "Bearer " + mgr.token()).get("/api/v1/roles")
-                .then().extract().path("find { it.id == '" + manager + "' }.position");
-            TestUsers.patchRole(mgr.token(), created, Map.of("position", managerPosition)).then().statusCode(403).body("error", equalTo("role_hierarchy"));
-            TestUsers.patchRole(mgr.token(), created, Map.of("position", managerPosition + 1)).then().statusCode(403).body("error", equalTo("role_hierarchy"));
-            // But can manage what is below them.
-            TestUsers.patchRole(mgr.token(), created, Map.of("name", "Helper renamed", "color", "#123ABC", "position", 2))
-                .then().statusCode(200).body("name", equalTo("Helper renamed")).body("color", equalTo("#123ABC")).body("position", equalTo(2));
+                .then().statusCode(403).body("error", equalTo("permission_escalation"));
+            // But can manage everything within their permissions, wherever it sits in the list.
+            TestUsers.patchRole(mgr.token(), created, Map.of("name", "Helper renamed", "color", "#123ABC", "position", 50))
+                .then().statusCode(200).body("name", equalTo("Helper renamed")).body("color", equalTo("#123ABC")).body("position", equalTo(50));
             given().header("Authorization", "Bearer " + mgr.token()).put("/api/v1/accounts/" + target.id() + "/roles/" + created)
                 .then().statusCode(204);
             given().header("Authorization", "Bearer " + mgr.token()).delete("/api/v1/roles/" + created).then().statusCode(204);
             created = null;
-            given().header("Authorization", "Bearer " + target.token()).get("/api/v1/accounts/me").then().body("roleIds", equalTo(List.of()));
+            given().header("Authorization", "Bearer " + target.token()).get("/api/v1/accounts/me").then().body("roleIds", contains(TestUsers.USER_ROLE));
         } finally {
             if (created != null) {
                 TestUsers.deleteRole(created);
@@ -129,26 +129,31 @@ class RoleResourceTest {
     }
 
     @Test
-    void defaultRoleIsProtected() {
-        String defaultRole = TestUsers.defaultRoleId();
-        TestUsers.User member = TestUsers.register();
+    void theNewMemberRoleSettingDecidesWhatNewMembersGet() {
         String owner = TestUsers.ownerToken();
-
-        TestUsers.patchRole(owner, defaultRole, Map.of("name", "everybody")).then().statusCode(400).body("error", equalTo("default_role"));
-        TestUsers.patchRole(owner, defaultRole, Map.of("position", 2)).then().statusCode(400).body("error", equalTo("default_role"));
-        given().header("Authorization", "Bearer " + owner).delete("/api/v1/roles/" + defaultRole)
-            .then().statusCode(400).body("error", equalTo("default_role"));
-        given().header("Authorization", "Bearer " + owner).put("/api/v1/accounts/" + member.id() + "/roles/" + defaultRole)
-            .then().statusCode(400).body("error", equalTo("default_role"));
-
-        List<String> original = given().header("Authorization", "Bearer " + owner).get("/api/v1/roles")
-            .then().extract().path("find { it.isDefault }.permissions");
+        String greeter = TestUsers.createRole("Greeter " + UUID.randomUUID(), "CREATE_INVITE");
         try {
-            TestUsers.patchRole(owner, defaultRole, Map.of("permissions", List.of("VIEW_CHANNELS")))
-                .then().statusCode(200).body("permissions", containsInAnyOrder("VIEW_CHANNELS"));
-            permissionsOf(member.token()).then().body("permissions", containsInAnyOrder("VIEW_CHANNELS"));
+            TestUsers.patchSettings(Map.of("newMemberRoleId", greeter)).then().statusCode(200).body("newMemberRoleId", equalTo(greeter));
+            TestUsers.User greeted = TestUsers.register();
+            given().header("Authorization", "Bearer " + greeted.token()).get("/api/v1/accounts/me")
+                .then().body("roleIds", contains(greeter));
+            given().header("Authorization", "Bearer " + owner).delete("/api/v1/roles/" + greeter)
+                .then().statusCode(409).body("error", equalTo("role_in_use"));
+
+            // Without a role new members can only browse.
+            TestUsers.patchSettings(Map.of("newMemberRoleId", "")).then().statusCode(200).body("newMemberRoleId", nullValue());
+            TestUsers.User browser = TestUsers.register();
+            given().header("Authorization", "Bearer " + browser.token()).get("/api/v1/accounts/me")
+                .then().body("roleIds", equalTo(List.of()));
+            permissionsOf(browser.token()).then().body("permissions", equalTo(List.of()));
+            given().header("Authorization", "Bearer " + browser.token()).get("/api/v1/channels")
+                .then().statusCode(200).body("size()", greaterThan(0));
+
+            TestUsers.patchSettings(Map.of("newMemberRoleId", UUID.randomUUID().toString()))
+                .then().statusCode(400).body("error", equalTo("role_not_found"));
         } finally {
-            TestUsers.patchRole(owner, defaultRole, Map.of("permissions", original)).then().statusCode(200);
+            TestUsers.patchSettings(Map.of("newMemberRoleId", TestUsers.USER_ROLE)).then().statusCode(200);
+            TestUsers.deleteRole(greeter);
         }
     }
 

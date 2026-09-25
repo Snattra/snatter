@@ -5,6 +5,7 @@ import static app.snatter.server.persistence.Rows.instant;
 
 import app.snatter.server.account.AccountId;
 import app.snatter.server.channel.ChannelId;
+import app.snatter.server.role.RoleId;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Duration;
 import java.time.Instant;
@@ -31,6 +32,7 @@ public class ServerSettingsRepository {
             policy(rs.getInt("rate_limit_challenge_limit"), rs.getInt("rate_limit_challenge_period")),
             policy(rs.getInt("rate_limit_invite_limit"), rs.getInt("rate_limit_invite_period"))),
         id(rs, "system_channel_id", ChannelId::new),
+        id(rs, "new_member_role_id", RoleId::new),
         instant(rs, "created_at"),
         instant(rs, "updated_at"));
 
@@ -54,7 +56,7 @@ public class ServerSettingsRepository {
                        rate_limit_register_limit, rate_limit_register_period,
                        rate_limit_challenge_limit, rate_limit_challenge_period,
                        rate_limit_invite_limit, rate_limit_invite_period,
-                       system_channel_id, created_at, updated_at
+                       system_channel_id, new_member_role_id, created_at, updated_at
                 FROM server_settings
                 WHERE id = :id
                 """)
@@ -85,6 +87,7 @@ public class ServerSettingsRepository {
                     rate_limit_invite_limit = :inviteLimit,
                     rate_limit_invite_period = :invitePeriod,
                     system_channel_id = :systemChannelId,
+                    new_member_role_id = :newMemberRoleId,
                     updated_at = :now
                 WHERE id = :id
                 """)
@@ -103,6 +106,7 @@ public class ServerSettingsRepository {
             .bind("inviteLimit", s.rateLimits().invite().limit())
             .bind("invitePeriod", s.rateLimits().invite().period().toSeconds())
             .bind("systemChannelId", s.systemChannelId())
+            .bind("newMemberRoleId", s.newMemberRoleId())
             .bind("now", Instant.now())
             .bind("id", SINGLETON_ID)
             .execute());

@@ -14,9 +14,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Role management with Discord's two rules: you may only touch roles below
- * your own highest role, and you may only grant permissions you hold. The
- * server owner is exempt from both.
+ * Role management with one rule: you may only create, change, delete, assign
+ * or take away roles whose permissions you all hold yourself, and only grant
+ * permissions you hold. The server owner is exempt.
  */
 @ApplicationScoped
 public class RoleService {
@@ -24,11 +24,9 @@ public class RoleService {
     /**
      * What an account is allowed to do, derived from its roles.
      *
-     * @param roleIds         assigned roles, excluding the default role
-     * @param highestPosition position of the most senior assigned role, 0 with none,
-     *                        {@code Integer.MAX_VALUE} for the owner
+     * @param roleIds assigned roles
      */
-    public record Resolution(boolean owner, Set<Permission> permissions, int highestPosition, Set<RoleId> roleIds) {
+    public record Resolution(boolean owner, Set<Permission> permissions, Set<RoleId> roleIds) {
     }
 
     private final RoleRepository roles;
@@ -43,27 +41,16 @@ public class RoleService {
         this.events = events;
     }
 
-    /**
-     * Effective permissions of an account: its roles plus the default role,
-     * widened by {@link Permission#ADMINISTRATOR}, or everything for the owner.
-     */
+    /** Effective permissions of an account: the union of its roles, or everything for the owner. */
     public Resolution resolve(AccountId accountId) {
-        if (settings.current().isOwner(accountId)) {
-            return new Resolution(true, Permission.all(), Integer.MAX_VALUE, Set.of());
-        }
         EnumSet<Permission> effective = EnumSet.noneOf(Permission.class);
-        effective.addAll(roles.findDefault().permissions());
         Set<RoleId> roleIds = new HashSet<>();
-        int highest = 0;
         for (Role role : roles.findByAccount(accountId)) {
             effective.addAll(role.permissions());
             roleIds.add(role.id());
-            highest = Math.max(highest, role.position());
         }
-        if (effective.contains(Permission.ADMINISTRATOR)) {
-            effective.addAll(Permission.ADMINISTRATOR_IMPLIES);
-        }
-        return new Resolution(false, effective, highest, Set.copyOf(roleIds));
+        boolean owner = settings.current().isOwner(accountId);
+        return new Resolution(owner, owner ? Permission.all() : effective, Set.copyOf(roleIds));
     }
 
     public List<Role> list() {
@@ -72,7 +59,7 @@ public class RoleService {
 
     @Transactional
     public Role create(AccountPrincipal actor, String name, String color, Set<Permission> permissions) {
-        requireNoEscalation(actor, permissions);
+        requireHeld(actor, permissions);
         Role role = roles.insertAtBottom(RoleId.newId(), name.strip(), color, permissions);
         events.fire(new RoleEvent.Created(role.id(), actor.accountId()));
         return role;
@@ -81,13 +68,9 @@ public class RoleService {
     /** Null arguments mean "unchanged"; an empty color clears it. */
     @Transactional
     public Role update(AccountPrincipal actor, RoleId id, String name, String color, Integer position, Set<Permission> permissions) {
-        Role role = require(id);
-        requireOutranks(actor, role);
-        if (role.isDefault() && (name != null || color != null || position != null)) {
-            throw ApiException.badRequest("default_role", "Only the permissions of the default role can be changed");
-        }
+        Role role = requireManageable(actor, id);
         if (permissions != null) {
-            requireNoEscalation(actor, permissions);
+            requireHeld(actor, permissions);
             role = role.withPermissions(permissions);
         }
         if (name != null) {
@@ -98,9 +81,6 @@ public class RoleService {
         }
         roles.update(role);
         if (position != null && position != role.position()) {
-            if (!actor.owner() && position >= actor.highestRolePosition()) {
-                throw new ApiException(403, "role_hierarchy", "You cannot move a role to or above your own highest role");
-            }
             roles.moveTo(id, position);
         }
         events.fire(new RoleEvent.Updated(id, actor.accountId()));
@@ -109,11 +89,13 @@ public class RoleService {
 
     @Transactional
     public void delete(AccountPrincipal actor, RoleId id) {
-        Role role = require(id);
-        if (role.isDefault()) {
-            throw ApiException.badRequest("default_role", "The default role cannot be deleted");
+        requireManageable(actor, id);
+        if (id.equals(settings.current().newMemberRoleId())) {
+            throw ApiException.conflict("role_in_use", "New members get this role; choose another in the server settings first");
         }
-        requireOutranks(actor, role);
+        if (roles.isRequiredByChannel(id)) {
+            throw ApiException.conflict("role_in_use", "Channels require this role; remove it from them first");
+        }
         roles.delete(id);
         events.fire(new RoleEvent.Deleted(id, actor.accountId()));
     }
@@ -133,14 +115,16 @@ public class RoleService {
     }
 
     private Role requireAssignable(AccountPrincipal actor, AccountId accountId, RoleId roleId) {
-        Role role = require(roleId);
-        if (role.isDefault()) {
-            throw ApiException.badRequest("default_role", "Every member has the default role; it cannot be assigned or removed");
-        }
-        requireOutranks(actor, role);
+        Role role = requireManageable(actor, roleId);
         if (accounts.findById(accountId).isEmpty()) {
             throw ApiException.notFound("account_not_found", "No such account");
         }
+        return role;
+    }
+
+    private Role requireManageable(AccountPrincipal actor, RoleId id) {
+        Role role = require(id);
+        requireHeld(actor, role.permissions());
         return role;
     }
 
@@ -148,15 +132,9 @@ public class RoleService {
         return roles.find(id).orElseThrow(() -> ApiException.notFound("role_not_found", "No such role"));
     }
 
-    private static void requireOutranks(AccountPrincipal actor, Role role) {
-        if (!actor.owner() && role.position() >= actor.highestRolePosition()) {
-            throw new ApiException(403, "role_hierarchy", "You can only manage roles below your own highest role");
-        }
-    }
-
-    private static void requireNoEscalation(AccountPrincipal actor, Set<Permission> permissions) {
+    private static void requireHeld(AccountPrincipal actor, Set<Permission> permissions) {
         if (!actor.owner() && !actor.permissions().containsAll(permissions)) {
-            throw new ApiException(403, "permission_escalation", "You can only grant permissions you hold yourself");
+            throw new ApiException(403, "permission_escalation", "You can only manage roles and grant permissions you hold yourself");
         }
     }
 }

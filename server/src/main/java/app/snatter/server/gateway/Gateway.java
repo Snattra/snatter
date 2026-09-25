@@ -2,7 +2,6 @@ package app.snatter.server.gateway;
 
 import app.snatter.api.model.GatewayChannelCreatedDto;
 import app.snatter.api.model.GatewayChannelDeletedDto;
-import app.snatter.api.model.GatewayChannelDto;
 import app.snatter.api.model.GatewayChannelUpdatedDto;
 import app.snatter.api.model.GatewayClientFrameDto;
 import app.snatter.api.model.GatewayIdentifyDto;
@@ -34,13 +33,11 @@ import app.snatter.server.auth.SessionId;
 import app.snatter.server.channel.Channel;
 import app.snatter.server.channel.ChannelEvent;
 import app.snatter.server.channel.ChannelId;
-import app.snatter.server.channel.ChannelPermissions;
 import app.snatter.server.channel.ChannelRepository;
 import app.snatter.server.channel.ChannelResource;
 import app.snatter.server.message.MessageEvent;
 import app.snatter.server.message.MessageResource;
 import app.snatter.server.message.UserMessage;
-import app.snatter.server.role.Permission;
 import app.snatter.server.role.PermissionDtos;
 import app.snatter.server.role.Role;
 import app.snatter.server.role.RoleEvent;
@@ -82,7 +79,7 @@ import org.jboss.logging.Logger;
  * <p>Channels, roles and permissions are sent as differences: each client
  * remembers what it was told, and after any change that might affect them
  * the dispatcher recomputes the client's view and sends what changed. Moves,
- * overwrite edits and role changes that hide or reveal channels need no
+ * required-role edits and role changes that hide or reveal channels need no
  * special handling.
  */
 @ApplicationScoped
@@ -194,7 +191,7 @@ public class Gateway {
             .server(serverInfo.toDto(settings.current()))
             .roles(client.roles.values().stream().map(RoleResource::toDto).toList())
             .members(members.stream().map(AccountDtos::toDto).toList())
-            .channels(client.channels.values().stream().map(Gateway::toDto).toList()));
+            .channels(client.channels.values().stream().map(ChannelResource::toDto).toList()));
     }
 
     /** Extends the sessions of open connections and closes those whose session has ended. */
@@ -280,7 +277,7 @@ public class Gateway {
             case MessageEvent.Deleted _ -> null;
         };
         for (Client client : liveClients()) {
-            if (!ChannelPermissions.canView(client.principal, channel)) {
+            if (!channel.isVisibleTo(client.principal)) {
                 continue;
             }
             if (!client.channels.containsKey(channel.id())) {
@@ -341,13 +338,13 @@ public class Gateway {
     }
 
     private void syncChannels(Client client, List<Channel> allChannels) {
-        Map<ChannelId, Client.VisibleChannel> now = visibleChannels(client.principal, allChannels);
-        for (Client.VisibleChannel visible : now.values()) {
-            Client.VisibleChannel before = client.channels.get(visible.channel().id());
+        Map<ChannelId, Channel> now = visibleChannels(client.principal, allChannels);
+        for (Channel channel : now.values()) {
+            Channel before = client.channels.get(channel.id());
             if (before == null) {
-                send(client, seq -> new GatewayChannelCreatedDto().seq(seq).channel(toDto(visible)));
-            } else if (!before.equals(visible)) {
-                send(client, seq -> new GatewayChannelUpdatedDto().seq(seq).channel(toDto(visible)));
+                send(client, seq -> new GatewayChannelCreatedDto().seq(seq).channel(ChannelResource.toDto(channel)));
+            } else if (!before.equals(channel)) {
+                send(client, seq -> new GatewayChannelUpdatedDto().seq(seq).channel(ChannelResource.toDto(channel)));
             }
         }
         for (ChannelId gone : client.channels.keySet()) {
@@ -419,21 +416,14 @@ public class Gateway {
         return map;
     }
 
-    private static Map<ChannelId, Client.VisibleChannel> visibleChannels(AccountPrincipal member, List<Channel> all) {
-        Map<ChannelId, Client.VisibleChannel> visible = new LinkedHashMap<>();
+    private static Map<ChannelId, Channel> visibleChannels(AccountPrincipal member, List<Channel> all) {
+        Map<ChannelId, Channel> visible = new LinkedHashMap<>();
         for (Channel channel : all) {
-            Set<Permission> permissions = ChannelPermissions.of(member, channel);
-            if (permissions.contains(Permission.VIEW_CHANNELS)) {
-                visible.put(channel.id(), new Client.VisibleChannel(channel, permissions));
+            if (channel.isVisibleTo(member)) {
+                visible.put(channel.id(), channel);
             }
         }
         return visible;
-    }
-
-    private static GatewayChannelDto toDto(Client.VisibleChannel visible) {
-        return new GatewayChannelDto()
-            .channel(ChannelResource.toDto(visible.channel()))
-            .permissions(PermissionDtos.toDto(visible.permissions()));
     }
 
     private static PermissionSetDto permissionSet(AccountPrincipal principal) {

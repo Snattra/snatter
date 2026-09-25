@@ -134,19 +134,12 @@ class InviteResourceTest {
     @Test
     void invitingRequiresTheCreateInvitePermission() {
         TestUsers.User member = TestUsers.register();
-        String defaultRole = TestUsers.defaultRoleId();
-        java.util.List<String> original = given().header("Authorization", "Bearer " + member.token())
-            .get("/api/v1/roles").then().statusCode(200).extract().path("find { it.isDefault }.permissions");
-        try {
-            java.util.List<String> without = original.stream().filter(p -> !p.equals("CREATE_INVITE")).toList();
-            TestUsers.patchRole(TestUsers.ownerToken(), defaultRole, Map.of("permissions", without)).then().statusCode(200);
+        createInvite(member.token(), Map.of()).then().statusCode(201);
+        TestUsers.unassignRole(member.id(), TestUsers.USER_ROLE);
 
-            createInvite(member.token(), Map.of()).then().statusCode(403).body("error", equalTo("forbidden"));
-            createInvite(TestUsers.ownerToken(), Map.of()).then().statusCode(201);
-            createInvite(TestUsers.registerWithPermissions("CREATE_INVITE").token(), Map.of()).then().statusCode(201);
-        } finally {
-            TestUsers.patchRole(TestUsers.ownerToken(), defaultRole, Map.of("permissions", original)).then().statusCode(200);
-        }
+        createInvite(member.token(), Map.of()).then().statusCode(403).body("error", equalTo("forbidden"));
+        createInvite(TestUsers.ownerToken(), Map.of()).then().statusCode(201);
+        createInvite(TestUsers.registerWithPermissions("CREATE_INVITE").token(), Map.of()).then().statusCode(201);
     }
 
     @Test

@@ -8,6 +8,8 @@ import app.snatter.server.api.ApiException;
 import app.snatter.server.invite.Invite;
 import app.snatter.server.invite.InviteCode;
 import app.snatter.server.invite.InviteService;
+import app.snatter.server.role.RoleId;
+import app.snatter.server.role.RoleRepository;
 import app.snatter.server.settings.RegistrationMode;
 import app.snatter.server.settings.ServerSettings;
 import app.snatter.server.settings.ServerSettingsService;
@@ -43,13 +45,14 @@ public class AuthService {
     private final AltchaService challenges;
     private final InviteService invites;
     private final ServerSettingsService settings;
+    private final RoleRepository roles;
     private final AuthConfig config;
     private final Event<AccountEvent> events;
     private final Event<SessionEvent> sessionEvents;
     private final SecureRandom random = new SecureRandom();
 
     public AuthService(AccountRepository accounts, SessionRepository sessions, PasswordHasher hasher,
-                       AltchaService challenges, InviteService invites, ServerSettingsService settings,
+                       AltchaService challenges, InviteService invites, ServerSettingsService settings, RoleRepository roles,
                        AuthConfig config, Event<AccountEvent> events, Event<SessionEvent> sessionEvents) {
         this.accounts = accounts;
         this.sessions = sessions;
@@ -57,6 +60,7 @@ public class AuthService {
         this.challenges = challenges;
         this.invites = invites;
         this.settings = settings;
+        this.roles = roles;
         this.config = config;
         this.events = events;
         this.sessionEvents = sessionEvents;
@@ -120,6 +124,11 @@ public class AuthService {
         }
         if (invite != null) {
             accounts.linkInvite(account.id(), invite.code().value(), invite.createdBy());
+        }
+        RoleId newMemberRole = settings.current().newMemberRoleId();
+        if (newMemberRole != null) {
+            roles.assign(account.id(), newMemberRole);
+            account = accounts.findById(account.id()).orElseThrow();
         }
         events.fire(new AccountEvent.Registered(account.id()));
         return openSession(account, ip, userAgent);

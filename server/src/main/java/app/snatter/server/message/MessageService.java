@@ -4,7 +4,6 @@ import app.snatter.server.api.ApiException;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.Channel;
 import app.snatter.server.channel.ChannelId;
-import app.snatter.server.channel.ChannelPermissions;
 import app.snatter.server.channel.ChannelService;
 import app.snatter.server.role.Permission;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -14,8 +13,8 @@ import java.util.List;
 
 /**
  * Messages in channels. Reading needs the channel to be visible, sending
- * needs {@code SEND_MESSAGES} in it. Authors edit and delete their own
- * messages; {@code MANAGE_MESSAGES} in the channel deletes any.
+ * needs {@code SEND_MESSAGES}. Authors edit and delete their own
+ * messages; {@code MANAGE_MESSAGES} deletes any.
  */
 @ApplicationScoped
 public class MessageService {
@@ -52,8 +51,8 @@ public class MessageService {
     /** @param nonce the client's, handed back to the sending session; may be null */
     @Transactional
     public UserMessage send(AccountPrincipal author, ChannelId channelId, String content, MessageId replyToId, String nonce) {
-        Channel channel = requireReadable(author, channelId);
-        if (!ChannelPermissions.of(author, channel).contains(Permission.SEND_MESSAGES)) {
+        requireReadable(author, channelId);
+        if (!author.has(Permission.SEND_MESSAGES)) {
             throw new ApiException(403, "forbidden", "You cannot send messages in this channel");
         }
         UserMessage.Reference replyTo = replyToId == null ? null : requireRepliable(channelId, replyToId);
@@ -77,11 +76,11 @@ public class MessageService {
 
     @Transactional
     public void delete(AccountPrincipal member, ChannelId channelId, MessageId id) {
-        Channel channel = requireReadable(member, channelId);
+        requireReadable(member, channelId);
         Message message = require(channelId, id);
         boolean own = message instanceof UserMessage && message.isBy(member.accountId());
-        if (!own && !ChannelPermissions.of(member, channel).contains(Permission.MANAGE_MESSAGES)) {
-            throw new ApiException(403, "forbidden", "You need MANAGE_MESSAGES in this channel to delete this message");
+        if (!own && !member.has(Permission.MANAGE_MESSAGES)) {
+            throw new ApiException(403, "forbidden", "You need MANAGE_MESSAGES to delete this message");
         }
         messages.delete(id);
         events.fire(new MessageEvent.Deleted(channelId, id));

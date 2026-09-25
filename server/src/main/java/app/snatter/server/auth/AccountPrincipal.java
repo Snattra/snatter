@@ -8,13 +8,12 @@ import java.util.Set;
 
 /**
  * The authenticated account behind a request, available from
- * {@code SecurityIdentity}, together with what it may do.
+ * {@code SecurityIdentity}, together with what it may do. Access checks read
+ * only this record, never the database.
  *
- * @param owner               whether this is the server owner, who may do everything
- * @param permissions         effective server-level permissions; every permission for the owner
- * @param highestRolePosition position of the most senior assigned role, 0 with none,
- *                            {@code Integer.MAX_VALUE} for the owner
- * @param roleIds             assigned roles, excluding the implicit default role
+ * @param owner       whether this is the server owner, who may do everything
+ * @param permissions the union of the assigned roles; every permission for the owner
+ * @param roleIds     assigned roles
  */
 public record AccountPrincipal(
         AccountId accountId,
@@ -22,7 +21,6 @@ public record AccountPrincipal(
         SessionId sessionId,
         boolean owner,
         Set<Permission> permissions,
-        int highestRolePosition,
         Set<RoleId> roleIds) implements Principal {
 
     @Override
@@ -34,9 +32,9 @@ public record AccountPrincipal(
         return permissions.contains(permission);
     }
 
-    /** The owner or an administrator: not bound by channel overwrites. */
-    public boolean bypassesOverwrites() {
-        return owner || has(Permission.ADMINISTRATOR);
+    /** Whether the account holds at least one of the roles. */
+    public boolean hasAnyRole(Set<RoleId> roles) {
+        return roles.stream().anyMatch(roleIds::contains);
     }
 
     /** For Quarkus permission checks, which pass the permission by name. */
