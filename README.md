@@ -31,24 +31,43 @@ Windows first, then macOS, then Linux.
 | Directory   | Contents                                          | License     |
 |-------------|---------------------------------------------------|-------------|
 | `server/`   | The Snatter server (Java, Quarkus)                | AGPL-3.0    |
-| `client/`   | The desktop client                                | AGPL-3.0    |
+| `client/`   | The web client and, later, the desktop app        | AGPL-3.0    |
 | `protocol/` | Protocol definitions shared by server and clients | Apache-2.0  |
 
 
 ## Running with Docker Compose
 
-The quickest way to run a Snatter server, no JDK or Maven required:
+The quickest way to run Snatter, no JDK, Maven or Node.js required:
 
 ```
 cp .env.example .env      # set SNATTER_DB_PASSWORD
 docker compose up --build
 ```
 
-This builds the server from source and starts it together with PostgreSQL in
-the production profile. The server listens on http://localhost:8080; try
-`/api/v1/server-info` and `/q/health`. Database files persist in the
-`db-data` and `server-data` volumes, so `docker compose down` keeps your data and
-`docker compose down -v` wipes it.
+This builds the server and the web app from source and starts them together
+with PostgreSQL in the production profile. Open http://localhost:8080 and
+create the first account, which becomes the owner. The web container serves
+the app and forwards `/api` to the server, so the API is on the same port
+(try `/api/v1/server-info`); the server is not published on its own. Database
+files persist in the `db-data` and `server-data` volumes, so
+`docker compose down` keeps your data and `docker compose down -v` wipes it.
+
+## Developing locally
+
+Run the server and the client side by side, each in its own terminal. You
+need a JDK 25+, Maven, Docker and Node.js 24+; the READMEs in `server/` and
+`client/` have the details.
+
+```
+cd server && mvn quarkus:dev                  # http://localhost:8080
+cd client && npm install && npm run dev       # http://localhost:5173
+```
+
+Open http://localhost:5173. The client reaches the server through Vite's
+proxy, and the first account you create on the fresh development database
+becomes the owner. If port 8080 is taken, for example by the Docker Compose
+server, start the server with `-Dquarkus.http.port=8081` and the client with
+`SNATTER_SERVER=http://localhost:8081 npm run dev`.
 
 ## Contributing
 

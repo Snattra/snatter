@@ -18,10 +18,13 @@ public class ServerInfoDtos {
 
     private final String version;
     private final VoiceConfig voice;
+    private final ServerSettingsService settings;
 
-    public ServerInfoDtos(@ConfigProperty(name = "quarkus.application.version") String version, VoiceConfig voice) {
+    public ServerInfoDtos(@ConfigProperty(name = "quarkus.application.version") String version, VoiceConfig voice,
+                          ServerSettingsService settings) {
         this.version = version;
         this.voice = voice;
+        this.settings = settings;
     }
 
     public ServerInfoDto toDto(ServerSettings s) {
@@ -32,7 +35,8 @@ public class ServerInfoDtos {
             .community(new CommunityDto().name(s.name()).description(s.description()))
             .registration(new RegistrationInfoDto()
                 .mode(RegistrationModeDto.fromValue(s.registrationMode().dbValue()))
-                .challengeRequired(s.challengeRequired()))
+                .challengeRequired(s.challengeRequired())
+                .setupRequired(settings.setupRequired()))
             .voice(new VoiceInfoDto()
                 .defaultBitrate(voice.newChannelBitrate())
                 .maxBitrate(voice.maxBitrate()));

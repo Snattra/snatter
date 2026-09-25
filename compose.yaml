@@ -1,9 +1,12 @@
-# Runs a complete Snatter server locally in the production profile.
+# Runs a complete Snatter installation locally in the production profile:
+# PostgreSQL, the server, and the web app in front of it.
 #
 #   cp .env.example .env      # then set SNATTER_DB_PASSWORD
 #   docker compose up --build
 #
-# The server is then available on http://localhost:8080.
+# Open http://localhost:8080. The web container serves the app and forwards
+# /api, including the gateway, to the server, so everything is on that one
+# port; the server itself is not published.
 
 name: snatter
 
@@ -24,7 +27,9 @@ services:
       retries: 10
 
   server:
-    build: ./server
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     image: snatter-server:local
     restart: unless-stopped
     depends_on:
@@ -34,8 +39,24 @@ services:
       SNATTER_DB_URL: jdbc:postgresql://db:5432/snatter
       SNATTER_DB_USER: snatter
       SNATTER_DB_PASSWORD: ${SNATTER_DB_PASSWORD}
+      # Take the client address from the web container's X-Forwarded-For, so
+      # rate limits apply per client. Safe only because nothing but the web
+      # container can reach the server.
+      QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING: "true"
+      QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED: "true"
     volumes:
       - server-data:/var/lib/snatter
+
+  web:
+    build:
+      context: .
+      dockerfile: client/web/Dockerfile
+    image: snatter-web:local
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      SNATTER_SERVER_URL: http://server:8080
     ports:
       - "${SNATTER_HTTP_PORT:-8080}:8080"
 

@@ -1,0 +1,54 @@
+# The web app and a same-origin path to the Snatter server. The entrypoint
+# fills in ${SNATTER_SERVER_URL} and ${NGINX_LOCAL_RESOLVERS}.
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 8080;
+    server_tokens off;
+    root /usr/share/nginx/html;
+
+    # The API and the gateway WebSocket.
+    location /api/ {
+        resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
+        set $snatter_server ${SNATTER_SERVER_URL};
+        proxy_pass $snatter_server;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        # Replaced, not appended to, so clients cannot choose the address the
+        # server rate-limits by.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Gateway connections stay open; the server pings them.
+        proxy_read_timeout 1h;
+        # Avatars are at most 1 MiB.
+        client_max_body_size 2m;
+    }
+
+    # Named by content hash, so they never change.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header X-Content-Type-Options "nosniff";
+        try_files $uri =404;
+    }
+
+    # The app itself, for every other path.
+    location / {
+        try_files $uri /index.html;
+        add_header Cache-Control "no-cache";
+        add_header X-Content-Type-Options "nosniff";
+        add_header Referrer-Policy "no-referrer";
+        add_header Cross-Origin-Opener-Policy "same-origin";
+        add_header Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=()";
+        # Only the app's own files run, nothing inline, and no string is ever
+        # turned into HTML or script (Trusted Types): session tokens live in
+        # localStorage, so injected script must be impossible.
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types snatter";
+    }
+}

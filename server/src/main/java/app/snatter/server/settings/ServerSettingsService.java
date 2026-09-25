@@ -1,6 +1,7 @@
 package app.snatter.server.settings;
 
 import app.snatter.server.account.AccountId;
+import app.snatter.server.account.AccountRepository;
 import app.snatter.server.api.ApiException;
 import app.snatter.server.channel.Channel;
 import app.snatter.server.channel.ChannelEvent;
@@ -31,20 +32,30 @@ public class ServerSettingsService {
     private final ServerSettingsRepository repository;
     private final ChannelRepository channels;
     private final RoleRepository roles;
+    private final AccountRepository accounts;
     private final Event<Changed> changed;
     private final AtomicReference<ServerSettings> current = new AtomicReference<>();
 
     public ServerSettingsService(ServerSettingsRepository repository, ChannelRepository channels, RoleRepository roles,
-                                 Event<Changed> changed) {
+                                 AccountRepository accounts, Event<Changed> changed) {
         this.repository = repository;
         this.channels = channels;
         this.roles = roles;
+        this.accounts = accounts;
         this.changed = changed;
         this.current.set(repository.get());
     }
 
     public ServerSettings current() {
         return current.get();
+    }
+
+    /**
+     * A fresh server: no owner and no accounts yet. The next registration
+     * needs neither an invite nor a challenge and makes its account the owner.
+     */
+    public boolean setupRequired() {
+        return current().ownerId() == null && accounts.count() == 0;
     }
 
     @Transactional

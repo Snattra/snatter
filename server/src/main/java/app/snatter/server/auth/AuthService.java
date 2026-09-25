@@ -92,7 +92,7 @@ public class AuthService {
     @Transactional
     public Login register(Registration registration, String ip, String userAgent) {
         ServerSettings policy = settings.current();
-        boolean firstAccount = policy.ownerId() == null && accounts.count() == 0;
+        boolean firstAccount = settings.setupRequired();
 
         Invite invite = null;
         if (!firstAccount) {

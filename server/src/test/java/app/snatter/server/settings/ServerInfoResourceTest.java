@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 
+import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +35,16 @@ class ServerInfoResourceTest {
             .statusCode(200)
             .body("community.name", equalTo("My Snatter server"))
             .body("community.description", nullValue());
+    }
+
+    @Test
+    void setupIsOverOnceTheOwnerExists() {
+        TestUsers.ownerToken();
+        given()
+            .when().get("/api/v1/server-info")
+            .then()
+            .statusCode(200)
+            .body("registration.setupRequired", equalTo(false));
     }
 
     @Test

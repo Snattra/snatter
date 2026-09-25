@@ -1,0 +1,10 @@
+# Images build from the repository root so they can reach protocol/.
+.git/
+.env
+**/node_modules/
+**/target/
+**/dist/
+**/.idea/
+**/*.iml
+**/.vscode/
+client/web/src/api/schema.d.ts

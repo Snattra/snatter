@@ -1864,13 +1864,20 @@ components:
 
     RegistrationInfo:
       type: object
-      required: [mode, challengeRequired]
+      required: [mode, challengeRequired, setupRequired]
       properties:
         mode:
           $ref: "#/components/schemas/RegistrationMode"
         challengeRequired:
           type: boolean
           description: Whether registration requires a solved challenge from `GET /api/v1/auth/challenge`
+        setupRequired:
+          type: boolean
+          description: |
+            A fresh server with no accounts yet. The next registration needs
+            neither an invite nor a challenge, whatever `mode` and
+            `challengeRequired` say, and its account becomes the server
+            owner.
 
     RateLimitPolicy:
       type: object
@@ -2118,11 +2125,13 @@ components:
           type: object
           additionalProperties:
             type: string
-          description: Per-field messages, present for `validation_failed` only
+          nullable: true
+          description: Per-field messages for `validation_failed`, null otherwise
         ban:
           allOf:
             - $ref: "#/components/schemas/BanNotice"
-          description: Present for `banned` only
+          nullable: true
+          description: Why, for `banned`; null otherwise
 
     # --- Gateway ------------------------------------------------------------
     # Frames of the WebSocket at /api/v1/gateway; see the description at the top.

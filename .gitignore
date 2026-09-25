@@ -29,3 +29,6 @@ dist/
 # Tauri / Rust
 src-tauri/target/
 data/
+
+# Client
+client/web/src/api/schema.d.ts
