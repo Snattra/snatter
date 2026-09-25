@@ -11,7 +11,8 @@ public enum GatewayClose {
     AUTHENTICATION_FAILED(4003),
     ALREADY_IDENTIFIED(4004),
     SESSION_ENDED(4005),
-    TOO_SLOW(4006);
+    TOO_SLOW(4006),
+    BANNED(4007);
 
     private final int code;
 

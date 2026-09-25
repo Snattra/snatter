@@ -1,6 +1,7 @@
 package app.snatter.server.account;
 
 import app.snatter.api.model.AccountDto;
+import java.time.Instant;
 
 /** Maps the domain {@link Account} onto the contract's {@code Account} schema. */
 public final class AccountDtos {
@@ -15,6 +16,7 @@ public final class AccountDtos {
             .displayName(account.displayName())
             .avatarId(account.avatarId())
             .roleIds(account.roleIds())
+            .timedOutUntil(account.isTimedOut(Instant.now()) ? account.timedOutUntil() : null)
             .createdAt(account.createdAt());
     }
 }

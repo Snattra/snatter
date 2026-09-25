@@ -25,7 +25,7 @@ class ChannelEventsTest {
     private static AccountPrincipal owner() {
         String id = given().header("Authorization", "Bearer " + TestUsers.ownerToken()).get("/api/v1/accounts/me").path("id");
         return new AccountPrincipal(AccountId.fromString(id), TestUsers.OWNER_USERNAME,
-            new SessionId(UUID.randomUUID()), true, Permission.all(), Set.of());
+            new SessionId(UUID.randomUUID()), true, Permission.all(), Set.of(), null);
     }
 
     @Inject

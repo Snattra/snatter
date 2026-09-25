@@ -23,7 +23,7 @@ CREATE INDEX account_role_role_idx ON account_role (role_id);
 
 -- The standard roles. They are ordinary roles that can be changed or deleted.
 -- User: CREATE_INVITE, SEND_MESSAGES, CONNECT, SPEAK, STREAM (bits 6, 7, 9, 10, 11).
--- Moderator: User's plus KICK_MEMBERS, BAN_MEMBERS, MANAGE_MESSAGES,
+-- Moderator: User's plus TIMEOUT_MEMBERS, BAN_MEMBERS, MANAGE_MESSAGES,
 --            MUTE_MEMBERS, MOVE_MEMBERS (bits 4, 5, 8, 12, 13).
 -- Admin: everything except MANAGE_SERVER, which stays with the owner (bits 1 to 13).
 INSERT INTO role (id, name, position, permissions)

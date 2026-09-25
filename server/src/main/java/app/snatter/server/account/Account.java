@@ -8,8 +8,9 @@ import java.util.List;
 /**
  * A member of this community.
  *
- * @param avatarId blob holding the profile picture, or null if none is set
- * @param roleIds  assigned roles
+ * @param avatarId       blob holding the profile picture, or null if none is set
+ * @param roleIds        assigned roles
+ * @param timedOutUntil  end of the member's timeout, or null; a past instant means none
  */
 public record Account(
         AccountId id,
@@ -17,5 +18,10 @@ public record Account(
         String displayName,
         BlobId avatarId,
         List<RoleId> roleIds,
+        Instant timedOutUntil,
         Instant createdAt) {
+
+    public boolean isTimedOut(Instant now) {
+        return timedOutUntil != null && timedOutUntil.isAfter(now);
+    }
 }

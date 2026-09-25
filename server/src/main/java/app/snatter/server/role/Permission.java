@@ -14,7 +14,7 @@ public enum Permission {
     MANAGE_ROLES(1),
     MANAGE_CHANNELS(2),
     MANAGE_INVITES(3),
-    KICK_MEMBERS(4),
+    TIMEOUT_MEMBERS(4),
     BAN_MEMBERS(5),
     CREATE_INVITE(6),
     SEND_MESSAGES(7),

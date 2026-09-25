@@ -1,5 +1,6 @@
 package app.snatter.server.role;
 
+import app.snatter.server.account.Account;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.account.AccountRepository;
 import app.snatter.server.api.ApiException;
@@ -8,6 +9,7 @@ import app.snatter.server.settings.ServerSettingsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -24,9 +26,13 @@ public class RoleService {
     /**
      * What an account is allowed to do, derived from its roles.
      *
-     * @param roleIds assigned roles
+     * @param permissions   what the account may do now: none during a timeout
+     * @param granted       what its roles grant, timeout or not; every permission for the owner
+     * @param roleIds       assigned roles
+     * @param timedOutUntil end of the current timeout, or null if there is none
      */
-    public record Resolution(boolean owner, Set<Permission> permissions, Set<RoleId> roleIds) {
+    public record Resolution(boolean owner, Set<Permission> permissions, Set<Permission> granted, Set<RoleId> roleIds,
+                             Instant timedOutUntil) {
     }
 
     private final RoleRepository roles;
@@ -41,16 +47,43 @@ public class RoleService {
         this.events = events;
     }
 
-    /** Effective permissions of an account: the union of its roles, or everything for the owner. */
+    /**
+     * Effective permissions of an account: the union of its roles, none
+     * during a timeout, or everything for the owner, who cannot be timed out.
+     */
     public Resolution resolve(AccountId accountId) {
-        EnumSet<Permission> effective = EnumSet.noneOf(Permission.class);
+        EnumSet<Permission> granted = EnumSet.noneOf(Permission.class);
         Set<RoleId> roleIds = new HashSet<>();
         for (Role role : roles.findByAccount(accountId)) {
-            effective.addAll(role.permissions());
+            granted.addAll(role.permissions());
             roleIds.add(role.id());
         }
-        boolean owner = settings.current().isOwner(accountId);
-        return new Resolution(owner, owner ? Permission.all() : effective, Set.copyOf(roleIds));
+        if (settings.current().isOwner(accountId)) {
+            return new Resolution(true, Permission.all(), Permission.all(), Set.copyOf(roleIds), null);
+        }
+        Instant timedOutUntil = accounts.findById(accountId)
+            .filter(a -> a.isTimedOut(Instant.now()))
+            .map(Account::timedOutUntil)
+            .orElse(null);
+        return new Resolution(false, timedOutUntil == null ? granted : Set.of(), granted, Set.copyOf(roleIds), timedOutUntil);
+    }
+
+    /**
+     * For moderating another member: they must exist, not be the actor or the
+     * owner, and everything their roles grant must be something the actor
+     * holds. A timeout does not lower anyone's rank.
+     */
+    public void requireOutranks(AccountPrincipal actor, AccountId target) {
+        if (actor.accountId().equals(target)) {
+            throw ApiException.badRequest("cannot_moderate_self", "You cannot do this to yourself");
+        }
+        if (accounts.findById(target).isEmpty()) {
+            throw ApiException.notFound("account_not_found", "No such account");
+        }
+        Resolution resolved = resolve(target);
+        if (resolved.owner() || (!actor.owner() && !actor.permissions().containsAll(resolved.granted()))) {
+            throw new ApiException(403, "member_outranks_you", "You can only do this to members whose permissions you all hold");
+        }
     }
 
     public List<Role> list() {

@@ -15,4 +15,12 @@ public sealed interface AccountEvent {
     /** The member's profile changed, for example their avatar. */
     record Updated(AccountId accountId) implements AccountEvent {
     }
+
+    /** The member was banned; their sessions are already gone. */
+    record Banned(AccountId accountId, AccountId actor) implements AccountEvent {
+    }
+
+    /** A timeout started, changed or was lifted early. One running out on its own fires nothing. */
+    record TimeoutChanged(AccountId accountId, AccountId actor) implements AccountEvent {
+    }
 }

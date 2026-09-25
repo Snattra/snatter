@@ -27,7 +27,7 @@ class RoleRepositoryTest {
     @Transactional
     void movedRolesStayAssignedAndOrdered() {
         Account member = accounts.createLocal(AccountId.newId(), "rr_" + UUID.randomUUID().toString().substring(0, 8), "RR", "x");
-        Role manager = roles.insertAtBottom(RoleId.newId(), "Manager", null, Set.of(Permission.MANAGE_ROLES, Permission.KICK_MEMBERS));
+        Role manager = roles.insertAtBottom(RoleId.newId(), "Manager", null, Set.of(Permission.MANAGE_ROLES, Permission.TIMEOUT_MEMBERS));
         Role admin = roles.insertAtBottom(RoleId.newId(), "Admin", null, Set.of(Permission.MANAGE_SERVER));
         try {
             assertEquals(0, roles.find(admin.id()).orElseThrow().position());

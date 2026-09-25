@@ -16,6 +16,7 @@ splitting by technical layer:
 | `auth`        | Passwords, sessions, challenges, HTTP authentication |
 | `blob`        | Binary content: storage, metadata, image detection   |
 | `invite`      | Invite links and their redemption                    |
+| `moderation`  | Bans and timeouts                                    |
 | `role`        | Permissions, roles, assignment rules                 |
 | `channel`     | Channels, ordering, required roles                   |
 | `message`     | Messages, replies, paging, system notices            |
@@ -129,7 +130,7 @@ the member can see; which channels those are is decided by roles too (see
 "Channels"), not by a permission.
 
 A fresh server has three standard roles: `User` (invite, send messages,
-voice), `Moderator` (User's plus kicking, banning and moderating messages and
+voice), `Moderator` (User's plus timeouts, bans and moderating messages and
 voice) and `Admin` (every permission except `MANAGE_SERVER`). They are
 ordinary roles and can be renamed, changed or deleted. When a permission is
 added in a later version, a migration decides which existing roles get it.
@@ -158,6 +159,35 @@ you hold (`permission_escalation`). So a member with `MANAGE_ROLES` can never
 end up with, or take away, more than they have. Roles have a `position` for
 display only, highest first; new roles are inserted at 0 with everything
 else moving up.
+
+## Moderation
+
+Bans (`BAN_MEMBERS`) and timeouts (`TIMEOUT_MEMBERS`) live in
+`moderation.ModerationService` and share the role rule through
+`RoleService.requireOutranks`: the actor must hold everything the target's
+roles grant (`member_outranks_you`), the owner can never be targeted, and
+nobody can target themselves (`cannot_moderate_self`). Rank is judged on what
+the roles grant, so a timed-out Admin still outranks a Moderator.
+
+**Bans** (`ban` table, one row per account, with an optional reason). Banning
+deletes the member's sessions in the same transaction and fires
+`AccountEvent.Banned`, on which the gateway closes their connections with
+`banned`. `SessionRepository.findByTokenHash` never finds a session of a
+banned account, which also covers a login that raced with the ban. Login
+checks for a ban only after the password is verified, so guessers learn
+nothing, and answers `banned` with the reason in `ApiError.ban`, through
+`BannedException`. Messages stay. IP bans are not built yet.
+
+**Timeouts** (`account.timed_out_until`). The member keeps roles, sessions
+and their view of channels, but `RoleService.resolve` gives them no
+permissions until the instant passes, so they can read and nothing else.
+`Account.timedOutUntil` shows it to everyone, null once it has passed.
+Starting or lifting one fires `AccountEvent.TimeoutChanged`, on which the
+gateway re-resolves the member (`permissions_changed`) and sends
+`member_updated`. Nothing fires when a timeout runs out, so the gateway
+schedules the same refresh for the end of each timeout it sees on a
+principal, one per account, replaced whenever the principal is resolved
+again.
 
 ## Channels
 
@@ -322,7 +352,8 @@ that member arrives, and keep it alive by sending `typing` every 8 seconds.
 **Sessions.** Connections authenticate once, with `identify`, and keep the
 principal for their lifetime; its permissions are resolved again when roles
 change. When a session ends (`SessionEvent.Ended`: logout today, revocation
-later) its connections close with `session_ended`. Every
+later) its connections close with `session_ended`; a ban closes all of the
+member's connections with `banned` instead. Every
 `snatter.gateway.keep-alive-interval` the dispatcher extends the sessions of
 open connections through `AuthService.keepAlive`, so a client that is only
 listening stays logged in, and closes connections whose session is gone.
@@ -466,6 +497,11 @@ that produces it.
 | GET    | `/channels/{id}/messages/{messageId}` | yes | One message |
 | PATCH  | `/channels/{id}/messages/{messageId}` | author | Edit your own message |
 | DELETE | `/channels/{id}/messages/{messageId}` | author or MANAGE_MESSAGES | Delete a message |
+| GET    | `/bans`              | BAN_MEMBERS | Every ban, newest first           |
+| PUT    | `/bans/{accountId}`  | BAN_MEMBERS | Ban a member, with an optional reason |
+| DELETE | `/bans/{accountId}`  | BAN_MEMBERS | Lift a ban                        |
+| PUT    | `/timeouts/{accountId}` | TIMEOUT_MEMBERS | Time a member out for up to 28 days |
+| DELETE | `/timeouts/{accountId}` | TIMEOUT_MEMBERS | End a timeout early           |
 | GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
 Error codes so far: `validation_failed`, `username_taken`, `registration_closed`,
@@ -473,7 +509,7 @@ Error codes so far: `validation_failed`, `username_taken`, `registration_closed`
 `invite_invalid`, `invite_not_found`, `invite_unusable`, `role_not_found`,
 `role_in_use`, `permission_escalation`,
 `channel_not_found`, `not_a_voice_channel`, `bitrate_too_high`, `invalid_required_role`,
-`required_role_not_held`,
+`required_role_not_held`, `banned`, `member_outranks_you`, `cannot_moderate_self`,
 `voice_only_channel`, `message_not_found`, `invalid_reply`, `invalid_paging`,
 `invalid_credentials`, `account_not_found`, `blob_not_found`,
 `unsupported_image`, `image_dimensions`, `image_too_large`.

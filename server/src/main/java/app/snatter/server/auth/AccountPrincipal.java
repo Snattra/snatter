@@ -4,6 +4,7 @@ import app.snatter.server.account.AccountId;
 import app.snatter.server.role.Permission;
 import app.snatter.server.role.RoleId;
 import java.security.Principal;
+import java.time.Instant;
 import java.util.Set;
 
 /**
@@ -11,9 +12,10 @@ import java.util.Set;
  * {@code SecurityIdentity}, together with what it may do. Access checks read
  * only this record, never the database.
  *
- * @param owner       whether this is the server owner, who may do everything
- * @param permissions the union of the assigned roles; every permission for the owner
- * @param roleIds     assigned roles
+ * @param owner         whether this is the server owner, who may do everything
+ * @param permissions   the union of the assigned roles, none during a timeout; every permission for the owner
+ * @param roleIds       assigned roles
+ * @param timedOutUntil end of the current timeout, or null if there is none
  */
 public record AccountPrincipal(
         AccountId accountId,
@@ -21,7 +23,8 @@ public record AccountPrincipal(
         SessionId sessionId,
         boolean owner,
         Set<Permission> permissions,
-        Set<RoleId> roleIds) implements Principal {
+        Set<RoleId> roleIds,
+        Instant timedOutUntil) implements Principal {
 
     @Override
     public String getName() {

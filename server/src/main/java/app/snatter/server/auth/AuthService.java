@@ -5,6 +5,9 @@ import app.snatter.server.account.AccountEvent;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.account.AccountRepository;
 import app.snatter.server.api.ApiException;
+import app.snatter.server.moderation.Ban;
+import app.snatter.server.moderation.BanRepository;
+import app.snatter.server.moderation.BannedException;
 import app.snatter.server.invite.Invite;
 import app.snatter.server.invite.InviteCode;
 import app.snatter.server.invite.InviteService;
@@ -46,6 +49,7 @@ public class AuthService {
     private final InviteService invites;
     private final ServerSettingsService settings;
     private final RoleRepository roles;
+    private final BanRepository bans;
     private final AuthConfig config;
     private final Event<AccountEvent> events;
     private final Event<SessionEvent> sessionEvents;
@@ -53,6 +57,7 @@ public class AuthService {
 
     public AuthService(AccountRepository accounts, SessionRepository sessions, PasswordHasher hasher,
                        AltchaService challenges, InviteService invites, ServerSettingsService settings, RoleRepository roles,
+                       BanRepository bans,
                        AuthConfig config, Event<AccountEvent> events, Event<SessionEvent> sessionEvents) {
         this.accounts = accounts;
         this.sessions = sessions;
@@ -61,6 +66,7 @@ public class AuthService {
         this.invites = invites;
         this.settings = settings;
         this.roles = roles;
+        this.bans = bans;
         this.config = config;
         this.events = events;
         this.sessionEvents = sessionEvents;
@@ -140,6 +146,11 @@ public class AuthService {
         Optional<String> hash = account.flatMap(a -> accounts.findPasswordHash(a.id()));
         if (hash.isEmpty() || !hasher.verify(password, hash.get())) {
             throw ApiException.unauthorized("invalid_credentials", "Unknown username or wrong password");
+        }
+        // Only after the password checks out, so the answer tells a guesser nothing.
+        Optional<Ban> ban = bans.find(account.get().id());
+        if (ban.isPresent()) {
+            throw new BannedException(ban.get());
         }
         return openSession(account.get(), ip, userAgent);
     }

@@ -43,12 +43,17 @@ public class SessionRepository {
             .execute());
     }
 
+    /**
+     * The session for a token. Sessions of banned accounts are never found,
+     * even one opened by a login that raced with the ban.
+     */
     public Optional<Session> findByTokenHash(String tokenHash) {
         return jdbi.withHandle(h -> h
             .createQuery("""
                 SELECT id, account_id, created_at, expires_at, last_seen_at
-                FROM session
+                FROM session s
                 WHERE token_hash = :tokenHash
+                  AND NOT EXISTS (SELECT 1 FROM ban b WHERE b.account_id = s.account_id)
                 """)
             .bind("tokenHash", tokenHash)
             .map(MAPPER)
@@ -70,6 +75,13 @@ public class SessionRepository {
             .createUpdate("DELETE FROM session WHERE id = :id")
             .bind("id", id)
             .execute()) == 1;
+    }
+
+    public void deleteByAccount(AccountId accountId) {
+        jdbi.useHandle(h -> h
+            .createUpdate("DELETE FROM session WHERE account_id = :accountId")
+            .bind("accountId", accountId)
+            .execute());
     }
 
     public int deleteExpired(Instant now) {

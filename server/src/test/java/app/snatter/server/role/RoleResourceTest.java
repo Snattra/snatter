@@ -42,7 +42,7 @@ class RoleResourceTest {
                 containsInAnyOrder("CREATE_INVITE", "SEND_MESSAGES", "CONNECT", "SPEAK", "STREAM"))
             .body("find { it.id == '" + TestUsers.MODERATOR_ROLE + "' }.permissions",
                 containsInAnyOrder("CREATE_INVITE", "SEND_MESSAGES", "CONNECT", "SPEAK", "STREAM",
-                    "KICK_MEMBERS", "BAN_MEMBERS", "MANAGE_MESSAGES", "MUTE_MEMBERS", "MOVE_MEMBERS"))
+                    "TIMEOUT_MEMBERS", "BAN_MEMBERS", "MANAGE_MESSAGES", "MUTE_MEMBERS", "MOVE_MEMBERS"))
             .body("find { it.id == '" + TestUsers.ADMIN_ROLE + "' }.permissions", containsInAnyOrder(allButServerSettings));
 
         given().header("Authorization", "Bearer " + member.token()).get("/api/v1/accounts/me")
@@ -62,25 +62,25 @@ class RoleResourceTest {
     @Test
     void newRolesGoToTheBottomAndCanBeAssigned() {
         TestUsers.User member = TestUsers.register();
-        String first = TestUsers.createRole("First " + UUID.randomUUID(), "KICK_MEMBERS");
+        String first = TestUsers.createRole("First " + UUID.randomUUID(), "TIMEOUT_MEMBERS");
         String second = TestUsers.createRole("Second " + UUID.randomUUID(), "MUTE_MEMBERS");
         try {
             given().header("Authorization", "Bearer " + member.token()).get("/api/v1/roles")
                 .then()
                 .body("find { it.id == '" + second + "' }.position", equalTo(0))
                 .body("find { it.id == '" + first + "' }.position", equalTo(1))
-                .body("find { it.id == '" + first + "' }.permissions", contains("KICK_MEMBERS"))
+                .body("find { it.id == '" + first + "' }.permissions", contains("TIMEOUT_MEMBERS"))
                 .body("find { it.id == '" + first + "' }.color", nullValue());
 
             TestUsers.assignRole(member.id(), first);
             TestUsers.assignRole(member.id(), first); // idempotent
             given().header("Authorization", "Bearer " + member.token()).get("/api/v1/accounts/me")
                 .then().body("roleIds", containsInAnyOrder(TestUsers.USER_ROLE, first));
-            permissionsOf(member.token()).then().body("permissions", hasItem("KICK_MEMBERS"));
+            permissionsOf(member.token()).then().body("permissions", hasItem("TIMEOUT_MEMBERS"));
 
             given().header("Authorization", "Bearer " + TestUsers.ownerToken())
                 .delete("/api/v1/accounts/" + member.id() + "/roles/" + first).then().statusCode(204);
-            permissionsOf(member.token()).then().body("permissions", not(hasItem("KICK_MEMBERS")));
+            permissionsOf(member.token()).then().body("permissions", not(hasItem("TIMEOUT_MEMBERS")));
         } finally {
             TestUsers.deleteRole(first);
             TestUsers.deleteRole(second);
@@ -89,16 +89,16 @@ class RoleResourceTest {
 
     @Test
     void managersOnlyManageRolesWithinTheirOwnPermissions() {
-        String manager = TestUsers.createRole("Manager " + UUID.randomUUID(), "MANAGE_ROLES", "KICK_MEMBERS");
+        String manager = TestUsers.createRole("Manager " + UUID.randomUUID(), "MANAGE_ROLES", "TIMEOUT_MEMBERS");
         String admin = TestUsers.createRole("Admin " + UUID.randomUUID(), "MANAGE_SERVER", "BAN_MEMBERS");
         TestUsers.User mgr = TestUsers.register();
         TestUsers.assignRole(mgr.id(), manager);
-        permissionsOf(mgr.token()).then().statusCode(200).body("permissions", hasItems("MANAGE_ROLES", "KICK_MEMBERS"));
+        permissionsOf(mgr.token()).then().statusCode(200).body("permissions", hasItems("MANAGE_ROLES", "TIMEOUT_MEMBERS"));
         TestUsers.User target = TestUsers.register();
         String created = null;
         try {
             // Can create a role with a subset of own permissions; it lands at the bottom.
-            created = create(mgr.token(), Map.of("name", "Helper", "permissions", List.of("KICK_MEMBERS")))
+            created = create(mgr.token(), Map.of("name", "Helper", "permissions", List.of("TIMEOUT_MEMBERS")))
                 .then().statusCode(201).body("position", equalTo(0)).extract().path("id");
             // Cannot grant what they do not hold.
             create(mgr.token(), Map.of("name", "Sneaky", "permissions", List.of("BAN_MEMBERS")))

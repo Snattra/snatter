@@ -26,10 +26,11 @@ public class AccountRepository {
         rs.getString("display_name"),
         id(rs, "avatar_blob_id", BlobId::new),
         ids(rs, "role_ids", RoleId::new),
+        instant(rs, "timed_out_until"),
         instant(rs, "created_at"));
 
     private static final String SELECT = """
-        SELECT a.id, a.username, a.display_name, a.avatar_blob_id, a.created_at,
+        SELECT a.id, a.username, a.display_name, a.avatar_blob_id, a.timed_out_until, a.created_at,
                array_remove(array_agg(ar.role_id), NULL) AS role_ids
         FROM account a
         LEFT JOIN account_role ar ON ar.account_id = a.id
@@ -114,7 +115,7 @@ public class AccountRepository {
                 .bind("now", now)
                 .execute();
         });
-        return new Account(id, username, displayName, null, List.of(), now);
+        return new Account(id, username, displayName, null, List.of(), null, now);
     }
 
     public Optional<String> findPasswordHash(AccountId accountId) {
@@ -143,5 +144,15 @@ public class AccountRepository {
             .bind("avatarId", avatarId)
             .bind("now", Instant.now())
             .execute()) == 1;
+    }
+
+    /** Starts, extends or, with null, lifts the member's timeout. */
+    public void setTimedOutUntil(AccountId id, Instant until) {
+        jdbi.useHandle(h -> h
+            .createUpdate("UPDATE account SET timed_out_until = :until, updated_at = :now WHERE id = :id")
+            .bind("id", id)
+            .bind("until", until)
+            .bind("now", Instant.now())
+            .execute());
     }
 }

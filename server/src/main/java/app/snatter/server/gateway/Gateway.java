@@ -61,6 +61,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.TransactionPhase;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -71,6 +72,7 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongFunction;
 import java.util.function.Predicate;
@@ -118,6 +120,9 @@ public class Gateway {
 
     /** Accounts with a live connection; touched only on the dispatcher thread. */
     private final Set<AccountId> online = new HashSet<>();
+
+    /** A pending refresh for each account whose timeout ends later; dispatcher thread only. */
+    private final Map<AccountId, ScheduledFuture<?>> timeoutEnds = new HashMap<>();
 
     public Gateway(Principals principals, AuthService auth, AccountRepository accounts, RoleRepository roles,
                    ChannelRepository channels, ServerSettingsService settings, ServerInfoDtos serverInfo,
@@ -209,6 +214,7 @@ public class Gateway {
             broadcast(seq -> new GatewayPresenceUpdatedDto().seq(seq).presence(presence(accountId, PresenceStatusDto.ONLINE)));
         }
         client.principal = principal.get();
+        watchTimeout(client.principal);
         client.roles = byId(roles.findAll());
         client.channels = visibleChannels(client.principal, channels.findAll());
         List<Account> members = accounts.findAll();
@@ -249,6 +255,32 @@ public class Gateway {
                 send(other, seq -> new GatewayTypingStartedDto().seq(seq).channelId(channelId).accountId(typist));
             }
         }
+    }
+
+    /**
+     * Arranges for the account to be refreshed when its timeout ends, since
+     * nothing else fires then, replacing any earlier arrangement.
+     */
+    private void watchTimeout(AccountPrincipal principal) {
+        AccountId accountId = principal.accountId();
+        ScheduledFuture<?> earlier = timeoutEnds.remove(accountId);
+        if (earlier != null) {
+            earlier.cancel(false);
+        }
+        if (principal.timedOutUntil() != null) {
+            long delay = Math.max(0, Duration.between(Instant.now(), principal.timedOutUntil()).toMillis() + 1);
+            timeoutEnds.put(accountId, dispatcher.schedule(guarded(() -> {
+                timeoutEnds.remove(accountId);
+                timeoutChanged(accountId);
+            }), delay, TimeUnit.MILLISECONDS));
+        }
+    }
+
+    /** A timeout started, changed or ended: the member's permissions and everyone's view of them. */
+    private void timeoutChanged(AccountId accountId) {
+        syncAccess(accountId::equals);
+        accounts.findById(accountId).ifPresent(account ->
+            broadcast(seq -> new GatewayMemberUpdatedDto().seq(seq).member(AccountDtos.toDto(account))));
     }
 
     /** After one of the account's connections stopped being live: announces it offline if it was the last. */
@@ -297,14 +329,22 @@ public class Gateway {
     }
 
     void onAccount(@Observes(during = TransactionPhase.AFTER_SUCCESS) AccountEvent event) {
-        run(() -> accounts.findById(event.accountId()).ifPresent(account -> {
+        run(() -> {
             switch (event) {
-                case AccountEvent.Registered _ -> broadcast(seq -> new GatewayMemberJoinedDto()
-                    .seq(seq).member(AccountDtos.toDto(account)));
-                case AccountEvent.Updated _ -> broadcast(seq -> new GatewayMemberUpdatedDto()
-                    .seq(seq).member(AccountDtos.toDto(account)));
+                case AccountEvent.Registered _ -> accounts.findById(event.accountId()).ifPresent(account ->
+                    broadcast(seq -> new GatewayMemberJoinedDto().seq(seq).member(AccountDtos.toDto(account))));
+                case AccountEvent.Updated _ -> accounts.findById(event.accountId()).ifPresent(account ->
+                    broadcast(seq -> new GatewayMemberUpdatedDto().seq(seq).member(AccountDtos.toDto(account))));
+                case AccountEvent.TimeoutChanged changed -> timeoutChanged(changed.accountId());
+                case AccountEvent.Banned banned -> {
+                    for (Client client : liveClients()) {
+                        if (client.principal.accountId().equals(banned.accountId())) {
+                            close(client, GatewayClose.BANNED);
+                        }
+                    }
+                }
             }
-        }));
+        });
     }
 
     void onSettings(@Observes(during = TransactionPhase.AFTER_SUCCESS) ServerSettingsService.Changed changed) {
@@ -376,6 +416,7 @@ public class Gateway {
             if (reResolve.test(client.principal.accountId())) {
                 AccountPrincipal before = client.principal;
                 client.principal = principals.refresh(before);
+                watchTimeout(client.principal);
                 if (before.owner() != client.principal.owner() || !before.permissions().equals(client.principal.permissions())) {
                     send(client, seq -> new GatewayPermissionsChangedDto().seq(seq).permissions(permissionSet(client.principal)));
                 }

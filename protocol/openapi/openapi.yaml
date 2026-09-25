@@ -57,6 +57,8 @@ tags:
     description: Binary content such as profile pictures
   - name: invites
     description: Invite links that let new people register
+  - name: moderation
+    description: Bans and timeouts
   - name: roles
     description: Roles bundle permissions and are assigned to members
   - name: channels
@@ -227,6 +229,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "403":
+          description: |
+            The account is banned (`banned`); `ApiError.ban` says why. Only
+            answered to the right password, so it reveals nothing to guessers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
@@ -351,6 +361,158 @@ paths:
                 $ref: "#/components/schemas/Account"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/bans:
+    get:
+      tags: [moderation]
+      operationId: listBans
+      summary: List bans
+      description: Requires `BAN_MEMBERS`. Newest first.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Every ban
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Ban"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/bans/{accountId}:
+    put:
+      tags: [moderation]
+      operationId: banMember
+      summary: Ban a member
+      description: |
+        Requires `BAN_MEMBERS`. Ends every session of the member at once,
+        closing their gateway connections with `banned`, and refuses them
+        from then on; logging in answers `banned` with the reason. The caller
+        must hold every permission the member has (`member_outranks_you`);
+        the owner cannot be banned (`member_outranks_you`), and nobody can
+        ban themselves (`cannot_moderate_self`). Banning a banned member replaces
+        the reason. The member's messages stay.
+      security:
+        - session: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BanCreate"
+      responses:
+        "200":
+          description: The ban
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ban"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [moderation]
+      operationId: unbanMember
+      summary: Lift a ban
+      description: Requires `BAN_MEMBERS`. Idempotent. The member can log in again.
+      security:
+        - session: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      responses:
+        "204":
+          description: The member is not banned
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/timeouts/{accountId}:
+    put:
+      tags: [moderation]
+      operationId: timeOutMember
+      summary: Time a member out
+      description: |
+        Requires `TIMEOUT_MEMBERS`. For the given time the member keeps their
+        roles, sessions and view of channels but holds no permissions: they
+        can read but not post, invite or speak. A running timeout is
+        replaced. The rules of banning apply (`member_outranks_you`,
+        `cannot_moderate_self`). Everyone sees it as `Account.timedOutUntil`
+        through `member_updated`; the member also gets `permissions_changed`,
+        again when it ends.
+      security:
+        - session: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimeoutCreate"
+      responses:
+        "200":
+          description: The member, with their timeout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [moderation]
+      operationId: endTimeout
+      summary: End a member's timeout early
+      description: Same rules as starting one. Idempotent.
+      security:
+        - session: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      responses:
+        "204":
+          description: The member is not timed out
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/invites:
     get:
@@ -1064,8 +1226,9 @@ components:
     Forbidden:
       description: |
         The caller is signed in but not allowed to do this: missing permission
-        (`forbidden`), or managing a role or granting a permission they lack
-        (`permission_escalation`)
+        (`forbidden`), managing a role or granting a permission they lack
+        (`permission_escalation`), or moderating a member whose permissions
+        they do not all hold (`member_outranks_you`)
       content:
         application/json:
           schema:
@@ -1342,7 +1505,7 @@ components:
         - MANAGE_ROLES
         - MANAGE_CHANNELS
         - MANAGE_INVITES
-        - KICK_MEMBERS
+        - TIMEOUT_MEMBERS
         - BAN_MEMBERS
         - CREATE_INVITE
         - SEND_MESSAGES
@@ -1534,6 +1697,55 @@ components:
           items:
             $ref: "#/components/schemas/Permission"
           description: Replaces the whole set
+
+    Ban:
+      type: object
+      required: [accountId, createdAt]
+      properties:
+        accountId:
+          $ref: "#/components/schemas/AccountId"
+        reason:
+          type: string
+          nullable: true
+          description: Shown to the member when they try to log in
+        bannedBy:
+          allOf:
+            - $ref: "#/components/schemas/AccountId"
+          nullable: true
+          description: Who banned them; null if that account is gone
+        createdAt:
+          type: string
+          format: date-time
+
+    BanCreate:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 512
+          description: Optional; surrounding whitespace is removed, blank means none
+
+    TimeoutCreate:
+      type: object
+      required: [durationSeconds]
+      properties:
+        durationSeconds:
+          type: integer
+          minimum: 1
+          maximum: 2419200
+          description: How long from now, at most 28 days
+
+    BanNotice:
+      type: object
+      description: Why a member cannot log in
+      required: [bannedAt]
+      properties:
+        reason:
+          type: string
+          nullable: true
+        bannedAt:
+          type: string
+          format: date-time
 
     InviteCode:
       type: string
@@ -1880,6 +2092,13 @@ components:
           items:
             $ref: "#/components/schemas/RoleId"
           description: Assigned roles; without any the member can only browse
+        timedOutUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            End of the member's timeout, during which they keep their roles
+            but hold no permissions; null when not timed out
         createdAt:
           type: string
           format: date-time
@@ -1900,6 +2119,10 @@ components:
           additionalProperties:
             type: string
           description: Per-field messages, present for `validation_failed` only
+        ban:
+          allOf:
+            - $ref: "#/components/schemas/BanNotice"
+          description: Present for `banned` only
 
     # --- Gateway ------------------------------------------------------------
     # Frames of the WebSocket at /api/v1/gateway; see the description at the top.
@@ -1919,6 +2142,7 @@ components:
         | 4004 | `already_identified`    | identify only once per connection     |
         | 4005 | `session_ended`         | log in again; the session was logged out or revoked |
         | 4006 | `too_slow`              | reconnect; the client fell too far behind |
+        | 4007 | `banned`                | stop reconnecting; logging in says why |
 
         A server shutting down closes with the standard 1001 (going away);
         reconnect after a moment.
@@ -1930,6 +2154,7 @@ components:
         - already_identified
         - session_ended
         - too_slow
+        - banned
 
     GatewayClientFrame:
       description: A frame the client sends, told apart by `type`

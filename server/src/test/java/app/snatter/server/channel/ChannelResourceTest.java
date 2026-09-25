@@ -252,7 +252,7 @@ class ChannelResourceTest {
         try {
             as(admin.token()).get("/api/v1/accounts/me/permissions").then().statusCode(200)
                 .body("owner", equalTo(false))
-                .body("permissions", hasItems("MANAGE_ROLES", "MANAGE_CHANNELS", "MANAGE_MESSAGES", "KICK_MEMBERS", "BAN_MEMBERS"))
+                .body("permissions", hasItems("MANAGE_ROLES", "MANAGE_CHANNELS", "MANAGE_MESSAGES", "TIMEOUT_MEMBERS", "BAN_MEMBERS"))
                 .body("permissions", not(hasItem("MANAGE_SERVER")));
             as(admin.token()).get("/api/v1/server-settings").then().statusCode(403);
             Map<String, Object> rename = new HashMap<>();

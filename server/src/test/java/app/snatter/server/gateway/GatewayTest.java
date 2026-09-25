@@ -228,7 +228,7 @@ class GatewayTest {
     void roleAndChannelAccessChangesArriveAsDifferences() {
         String owner = TestUsers.ownerToken();
         TestUsers.User member = TestUsers.register();
-        String seers = TestUsers.createRole("Seers " + UUID.randomUUID(), "KICK_MEMBERS");
+        String seers = TestUsers.createRole("Seers " + UUID.randomUUID(), "TIMEOUT_MEMBERS");
         String hidden = createChannel(Map.of("type", "text", "name", "for seers", "requiredRoleIds", List.of(seers)));
         boolean roleDeleted = false;
         try (GatewayTestClient gateway = GatewayTestClient.identified(member.token())) {
@@ -237,7 +237,7 @@ class GatewayTest {
 
             TestUsers.assignRole(member.id(), seers);
             gateway.await("member_updated", f -> member.id().equals(f.getString("member.id")) && f.getList("member.roleIds").contains(seers));
-            assertTrue(gateway.await("permissions_changed").getList("permissions.permissions").contains("KICK_MEMBERS"));
+            assertTrue(gateway.await("permissions_changed").getList("permissions.permissions").contains("TIMEOUT_MEMBERS"));
             gateway.await("channel_created", channel(hidden));
 
             TestUsers.patchRole(owner, seers, Map.of("name", "Renamed seers")).then().statusCode(200);
@@ -246,7 +246,7 @@ class GatewayTest {
             given().header("Authorization", "Bearer " + owner).delete("/api/v1/accounts/" + member.id() + "/roles/" + seers)
                 .then().statusCode(204);
             gateway.await("channel_deleted", f -> hidden.equals(f.getString("channelId")));
-            assertFalse(gateway.await("permissions_changed").getList("permissions.permissions").contains("KICK_MEMBERS"));
+            assertFalse(gateway.await("permissions_changed").getList("permissions.permissions").contains("TIMEOUT_MEMBERS"));
 
             // Making the channel public reveals it.
             as(owner).body(Map.of("requiredRoleIds", List.of())).patch("/api/v1/channels/" + hidden).then().statusCode(200);
