@@ -11,14 +11,19 @@ import app.snatter.api.model.GatewayMessageCreatedDto;
 import app.snatter.api.model.GatewayMessageDeletedDto;
 import app.snatter.api.model.GatewayMessageUpdatedDto;
 import app.snatter.api.model.GatewayPermissionsChangedDto;
+import app.snatter.api.model.GatewayPresenceUpdatedDto;
 import app.snatter.api.model.GatewayReadyDto;
 import app.snatter.api.model.GatewayRoleCreatedDto;
 import app.snatter.api.model.GatewayRoleDeletedDto;
 import app.snatter.api.model.GatewayRoleUpdatedDto;
 import app.snatter.api.model.GatewayServerFrameDto;
 import app.snatter.api.model.GatewayServerUpdatedDto;
+import app.snatter.api.model.GatewayTypingDto;
+import app.snatter.api.model.GatewayTypingStartedDto;
 import app.snatter.api.model.MessageDto;
 import app.snatter.api.model.PermissionSetDto;
+import app.snatter.api.model.PresenceDto;
+import app.snatter.api.model.PresenceStatusDto;
 import app.snatter.api.model.ServerInfoDto;
 import app.snatter.server.account.Account;
 import app.snatter.server.account.AccountDtos;
@@ -38,6 +43,7 @@ import app.snatter.server.channel.ChannelResource;
 import app.snatter.server.message.MessageEvent;
 import app.snatter.server.message.MessageResource;
 import app.snatter.server.message.UserMessage;
+import app.snatter.server.role.Permission;
 import app.snatter.server.role.PermissionDtos;
 import app.snatter.server.role.Role;
 import app.snatter.server.role.RoleEvent;
@@ -54,6 +60,7 @@ import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.TransactionPhase;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -81,11 +88,18 @@ import org.jboss.logging.Logger;
  * the dispatcher recomputes the client's view and sends what changed. Moves,
  * required-role edits and role changes that hide or reveal channels need no
  * special handling.
+ *
+ * <p>Presence and typing live only here, in memory. A member is online while
+ * they have at least one identified connection that is not closing; typing
+ * is passed on without being remembered, and clients time it out.
  */
 @ApplicationScoped
 public class Gateway {
 
     private static final Logger LOG = Logger.getLogger(Gateway.class);
+
+    /** The least time between two {@code typing} frames passed on for the same channel and connection. */
+    private static final long TYPING_INTERVAL_NANOS = Duration.ofSeconds(5).toNanos();
 
     private final Principals principals;
     private final AuthService auth;
@@ -101,6 +115,9 @@ public class Gateway {
 
     /** Open connections by id; touched only on the dispatcher thread. */
     private final Map<String, Client> clients = new HashMap<>();
+
+    /** Accounts with a live connection; touched only on the dispatcher thread. */
+    private final Set<AccountId> online = new HashSet<>();
 
     public Gateway(Principals principals, AuthService auth, AccountRepository accounts, RoleRepository roles,
                    ChannelRepository channels, ServerSettingsService settings, ServerInfoDtos serverInfo,
@@ -154,12 +171,18 @@ public class Gateway {
             }
             switch (frame) {
                 case GatewayIdentifyDto identify -> identify(client, identify.getToken());
+                case GatewayTypingDto typing -> typing(client, typing.getChannelId());
             }
         });
     }
 
     void closed(WebSocketConnection connection) {
-        run(() -> clients.remove(connection.id()));
+        run(() -> {
+            Client client = clients.remove(connection.id());
+            if (client != null && client.identified()) {
+                wentAway(client.principal.accountId());
+            }
+        });
     }
 
     private void identifyTimedOut(String connectionId) {
@@ -179,8 +202,13 @@ public class Gateway {
             close(client, GatewayClose.AUTHENTICATION_FAILED);
             return;
         }
+        AccountId accountId = principal.get().accountId();
+        Account account = accounts.findById(accountId).orElseThrow();
+        // Announced before the client is live, so its own ready carries its presence instead.
+        if (online.add(accountId)) {
+            broadcast(seq -> new GatewayPresenceUpdatedDto().seq(seq).presence(presence(accountId, PresenceStatusDto.ONLINE)));
+        }
         client.principal = principal.get();
-        Account account = accounts.findById(client.principal.accountId()).orElseThrow();
         client.roles = byId(roles.findAll());
         client.channels = visibleChannels(client.principal, channels.findAll());
         List<Account> members = accounts.findAll();
@@ -191,7 +219,44 @@ public class Gateway {
             .server(serverInfo.toDto(settings.current()))
             .roles(client.roles.values().stream().map(RoleResource::toDto).toList())
             .members(members.stream().map(AccountDtos::toDto).toList())
+            .presences(online.stream().map(id -> presence(id, PresenceStatusDto.ONLINE)).toList())
             .channels(client.channels.values().stream().map(ChannelResource::toDto).toList()));
+    }
+
+    /**
+     * Passes typing on to the other members who can see the channel. Dropped
+     * silently, so as not to reveal anything, for a channel the member cannot
+     * see or send messages to, and when it comes too soon after the last one.
+     */
+    private void typing(Client client, ChannelId channelId) {
+        if (!client.identified()) {
+            close(client, GatewayClose.NOT_IDENTIFIED);
+            return;
+        }
+        Channel channel = client.channels.get(channelId);
+        if (channel == null || !channel.type().hasMessages() || !client.principal.has(Permission.SEND_MESSAGES)) {
+            return;
+        }
+        long now = System.nanoTime();
+        Long last = client.typingPassedOn.get(channelId);
+        if (last != null && now - last < TYPING_INTERVAL_NANOS) {
+            return;
+        }
+        client.typingPassedOn.put(channelId, now);
+        AccountId typist = client.principal.accountId();
+        for (Client other : liveClients()) {
+            if (!other.principal.accountId().equals(typist) && other.channels.containsKey(channelId)) {
+                send(other, seq -> new GatewayTypingStartedDto().seq(seq).channelId(channelId).accountId(typist));
+            }
+        }
+    }
+
+    /** After one of the account's connections stopped being live: announces it offline if it was the last. */
+    private void wentAway(AccountId accountId) {
+        boolean stillHere = liveClients().stream().anyMatch(c -> c.principal.accountId().equals(accountId));
+        if (!stillHere && online.remove(accountId)) {
+            broadcast(seq -> new GatewayPresenceUpdatedDto().seq(seq).presence(presence(accountId, PresenceStatusDto.OFFLINE)));
+        }
     }
 
     /** Extends the sessions of open connections and closes those whose session has ended. */
@@ -388,10 +453,14 @@ public class Gateway {
     }
 
     private void close(Client client, GatewayClose reason) {
+        boolean wasLive = client.live();
         client.closing = true;
         client.connection.close(reason.toCloseReason()).subscribe().with(
             closed -> { },
             failure -> LOG.debugf(failure, "Closing gateway connection %s failed", client.connection.id()));
+        if (wasLive) {
+            wentAway(client.principal.accountId());
+        }
     }
 
     private void closeSession(SessionId session) {
@@ -428,6 +497,10 @@ public class Gateway {
 
     private static PermissionSetDto permissionSet(AccountPrincipal principal) {
         return new PermissionSetDto().owner(principal.owner()).permissions(PermissionDtos.toDto(principal.permissions()));
+    }
+
+    private static PresenceDto presence(AccountId accountId, PresenceStatusDto status) {
+        return new PresenceDto().accountId(accountId).status(status);
     }
 
     private void run(Runnable task) {

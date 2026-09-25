@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 class GatewayTest {
 
     private static final String GENERAL_TEXT = "00000000-0000-7000-8000-000000000101";
+    private static final String GENERAL_VOICE = "00000000-0000-7000-8000-000000000102";
 
     private static RequestSpecification as(String token) {
         return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON);
@@ -73,6 +74,14 @@ class GatewayTest {
             assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
+            gateway.send(typing(GENERAL_TEXT));
+            assertEquals(new Closed(4001, "not_identified"), gateway.awaitClose());
+        }
+        try (GatewayTestClient gateway = GatewayTestClient.identified(token)) {
+            gateway.send(typing("not-a-channel-id"));
+            assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
+        }
+        try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.identify("snt_not-a-real-token");
             assertEquals(new Closed(4003, "authentication_failed"), gateway.awaitClose());
         }
@@ -84,6 +93,80 @@ class GatewayTest {
             // The test profile gives connections one second to identify.
             assertEquals(new Closed(4002, "identify_timeout"), gateway.awaitClose());
         }
+    }
+
+    @Test
+    void membersAreOnlineWhileAnyConnectionIsOpen() {
+        TestUsers.User watcher = TestUsers.register();
+        TestUsers.User member = TestUsers.register();
+        Predicate<JsonPath> memberOnline = presence(member.id(), "online");
+        try (GatewayTestClient watcherGateway = GatewayTestClient.identified(watcher.token())) {
+            assertFalse(watcherGateway.ready().getList("presences.accountId").contains(member.id()));
+            assertTrue(watcherGateway.ready().getList("presences.accountId").contains(watcher.id()), "ready includes the caller");
+
+            GatewayTestClient first = GatewayTestClient.identified(member.token());
+            watcherGateway.await("presence_updated", memberOnline);
+            assertTrue(first.ready().getList("presences.accountId").containsAll(List.of(member.id(), watcher.id())));
+            first.assertNone("presence_updated", memberOnline);
+
+            // A second connection changes nothing, and neither does closing one of two.
+            try (GatewayTestClient second = GatewayTestClient.identified(member.token())) {
+                first.close();
+                awaitMarker(watcherGateway, watcher);
+                watcherGateway.assertNone("presence_updated", f -> member.id().equals(f.getString("presence.accountId")));
+            }
+            watcherGateway.await("presence_updated", presence(member.id(), "offline"));
+        }
+    }
+
+    @Test
+    void typingReachesTheOthersWhoCanSeeTheChannel() {
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User bob = TestUsers.register();
+        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
+        TestUsers.assignRole(alice.id(), crew);
+        String crewOnly = createChannel(Map.of("type", "text", "name", "crew", "requiredRoleIds", List.of(crew)));
+        String other = createChannel(Map.of("type", "text", "name", "other"));
+        try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
+             GatewayTestClient aliceElsewhere = GatewayTestClient.identified(alice.token());
+             GatewayTestClient bobGateway = GatewayTestClient.identified(bob.token())) {
+            aliceGateway.send(typing(GENERAL_TEXT));
+            JsonPath started = bobGateway.await("typing_started", f -> alice.id().equals(f.getString("accountId")));
+            assertEquals(GENERAL_TEXT, started.getString("channelId"));
+
+            // Too soon after the first, in a voice-only channel, or where bob cannot see: nothing is passed on.
+            aliceGateway.send(typing(GENERAL_TEXT));
+            aliceGateway.send(typing(GENERAL_VOICE));
+            aliceGateway.send(typing(crewOnly));
+            aliceGateway.send(typing(UUID.randomUUID().toString()));
+            // A connection's frames are handled in order, so once this one is through, so are those above.
+            aliceGateway.send(typing(other));
+            bobGateway.await("typing_started", f -> other.equals(f.getString("channelId")));
+            bobGateway.assertNone("typing_started", f -> alice.id().equals(f.getString("accountId")));
+
+            // Alice's own connections never hear about her typing.
+            bobGateway.send(typing(other));
+            aliceElsewhere.await("typing_started", f -> bob.id().equals(f.getString("accountId")));
+            aliceElsewhere.assertNone("typing_started", f -> alice.id().equals(f.getString("accountId")));
+        } finally {
+            deleteChannel(crewOnly);
+            deleteChannel(other);
+            TestUsers.deleteRole(crew);
+        }
+    }
+
+    /** Frames arrive in order, so anything sent before this marker has arrived once it has. */
+    private static void awaitMarker(GatewayTestClient gateway, TestUsers.User sender) {
+        String marker = send(sender.token(), GENERAL_TEXT, Map.of("content", "marker")).then().statusCode(201).extract().path("id");
+        gateway.await("message_created", f -> marker.equals(f.getString("message.id")));
+    }
+
+    private static Predicate<JsonPath> presence(String accountId, String status) {
+        return f -> accountId.equals(f.getString("presence.accountId")) && status.equals(f.getString("presence.status"));
+    }
+
+    private static String typing(String channelId) {
+        return "{\"type\":\"typing\",\"channelId\":\"" + channelId + "\"}";
     }
 
     @Test

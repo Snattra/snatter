@@ -6,6 +6,7 @@ import app.snatter.server.channel.ChannelId;
 import app.snatter.server.role.Role;
 import app.snatter.server.role.RoleId;
 import io.quarkus.websockets.next.WebSocketConnection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,6 +27,8 @@ final class Client {
     boolean closing;
     Map<RoleId, Role> roles = new LinkedHashMap<>();
     Map<ChannelId, Channel> channels = new LinkedHashMap<>();
+    /** When a {@code typing} frame for each channel was last passed on, from {@link System#nanoTime()}. */
+    final Map<ChannelId, Long> typingPassedOn = new HashMap<>();
 
     Client(WebSocketConnection connection) {
         this.connection = connection;

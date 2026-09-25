@@ -289,10 +289,9 @@ firing an event from its service and handling it in `Gateway`.
 
 **Differences, not per-event frames.** For channels, roles and permissions,
 each `Client` remembers what it was last told: the roles, the channels it can
-see, and its own permissions. After any
-event that may affect them, the dispatcher recomputes that view from the
-database and sends `*_created`, `*_updated` and `*_deleted` frames for what
-differs. Moves that shift other channels, required-role edits, and role changes
+see, and its own permissions. After any event that may affect them, the
+dispatcher recomputes that view from the database and sends `*_created`,
+`*_updated` and `*_deleted` frames for what differs. Moves that shift other channels, required-role edits, and role changes
 that hide or reveal channels come out right without special cases; a channel
 that becomes invisible is simply `channel_deleted` for that member. Messages
 are sent per event to the connections that can view the channel, and a
@@ -300,6 +299,25 @@ channel is always announced before its first message.
 
 **Nonce.** A user message's `nonce` from `createMessage` is carried in the
 event and set only on connections of the session that sent it.
+
+**Presence.** A member is `online` while they have at least one identified
+connection that is not closing, and `offline` otherwise; nothing about it is
+stored. `Gateway` keeps the set of online accounts and sends
+`presence_updated` to everyone when an account's first connection
+identifies or its last one closes. The newly identified connection is not
+live yet when that goes out, and learns its own presence from `ready`'s
+`presences` instead. `PresenceStatus` is an enum so that states such as idle,
+which the client would report, can be added later.
+
+**Typing.** The client sends `typing` for a channel; the dispatcher checks it
+against what the connection already knows (the channel is visible and keeps
+messages, the member holds `SEND_MESSAGES`), so no database is involved, and
+passes it on as `typing_started` to the other members' connections that see
+the channel, never to the typist's own. Invalid targets are dropped silently
+rather than answered, so typing cannot probe for hidden channels. Each
+connection gets one `typing` per channel through every 5 seconds. Nothing is
+remembered: clients show the indicator for 10 seconds or until a message from
+that member arrives, and keep it alive by sending `typing` every 8 seconds.
 
 **Sessions.** Connections authenticate once, with `identify`, and keep the
 principal for their lifetime; its permissions are resolved again when roles

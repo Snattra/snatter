@@ -23,9 +23,11 @@ info:
 
     1. Connect and send `identify` with a session token within 10 seconds.
     2. The server answers with `ready`: the caller's account, permissions,
-       the server, its roles, members and the channels the caller can see.
+       the server, its roles, members, who is online and the channels the
+       caller can see.
     3. From then on the server pushes events. Each carries `seq`, counting
-       up from 1 (`ready`) per connection, so gaps are detectable.
+       up from 1 (`ready`) per connection, so gaps are detectable. The
+       client may send `typing` frames.
 
     The connection carries state, not history: on reconnecting, a client
     gets a fresh `ready` and fetches messages it missed with
@@ -1933,10 +1935,12 @@ components:
       description: A frame the client sends, told apart by `type`
       oneOf:
         - $ref: "#/components/schemas/GatewayIdentify"
+        - $ref: "#/components/schemas/GatewayTyping"
       discriminator:
         propertyName: type
         mapping:
           identify: "#/components/schemas/GatewayIdentify"
+          typing: "#/components/schemas/GatewayTyping"
 
     GatewayIdentify:
       type: object
@@ -1948,6 +1952,38 @@ components:
         token:
           type: string
           description: A session token from login or registration
+
+    GatewayTyping:
+      type: object
+      description: |
+        The member is typing in a channel. Send it when they start and again
+        every 8 seconds while they keep typing; stop when they send or clear
+        the message. The server passes it on as `typing_started` at most once
+        per channel every 5 seconds per connection and drops the rest, and
+        silently drops it for a channel the member cannot see or send
+        messages to.
+      required: [type, channelId]
+      properties:
+        type:
+          type: string
+        channelId:
+          $ref: "#/components/schemas/ChannelId"
+
+    PresenceStatus:
+      type: string
+      enum: [online, offline]
+      description: |
+        `online` while the member has at least one identified gateway
+        connection, `offline` otherwise.
+
+    Presence:
+      type: object
+      required: [accountId, status]
+      properties:
+        accountId:
+          $ref: "#/components/schemas/AccountId"
+        status:
+          $ref: "#/components/schemas/PresenceStatus"
 
     GatewayServerFrame:
       description: A frame the server sends, told apart by `type`
@@ -1966,6 +2002,8 @@ components:
         - $ref: "#/components/schemas/GatewayMessageCreated"
         - $ref: "#/components/schemas/GatewayMessageUpdated"
         - $ref: "#/components/schemas/GatewayMessageDeleted"
+        - $ref: "#/components/schemas/GatewayPresenceUpdated"
+        - $ref: "#/components/schemas/GatewayTypingStarted"
       discriminator:
         propertyName: type
         mapping:
@@ -1983,6 +2021,8 @@ components:
           message_created: "#/components/schemas/GatewayMessageCreated"
           message_updated: "#/components/schemas/GatewayMessageUpdated"
           message_deleted: "#/components/schemas/GatewayMessageDeleted"
+          presence_updated: "#/components/schemas/GatewayPresenceUpdated"
+          typing_started: "#/components/schemas/GatewayTypingStarted"
 
     GatewayServerFrameBase:
       type: object
@@ -2001,7 +2041,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object
-          required: [account, permissions, server, roles, members, channels]
+          required: [account, permissions, server, roles, members, presences, channels]
           properties:
             account:
               $ref: "#/components/schemas/Account"
@@ -2018,6 +2058,11 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/Account"
+            presences:
+              type: array
+              items:
+                $ref: "#/components/schemas/Presence"
+              description: Members who are not offline, including the caller
             channels:
               type: array
               items:
@@ -2152,3 +2197,29 @@ components:
               $ref: "#/components/schemas/ChannelId"
             messageId:
               $ref: "#/components/schemas/MessageId"
+
+    GatewayPresenceUpdated:
+      description: A member came online or went offline
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [presence]
+          properties:
+            presence:
+              $ref: "#/components/schemas/Presence"
+
+    GatewayTypingStarted:
+      description: |
+        Another member is typing in a channel. Show it until 10 seconds pass
+        without another `typing_started` from them there, or until a message
+        from them arrives in the channel. Never sent for the caller's own
+        typing, from any of their connections.
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [channelId, accountId]
+          properties:
+            channelId:
+              $ref: "#/components/schemas/ChannelId"
+            accountId:
+              $ref: "#/components/schemas/AccountId"
