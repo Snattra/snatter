@@ -19,12 +19,13 @@ splitting by technical layer:
 | `role`        | Permissions, roles, assignment, hierarchy rules      |
 | `channel`     | Channels, ordering, overwrites, channel permissions  |
 | `message`     | Messages, replies, paging, system notices            |
+| `gateway`     | WebSocket gateway: identify, ready, event fan-out    |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
 | `persistence` | JDBI producer and small JDBC helpers                 |
 
-Planned: `gateway`, `media`.
+Planned: `media`.
 
 ## Database
 
@@ -62,7 +63,14 @@ Only its SHA-256 hash is stored, in the `session` table. Clients send it as
 `SessionIdentityProvider` resolve it into an `AccountPrincipal` carrying the
 account id, username, session id and effective permissions, so
 `@Authenticated`, `@PermissionsAllowed` and `SecurityIdentity` work as usual
-in resources.
+in resources. `auth.Principals` builds that principal, for HTTP requests and
+gateway connections alike.
+
+A session expires after `snatter.auth.session-lifetime` without use. Each
+authenticated request moves `expires_at` forward, written at most every five
+minutes together with `last_seen_at`, and open gateway connections do the
+same through `AuthService.keepAlive`. Logging out deletes the session and
+fires `SessionEvent.Ended`, which closes its gateway connections.
 
 Sessions record the client IP as the server sees it. Behind a reverse proxy
 that is the proxy's address until trusted-proxy handling is configured; this
@@ -202,10 +210,11 @@ holds in the channel (`permission_escalation`). Bits the caller does not hold
 may stay in an overwrite they edit, but they cannot add, flip or remove them.
 
 **Events.** `ChannelService` fires `ChannelEvent`s (`Created`, `Renamed`,
-`TopicChanged`, `Deleted`) synchronously inside the transaction that made the
+`TopicChanged`, `VoiceSettingsChanged`, `Moved`, `OverwriteChanged`,
+`Deleted`) synchronously inside the transaction that made the
 change. `message.SystemNotices` observes them to write system messages, so a
-notice commits or rolls back together with its change; the gateway will push
-them the same way.
+notice commits or rolls back together with its change. The gateway observes
+them after commit to update connected clients.
 
 ## Messages
 
@@ -263,8 +272,64 @@ setting it to an empty string turns server-wide notices off, and deleting the
 channel does the same.
 
 `createMessage` accepts a client-chosen `nonce` and returns it with the
-stored message, so a client can replace its pending copy. The gateway will
-echo it the same way.
+stored message, so a client can replace its pending copy. The gateway hands
+it back the same way, to the sending session only.
+
+## Gateway
+
+Live updates go over one WebSocket, `/api/v1/gateway`, built on Quarkus
+WebSockets Next. The frames are part of the API contract: the `Gateway*`
+schemas in `openapi.yaml`, with `GatewayClientFrame` and
+`GatewayServerFrame` as sealed unions on `type`, generated like every other
+DTO. The contract's description covers the lifecycle a client follows:
+`identify` with a session token within `snatter.gateway.identify-timeout`,
+receive `ready`, then events numbered by `seq`. Reconnecting clients start
+over with a fresh `ready` and catch up on messages over REST with `after`.
+Close codes are the `GatewayCloseReason` values, mirrored by
+`gateway.GatewayClose`.
+
+**One dispatcher thread.** `GatewayEndpoint` only hands connections and
+frames to `Gateway`, which does everything on a single thread: opening,
+identifying, closing, and fanning out events. So a connection's `ready`
+snapshot and the events after it form one consistent sequence, and the
+per-connection state in `Client` needs no locking. Work that blocks, such as
+reading the database for `ready`, runs on that thread too; at the scale of
+one community this keeps the design simple.
+
+**Events after commit.** Features fire sealed domain events inside their
+transactions: `ChannelEvent`, `MessageEvent`, `RoleEvent`, `AccountEvent`,
+`SessionEvent` and `ServerSettingsService.Changed`. `Gateway` observes them
+with `TransactionPhase.AFTER_SUCCESS` and only queues work, so a connection
+never sees a change that rolled back, and the request that made the change
+does not wait for the fan-out. A new kind of change reaches clients by
+firing an event from its service and handling it in `Gateway`.
+
+**Differences, not per-event frames.** For channels, roles and permissions,
+each `Client` remembers what it was last told: the roles, the channels it can
+see together with its permissions in each, and its own permissions. After any
+event that may affect them, the dispatcher recomputes that view from the
+database and sends `*_created`, `*_updated` and `*_deleted` frames for what
+differs. Moves that shift other channels, overwrite edits, and role changes
+that hide or reveal channels come out right without special cases; a channel
+that becomes invisible is simply `channel_deleted` for that member. Messages
+are sent per event to the connections that can view the channel, and a
+channel is always announced before its first message.
+
+**Nonce.** A user message's `nonce` from `createMessage` is carried in the
+event and set only on connections of the session that sent it.
+
+**Sessions.** Connections authenticate once, with `identify`, and keep the
+principal for their lifetime; its permissions are resolved again when roles
+change. When a session ends (`SessionEvent.Ended`: logout today, revocation
+later) its connections close with `session_ended`. Every
+`snatter.gateway.keep-alive-interval` the dispatcher extends the sessions of
+open connections through `AuthService.keepAlive`, so a client that is only
+listening stays logged in, and closes connections whose session is gone.
+
+**Slow clients.** Frames are sent asynchronously and counted until the
+WebSocket has written them. A connection with more than
+`snatter.gateway.max-pending-frames` outstanding is closed with `too_slow`;
+the client reconnects and gets a fresh `ready`.
 
 ## Registration policy
 
@@ -439,6 +504,13 @@ unique per server regardless of case. Passwords are 8 to 128 characters.
 - Integration tests run the packaged application with the `test` profile
   (`quarkus.test.integration-test-profile`), so `%test` configuration applies
   to them too.
+- Gateway tests use `testing.GatewayTestClient`, a WebSocket client on the
+  JDK's `java.net.http`, so they also run against the packaged application.
+  It buffers frames and `await(type, predicate)` takes the first match, so a
+  test waits for the frames it cares about regardless of unrelated ones in
+  between. It checks that `seq` has no gaps. To assert that a frame did *not*
+  arrive, trigger a later frame on the same connection, await it, then call
+  `assertNone`: frames arrive in order.
 
 ## Typed identifiers and value records
 

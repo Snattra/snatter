@@ -6,6 +6,7 @@ import app.snatter.server.api.ApiException;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.settings.ServerSettingsService;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -33,11 +34,13 @@ public class RoleService {
     private final RoleRepository roles;
     private final AccountRepository accounts;
     private final ServerSettingsService settings;
+    private final Event<RoleEvent> events;
 
-    public RoleService(RoleRepository roles, AccountRepository accounts, ServerSettingsService settings) {
+    public RoleService(RoleRepository roles, AccountRepository accounts, ServerSettingsService settings, Event<RoleEvent> events) {
         this.roles = roles;
         this.accounts = accounts;
         this.settings = settings;
+        this.events = events;
     }
 
     /**
@@ -70,7 +73,9 @@ public class RoleService {
     @Transactional
     public Role create(AccountPrincipal actor, String name, String color, Set<Permission> permissions) {
         requireNoEscalation(actor, permissions);
-        return roles.insertAtBottom(RoleId.newId(), name.strip(), color, permissions);
+        Role role = roles.insertAtBottom(RoleId.newId(), name.strip(), color, permissions);
+        events.fire(new RoleEvent.Created(role.id(), actor.accountId()));
+        return role;
     }
 
     /** Null arguments mean "unchanged"; an empty color clears it. */
@@ -98,6 +103,7 @@ public class RoleService {
             }
             roles.moveTo(id, position);
         }
+        events.fire(new RoleEvent.Updated(id, actor.accountId()));
         return require(id);
     }
 
@@ -109,18 +115,21 @@ public class RoleService {
         }
         requireOutranks(actor, role);
         roles.delete(id);
+        events.fire(new RoleEvent.Deleted(id, actor.accountId()));
     }
 
     @Transactional
     public void assign(AccountPrincipal actor, AccountId accountId, RoleId roleId) {
         Role role = requireAssignable(actor, accountId, roleId);
         roles.assign(accountId, role.id());
+        events.fire(new RoleEvent.Assigned(role.id(), accountId, actor.accountId()));
     }
 
     @Transactional
     public void unassign(AccountPrincipal actor, AccountId accountId, RoleId roleId) {
         Role role = requireAssignable(actor, accountId, roleId);
         roles.unassign(accountId, role.id());
+        events.fire(new RoleEvent.Unassigned(role.id(), accountId, actor.accountId()));
     }
 
     private Role requireAssignable(AccountPrincipal actor, AccountId accountId, RoleId roleId) {

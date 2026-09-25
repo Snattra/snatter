@@ -5,6 +5,7 @@ import app.snatter.server.blob.Blob;
 import app.snatter.server.blob.BlobService;
 import app.snatter.server.blob.ImageInfo;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,10 +25,12 @@ public class AvatarService {
 
     private final AccountRepository accounts;
     private final BlobService blobs;
+    private final Event<AccountEvent> events;
 
-    public AvatarService(AccountRepository accounts, BlobService blobs) {
+    public AvatarService(AccountRepository accounts, BlobService blobs, Event<AccountEvent> events) {
         this.accounts = accounts;
         this.blobs = blobs;
+        this.events = events;
     }
 
     @Transactional
@@ -52,6 +55,7 @@ public class AvatarService {
         if (current.avatarId() != null) {
             blobs.delete(current.avatarId());
         }
+        events.fire(new AccountEvent.Updated(accountId));
         return accounts.findById(accountId).orElseThrow();
     }
 
@@ -62,6 +66,7 @@ public class AvatarService {
         if (current.avatarId() != null) {
             accounts.setAvatar(accountId, null);
             blobs.delete(current.avatarId());
+            events.fire(new AccountEvent.Updated(accountId));
         }
         return accounts.findById(accountId).orElseThrow();
     }

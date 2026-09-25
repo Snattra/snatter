@@ -32,7 +32,7 @@ public class AuthService {
     static final String TOKEN_PREFIX = "snt_";
     private static final int TOKEN_BYTES = 32;
     private static final String UNIQUE_VIOLATION = "23505";
-    /** last_seen_at is written at most this often per session, to keep reads cheap. */
+    /** A session's use (last_seen_at, and with it expires_at) is written at most this often, to keep reads cheap. */
     private static final Duration TOUCH_INTERVAL = Duration.ofMinutes(5);
 
     private static final Base64.Encoder B64 = Base64.getUrlEncoder().withoutPadding();
@@ -45,11 +45,12 @@ public class AuthService {
     private final ServerSettingsService settings;
     private final AuthConfig config;
     private final Event<AccountEvent> events;
+    private final Event<SessionEvent> sessionEvents;
     private final SecureRandom random = new SecureRandom();
 
     public AuthService(AccountRepository accounts, SessionRepository sessions, PasswordHasher hasher,
                        AltchaService challenges, InviteService invites, ServerSettingsService settings,
-                       AuthConfig config, Event<AccountEvent> events) {
+                       AuthConfig config, Event<AccountEvent> events, Event<SessionEvent> sessionEvents) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.hasher = hasher;
@@ -58,6 +59,7 @@ public class AuthService {
         this.settings = settings;
         this.config = config;
         this.events = events;
+        this.sessionEvents = sessionEvents;
     }
 
     /** What a new user submits. {@code displayName}, {@code altcha} and {@code inviteCode} may be null. */
@@ -134,8 +136,21 @@ public class AuthService {
     }
 
     @Transactional
-    public void logout(SessionId sessionId) {
-        sessions.delete(sessionId);
+    public void logout(AccountId accountId, SessionId sessionId) {
+        if (sessions.delete(sessionId)) {
+            sessionEvents.fire(new SessionEvent.Ended(sessionId, accountId));
+        }
+    }
+
+    /**
+     * Keeps a session in use without a request, as an open gateway connection
+     * does: moves its expiry like a request would. Returns false if the
+     * session has ended.
+     */
+    @Transactional
+    public boolean keepAlive(SessionId sessionId) {
+        Instant now = Instant.now();
+        return sessions.touch(sessionId, now, now.plus(config.sessionLifetime()));
     }
 
     /** Resolves a bearer token to its session and account, or empty if unknown or expired. */
@@ -152,10 +167,12 @@ public class AuthService {
         Session session = found.get();
         if (session.isExpired(now)) {
             sessions.delete(session.id());
+            sessionEvents.fire(new SessionEvent.Ended(session.id(), session.accountId()));
             return Optional.empty();
         }
+        // Sessions expire after a period without use, so each use moves the expiry.
         if (session.lastSeenAt().plus(TOUCH_INTERVAL).isBefore(now)) {
-            sessions.touch(session.id(), now);
+            sessions.touch(session.id(), now, now.plus(config.sessionLifetime()));
         }
         return accounts.findById(session.accountId()).map(a -> new Authenticated(session, a));
     }

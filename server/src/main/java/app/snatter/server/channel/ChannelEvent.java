@@ -25,6 +25,16 @@ public sealed interface ChannelEvent {
     record TopicChanged(ChannelId channelId, AccountId actor, String from, String to) implements ChannelEvent {
     }
 
+    record Moved(ChannelId channelId, AccountId actor, int from, int to) implements ChannelEvent {
+    }
+
+    record VoiceSettingsChanged(ChannelId channelId, AccountId actor, VoiceSettings from, VoiceSettings to) implements ChannelEvent {
+    }
+
+    /** The overwrite for one role or member was set; an empty one means it was removed. */
+    record OverwriteChanged(ChannelId channelId, AccountId actor, PermissionOverwrite overwrite) implements ChannelEvent {
+    }
+
     record Deleted(ChannelId channelId, AccountId actor, String name) implements ChannelEvent {
     }
 }

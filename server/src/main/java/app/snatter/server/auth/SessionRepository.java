@@ -55,12 +55,14 @@ public class SessionRepository {
             .findOne());
     }
 
-    public void touch(SessionId id, Instant lastSeenAt) {
-        jdbi.useHandle(h -> h
-            .createUpdate("UPDATE session SET last_seen_at = :lastSeenAt WHERE id = :id")
+    /** Records use of a session and moves its expiry; returns false if the session is gone. */
+    public boolean touch(SessionId id, Instant lastSeenAt, Instant expiresAt) {
+        return jdbi.withHandle(h -> h
+            .createUpdate("UPDATE session SET last_seen_at = :lastSeenAt, expires_at = :expiresAt WHERE id = :id")
             .bind("id", id)
             .bind("lastSeenAt", lastSeenAt)
-            .execute());
+            .bind("expiresAt", expiresAt)
+            .execute()) == 1;
     }
 
     public boolean delete(SessionId id) {

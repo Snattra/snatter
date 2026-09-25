@@ -64,7 +64,7 @@ public class AuthResource implements AuthApi {
     @Authenticated
     public RestResponse<Void> logout() {
         AccountPrincipal principal = (AccountPrincipal) identity.getPrincipal();
-        auth.logout(principal.sessionId());
+        auth.logout(principal.accountId(), principal.sessionId());
         return RestResponse.noContent();
     }
 

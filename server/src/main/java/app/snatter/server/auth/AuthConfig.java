@@ -7,7 +7,7 @@ import java.time.Duration;
 @ConfigMapping(prefix = "snatter.auth")
 public interface AuthConfig {
 
-    /** How long a session stays valid after login. */
+    /** How long a session stays valid without being used; every use extends it. */
     @WithDefault("P30D")
     Duration sessionLifetime();
 }

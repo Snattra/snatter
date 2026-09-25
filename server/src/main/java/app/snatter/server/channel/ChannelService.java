@@ -128,6 +128,7 @@ public class ChannelService {
         if (changes.position() != null && changes.position() != before.position()) {
             channels.moveTo(id, changes.position());
         }
+        Channel updated = requireExisting(id);
 
         if (!after.name().equals(before.name())) {
             events.fire(new ChannelEvent.Renamed(id, actor.accountId(), before.name(), after.name()));
@@ -135,7 +136,13 @@ public class ChannelService {
         if (!Objects.equals(after.topic(), before.topic())) {
             events.fire(new ChannelEvent.TopicChanged(id, actor.accountId(), before.topic(), after.topic()));
         }
-        return requireExisting(id);
+        if (!Objects.equals(after.voice(), before.voice())) {
+            events.fire(new ChannelEvent.VoiceSettingsChanged(id, actor.accountId(), before.voice(), after.voice()));
+        }
+        if (updated.position() != before.position()) {
+            events.fire(new ChannelEvent.Moved(id, actor.accountId(), before.position(), updated.position()));
+        }
+        return updated;
     }
 
     @Transactional
@@ -156,6 +163,9 @@ public class ChannelService {
         PermissionOverwrite current = channel.overwriteFor(overwrite).orElse(overwrite.cleared());
         requireMayChange(actor, ChannelPermissions.of(actor, channel), current, overwrite);
         channels.saveOverwrite(id, overwrite);
+        if (!overwrite.equals(current)) {
+            events.fire(new ChannelEvent.OverwriteChanged(id, actor.accountId(), overwrite));
+        }
         return requireExisting(id);
     }
 

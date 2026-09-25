@@ -56,6 +56,10 @@
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-websockets-next</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
             <artifactId>quarkus-smallrye-health</artifactId>
         </dependency>
         <dependency>
@@ -135,6 +139,9 @@
                             <modelPackage>app.snatter.api.model</modelPackage>
                             <modelNameSuffix>Dto</modelNameSuffix>
                             <generateSupportingFiles>false</generateSupportingFiles>
+                            <!-- Keep a oneOf with a single option a union, so it stays a sealed
+                                 interface that later options can join. -->
+                            <openapiNormalizer>SIMPLIFY_ONEOF_ANYOF=false</openapiNormalizer>
                             <schemaMappings>
                                 <!-- Typed ids are hand-written value records, not generated. -->
                                 <schemaMapping>AccountId=AccountId</schemaMapping>

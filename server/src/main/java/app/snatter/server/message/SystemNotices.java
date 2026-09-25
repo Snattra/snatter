@@ -8,6 +8,7 @@ import app.snatter.server.channel.ChannelRepository;
 import app.snatter.server.settings.ServerSettings;
 import app.snatter.server.settings.ServerSettingsService;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.enterprise.event.Observes;
 
 /**
@@ -22,19 +23,23 @@ public class SystemNotices {
     private final MessageRepository messages;
     private final ChannelRepository channels;
     private final ServerSettingsService settings;
+    private final Event<MessageEvent> events;
 
-    public SystemNotices(MessageRepository messages, ChannelRepository channels, ServerSettingsService settings) {
+    public SystemNotices(MessageRepository messages, ChannelRepository channels, ServerSettingsService settings,
+                         Event<MessageEvent> events) {
         this.messages = messages;
         this.channels = channels;
         this.settings = settings;
+        this.events = events;
     }
 
     void onChannelEvent(@Observes ChannelEvent event) {
         SystemNotice notice = switch (event) {
-            case ChannelEvent.Created created -> new SystemNotice.ChannelCreated();
+            case ChannelEvent.Created _ -> new SystemNotice.ChannelCreated();
             case ChannelEvent.Renamed renamed -> new SystemNotice.ChannelRenamed(renamed.from(), renamed.to());
             case ChannelEvent.TopicChanged topic -> new SystemNotice.ChannelTopicChanged(topic.from(), topic.to());
-            case ChannelEvent.Deleted deleted -> null;
+            case ChannelEvent.Deleted _, ChannelEvent.Moved _, ChannelEvent.VoiceSettingsChanged _,
+                 ChannelEvent.OverwriteChanged _ -> null;
         };
         if (notice != null) {
             post(event.channelId(), event.actor(), notice);
@@ -57,6 +62,8 @@ public class SystemNotices {
         switch (event) {
             case AccountEvent.Registered registered ->
                 post(settings.current().systemChannelId(), registered.accountId(), new SystemNotice.MemberJoined());
+            case AccountEvent.Updated _ -> {
+            }
         }
     }
 
@@ -66,6 +73,10 @@ public class SystemNotices {
         }
         channels.find(channelId)
             .filter(channel -> channel.type().hasMessages())
-            .ifPresent(channel -> messages.insert(SystemMessage.create(channel.id(), actor, notice)));
+            .ifPresent(channel -> {
+                SystemMessage message = SystemMessage.create(channel.id(), actor, notice);
+                messages.insert(message);
+                events.fire(new MessageEvent.Created(message, null, null));
+            });
     }
 }

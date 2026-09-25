@@ -11,4 +11,8 @@ public sealed interface AccountEvent {
     /** A new member joined the server. */
     record Registered(AccountId accountId) implements AccountEvent {
     }
+
+    /** The member's profile changed, for example their avatar. */
+    record Updated(AccountId accountId) implements AccountEvent {
+    }
 }

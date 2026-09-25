@@ -103,7 +103,7 @@ public class ChannelResource implements ChannelsApi {
         return (AccountPrincipal) identity.getPrincipal();
     }
 
-    static ChannelDto toDto(Channel channel) {
+    public static ChannelDto toDto(Channel channel) {
         return new ChannelDto()
             .id(channel.id())
             .type(ChannelTypeDto.fromValue(channel.type().dbValue()))

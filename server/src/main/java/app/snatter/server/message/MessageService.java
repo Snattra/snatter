@@ -8,6 +8,7 @@ import app.snatter.server.channel.ChannelPermissions;
 import app.snatter.server.channel.ChannelService;
 import app.snatter.server.role.Permission;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import java.util.List;
 
@@ -21,10 +22,12 @@ public class MessageService {
 
     private final MessageRepository messages;
     private final ChannelService channels;
+    private final Event<MessageEvent> events;
 
-    public MessageService(MessageRepository messages, ChannelService channels) {
+    public MessageService(MessageRepository messages, ChannelService channels, Event<MessageEvent> events) {
         this.messages = messages;
         this.channels = channels;
+        this.events = events;
     }
 
     /**
@@ -46,8 +49,9 @@ public class MessageService {
         return require(channelId, id);
     }
 
+    /** @param nonce the client's, handed back to the sending session; may be null */
     @Transactional
-    public UserMessage send(AccountPrincipal author, ChannelId channelId, String content, MessageId replyToId) {
+    public UserMessage send(AccountPrincipal author, ChannelId channelId, String content, MessageId replyToId, String nonce) {
         Channel channel = requireReadable(author, channelId);
         if (!ChannelPermissions.of(author, channel).contains(Permission.SEND_MESSAGES)) {
             throw new ApiException(403, "forbidden", "You cannot send messages in this channel");
@@ -55,6 +59,7 @@ public class MessageService {
         UserMessage.Reference replyTo = replyToId == null ? null : requireRepliable(channelId, replyToId);
         UserMessage message = UserMessage.create(channelId, author.accountId(), content.strip(), replyTo);
         messages.insert(message);
+        events.fire(new MessageEvent.Created(message, author.sessionId(), nonce));
         return message;
     }
 
@@ -66,6 +71,7 @@ public class MessageService {
         }
         UserMessage edited = original.edited(content.strip());
         messages.updateContent(edited);
+        events.fire(new MessageEvent.Updated(edited));
         return edited;
     }
 
@@ -78,6 +84,7 @@ public class MessageService {
             throw new ApiException(403, "forbidden", "You need MANAGE_MESSAGES in this channel to delete this message");
         }
         messages.delete(id);
+        events.fire(new MessageEvent.Deleted(channelId, id));
     }
 
     /** A visible channel that keeps messages. */

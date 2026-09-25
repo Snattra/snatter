@@ -21,7 +21,7 @@ class ServerInfoResourceTest {
             .statusCode(200)
             .body("name", equalTo("Snatter"))
             .body("version", not(emptyString()))
-            .body("apiVersion", equalTo(ServerSettingsResource.API_VERSION))
+            .body("apiVersion", equalTo(ServerInfoDtos.API_VERSION))
             .body("voice.defaultBitrate", equalTo(64000))
             .body("voice.maxBitrate", equalTo(256000));
     }

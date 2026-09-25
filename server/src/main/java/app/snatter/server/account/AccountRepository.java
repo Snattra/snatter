@@ -43,6 +43,14 @@ public class AccountRepository {
         this.jdbi = jdbi;
     }
 
+    /** Every account, by username. */
+    public List<Account> findAll() {
+        return jdbi.withHandle(h -> h
+            .createQuery(SELECT + GROUP + " ORDER BY lower(a.username)")
+            .map(MAPPER)
+            .list());
+    }
+
     public Optional<Account> findById(AccountId id) {
         return jdbi.withHandle(h -> h
             .createQuery(SELECT + "WHERE a.id = :id" + GROUP)

@@ -49,6 +49,7 @@ class ChannelEventsTest {
             new ChannelEvent.Renamed(id, actor, "events", "renamed"),
             new ChannelEvent.TopicChanged(id, actor, null, "a topic"),
             new ChannelEvent.TopicChanged(id, actor, "a topic", null),
+            new ChannelEvent.Moved(id, actor, channel.position(), 0),
             new ChannelEvent.Deleted(id, actor, "renamed")), recorded.about(id));
     }
 

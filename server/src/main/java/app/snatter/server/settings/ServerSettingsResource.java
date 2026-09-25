@@ -1,44 +1,30 @@
 package app.snatter.server.settings;
 
 import app.snatter.api.ServerApi;
-import app.snatter.api.model.CommunityDto;
 import app.snatter.api.model.RateLimitPolicyDto;
 import app.snatter.api.model.RateLimitsDto;
-import app.snatter.api.model.RegistrationInfoDto;
 import app.snatter.api.model.RegistrationModeDto;
 import app.snatter.api.model.ServerInfoDto;
 import app.snatter.api.model.ServerSettingsDto;
 import app.snatter.api.model.ServerSettingsUpdateDto;
-import app.snatter.api.model.VoiceInfoDto;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.ChannelId;
-import app.snatter.server.channel.VoiceConfig;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.PermissionsAllowed;
 import java.time.Duration;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.resteasy.reactive.RestResponse;
 
 /** The {@code server} tag: public server description and owner-only settings. */
 public class ServerSettingsResource implements ServerApi {
 
-    /** Bumped whenever the HTTP or WebSocket API changes incompatibly. */
-    public static final int API_VERSION = 1;
-
-    private final String version;
     private final ServerSettingsService settings;
-    private final VoiceConfig voice;
+    private final ServerInfoDtos serverInfo;
     private final SecurityIdentity identity;
 
-    public ServerSettingsResource(
-            @ConfigProperty(name = "quarkus.application.version") String version,
-            ServerSettingsService settings,
-            VoiceConfig voice,
-            SecurityIdentity identity) {
-        this.version = version;
+    public ServerSettingsResource(ServerSettingsService settings, ServerInfoDtos serverInfo, SecurityIdentity identity) {
         this.settings = settings;
-        this.voice = voice;
+        this.serverInfo = serverInfo;
         this.identity = identity;
     }
 
@@ -48,18 +34,7 @@ public class ServerSettingsResource implements ServerApi {
 
     @Override
     public RestResponse<ServerInfoDto> getServerInfo() {
-        ServerSettings s = settings.current();
-        return RestResponse.ok(new ServerInfoDto()
-            .name("Snatter")
-            .version(version)
-            .apiVersion(API_VERSION)
-            .community(new CommunityDto().name(s.name()).description(s.description()))
-            .registration(new RegistrationInfoDto()
-                .mode(toDto(s.registrationMode()))
-                .challengeRequired(s.challengeRequired()))
-            .voice(new VoiceInfoDto()
-                .defaultBitrate(voice.newChannelBitrate())
-                .maxBitrate(voice.maxBitrate())));
+        return RestResponse.ok(serverInfo.toDto(settings.current()));
     }
 
     @Override

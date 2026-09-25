@@ -66,7 +66,7 @@ example `QUARKUS_HTTP_PORT=9000`.
 | `SNATTER_DB_URL`                | `jdbc:postgresql://localhost:5432/snatter` | PostgreSQL JDBC URL             |
 | `SNATTER_DB_USER`               | `snatter`                                  | Database user                   |
 | `SNATTER_DB_PASSWORD`           | none, required                             | Database password               |
-| `SNATTER_AUTH_SESSION_LIFETIME` | `P30D`                                     | How long a login stays valid    |
+| `SNATTER_AUTH_SESSION_LIFETIME` | `P30D`                                     | How long a login stays valid without use |
 | `SNATTER_STORAGE_ROOT`          | `./data` (`/var/lib/snatter` in the container) | Directory for uploaded content such as avatars |
 | `SNATTER_REGISTRATION_CHALLENGE_MAX_NUMBER` | `100000` | Difficulty of the registration proof-of-work challenge |
 | `SNATTER_REGISTRATION_CHALLENGE_TTL` | `PT10M` | How long a challenge stays valid |

@@ -1,6 +1,5 @@
 package app.snatter.server.auth;
 
-import app.snatter.server.role.RoleService;
 import io.quarkus.security.AuthenticationFailedException;
 import io.quarkus.security.identity.AuthenticationRequestContext;
 import io.quarkus.security.identity.IdentityProvider;
@@ -17,12 +16,10 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class SessionIdentityProvider implements IdentityProvider<SessionTokenAuthenticationRequest> {
 
-    private final AuthService auth;
-    private final RoleService roles;
+    private final Principals principals;
 
-    public SessionIdentityProvider(AuthService auth, RoleService roles) {
-        this.auth = auth;
-        this.roles = roles;
+    public SessionIdentityProvider(Principals principals) {
+        this.principals = principals;
     }
 
     @Override
@@ -34,12 +31,8 @@ public class SessionIdentityProvider implements IdentityProvider<SessionTokenAut
     public Uni<SecurityIdentity> authenticate(SessionTokenAuthenticationRequest request, AuthenticationRequestContext context) {
         // JDBC blocks, so run off the event loop.
         return context.runBlocking(() -> {
-            AuthService.Authenticated a = auth.authenticate(request.token())
+            AccountPrincipal principal = principals.authenticate(request.token())
                 .orElseThrow(() -> new AuthenticationFailedException("Invalid or expired session token"));
-            RoleService.Resolution resolution = roles.resolve(a.account().id());
-            AccountPrincipal principal = new AccountPrincipal(
-                a.account().id(), a.account().username(), a.session().id(),
-                resolution.owner(), resolution.permissions(), resolution.highestPosition(), resolution.roleIds());
             return QuarkusSecurityIdentity.builder()
                 .setPrincipal(principal)
                 .addPermissionChecker(permission -> Uni.createFrom().item(principal.hasNamed(permission.getName())))

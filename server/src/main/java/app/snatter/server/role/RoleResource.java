@@ -79,7 +79,7 @@ public class RoleResource implements RolesApi {
         return (AccountPrincipal) identity.getPrincipal();
     }
 
-    static RoleDto toDto(Role role) {
+    public static RoleDto toDto(Role role) {
         return new RoleDto()
             .id(role.id())
             .name(role.name())

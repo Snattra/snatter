@@ -48,7 +48,7 @@ public class MessageResource implements MessagesApi {
 
     @Override
     public RestResponse<MessageDto> createMessage(ChannelId id, MessageCreateDto body) {
-        UserMessage message = messages.send(actor(), id, body.getContent(), body.getReplyToId());
+        UserMessage message = messages.send(actor(), id, body.getContent(), body.getReplyToId(), body.getNonce());
         return RestResponse.status(Response.Status.CREATED, toUserDto(message).nonce(body.getNonce()));
     }
 
@@ -72,7 +72,7 @@ public class MessageResource implements MessagesApi {
         return (AccountPrincipal) identity.getPrincipal();
     }
 
-    static MessageDto toDto(Message message) {
+    public static MessageDto toDto(Message message) {
         return switch (message) {
             case UserMessage m -> toUserDto(m);
             case SystemMessage m -> new SystemMessageDto()
@@ -84,7 +84,7 @@ public class MessageResource implements MessagesApi {
         };
     }
 
-    private static UserMessageDto toUserDto(UserMessage m) {
+    public static UserMessageDto toUserDto(UserMessage m) {
         return new UserMessageDto()
             .id(m.id())
             .channelId(m.channelId())
