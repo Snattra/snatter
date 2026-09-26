@@ -95,4 +95,14 @@ Close to Discord's layout, dark by default: a server rail on the far left,
 the server's channels (collapsible to icons), the channel in the middle, and
 a member list on the right (can be closed) showing presence and who is typing
 in the current channel. Layout choices are remembered per browser with
-`usePreference`. Colours are CSS variables in `styles.css`.
+`usePreference`.
+
+The look comes from the design system in `client/design-system/`: its
+`README.md` is the brand book (colour, type, spacing, states), `motion.md`
+says which animation means what, and each component has guidelines and a
+live preview under `components/`. In the app, `tokens.css` holds the tokens
+as CSS custom properties, `styles.css` the `sn-` component classes, and
+`ui/controls.tsx`, `ui/surfaces.tsx`, `ui/people.tsx` and `ui/layout.tsx`
+the components built on them. `design-system/adoption.md` maps one onto the
+other. Change a token in `tokens.json` and `tokens.css` together, and design
+a new component there before building it here.

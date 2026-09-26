@@ -1,0 +1,38 @@
+<!-- @dsCard group="Forms" height=270 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Composer</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: flex; flex-direction: column; min-height: 100%; background: var(--panel-raised); }
+  .demo .sn-messages { flex: 1; justify-content: flex-end; padding-bottom: var(--space-8); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var list = useState([{ id: 1, author: "Teal", text: "Server is back up, come say hi." }]);
+    var typing = useState(["Wigeon"]);
+    function send(text) {
+      list[1](list[0].concat([{ id: Date.now(), author: "Mallard", text: text, isNew: true, head: list[0][list[0].length - 1].author !== "Mallard" }]));
+      typing[1]([]);
+    }
+    return h("div", { className: "demo" },
+      h(S.MessageList, null, list[0].map(function (m) {
+        return h(S.Message, { key: m.id, author: m.author, time: "Today at 18:4" + (m.id % 10), shortTime: "18:4" + (m.id % 10), head: m.head !== false, isNew: m.isNew }, m.text);
+      })),
+      h(S.Composer, { placeholder: "Message #general", onSend: send, onAttach: function () {}, footer: h(S.TypingIndicator, { names: typing[0] }) }));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

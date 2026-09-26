@@ -1,10 +1,12 @@
-import { useState } from "react";
-import type { Account, Channel } from "../api/types";
+import { type ReactNode, useState } from "react";
 import type { ServerConnection } from "../servers/ServerConnection";
-import { type ServerView, sortedChannels, typingIn } from "../state/serverView";
+import { sortedChannels, typingIn } from "../state/serverView";
 import type { ServerEntry } from "../state/store";
+import { Button, IconButton } from "./controls";
 import { useNow, usePreference } from "./hooks";
-import { ChannelIcon, CollapseIcon, MembersIcon } from "./icons";
+import { AppShell, ChannelHeader, ChannelItem, ChannelList, RailServer, ServerRail, Sidebar } from "./layout";
+import { MemberList, UserPanel } from "./people";
+import { Banner, Skeleton } from "./surfaces";
 
 /**
  * The main screen, laid out left to right: the server rail, the channels of
@@ -22,153 +24,111 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
   const someoneTyping = view !== null && selected !== null && Object.keys(view.typing[selected.id] ?? {}).length > 0;
   const now = useNow(someoneTyping ? 1000 : null);
 
+  const membersToggle = (
+    <IconButton
+      icon="members"
+      label={membersOpen ? "Hide members" : "Show members"}
+      pressed={membersOpen}
+      onClick={() => setMembersOpen(!membersOpen)}
+    />
+  );
+
   if (view === null) {
-    return <div className="center">Connecting…</div>;
+    return <Connecting collapsed={channelsCollapsed} membersOpen={membersOpen} membersToggle={membersToggle} />;
   }
 
   const typing = new Set(selected === null ? [] : typingIn(view, selected.id, now).map((m) => m.id));
-
-  return (
-    <div className={`layout${channelsCollapsed ? " channels-collapsed" : ""}${membersOpen ? "" : " members-closed"}`}>
-      <nav className="rail" aria-label="Servers">
-        <button className="rail-server" aria-current="true" title={view.info.community.name}>
-          {initials(view.info.community.name)}
-        </button>
-      </nav>
-
-      <aside className="sidebar">
-        <header className="community">
-          {!channelsCollapsed && <span className="community-name">{view.info.community.name}</span>}
-          <button
-            className="icon-button"
-            onClick={() => setChannelsCollapsed(!channelsCollapsed)}
-            aria-label={channelsCollapsed ? "Expand channels" : "Collapse channels"}
-            title={channelsCollapsed ? "Expand channels" : "Collapse channels"}
-          >
-            <CollapseIcon collapsed={channelsCollapsed} />
-          </button>
-        </header>
-        <nav className="channels" aria-label="Channels">
-          {channels.map((channel) => (
-            <button
-              key={channel.id}
-              className="channel"
-              aria-current={channel.id === selected?.id ? "page" : undefined}
-              title={channelsCollapsed ? channel.name : undefined}
-              onClick={() => setSelectedId(channel.id)}
-            >
-              <ChannelIcon channel={channel} />
-              {!channelsCollapsed && <span className="channel-name">{channel.name}</span>}
-            </button>
-          ))}
-        </nav>
-        <footer className="me">
-          <Avatar origin={connection.origin} account={view.account} online />
-          {!channelsCollapsed && (
-            <>
-              <span className="me-name">{view.account.displayName}</span>
-              <button className="link" onClick={() => void connection.logOut()}>
-                Sign out
-              </button>
-            </>
-          )}
-        </footer>
-      </aside>
-
-      <main className="content">
-        {entry.status === "reconnecting" && <div className="banner">Reconnecting…</div>}
-        <header className="channel-header">
-          {selected && <ChannelHeading channel={selected} />}
-          <button
-            className="icon-button"
-            aria-pressed={membersOpen}
-            onClick={() => setMembersOpen(!membersOpen)}
-            aria-label={membersOpen ? "Hide members" : "Show members"}
-            title={membersOpen ? "Hide members" : "Show members"}
-          >
-            <MembersIcon />
-          </button>
-        </header>
-        <section className="channel-body" />
-      </main>
-
-      {membersOpen && <MemberList origin={connection.origin} view={view} typing={typing} />}
-    </div>
-  );
-}
-
-function ChannelHeading({ channel }: { channel: Channel }) {
-  return (
-    <div className="channel-heading">
-      <ChannelIcon channel={channel} />
-      <strong>{channel.name}</strong>
-      {channel.topic && <span className="muted topic">{channel.topic}</span>}
-    </div>
-  );
-}
-
-function MemberList({ origin, view, typing }: { origin: string; view: ServerView; typing: Set<string> }) {
   const members = Object.values(view.members).sort((a, b) => a.displayName.localeCompare(b.displayName));
-  const online = members.filter((m) => view.online[m.id]);
-  const offline = members.filter((m) => !view.online[m.id]);
+  const community = view.info.community.name;
+
   return (
-    <aside className="members" aria-label="Members">
-      <MemberGroup title="Online" origin={origin} members={online} online typing={typing} />
-      <MemberGroup title="Offline" origin={origin} members={offline} online={false} typing={typing} />
-    </aside>
+    <AppShell
+      collapsed={channelsCollapsed}
+      membersOpen={membersOpen}
+      rail={
+        <ServerRail>
+          <RailServer name={community} selected />
+        </ServerRail>
+      }
+      sidebar={
+        <Sidebar
+          name={community}
+          collapsed={channelsCollapsed}
+          onToggle={() => setChannelsCollapsed(!channelsCollapsed)}
+          footer={
+            <UserPanel
+              origin={connection.origin}
+              account={view.account}
+              action={
+                <Button variant="link" onClick={() => void connection.logOut()}>
+                  Sign out
+                </Button>
+              }
+            />
+          }
+        >
+          <ChannelList>
+            {channels.map((channel) => (
+              <ChannelItem
+                key={channel.id}
+                channel={channel}
+                selected={channel.id === selected?.id}
+                onClick={() => setSelectedId(channel.id)}
+              />
+            ))}
+          </ChannelList>
+        </Sidebar>
+      }
+      banner={entry.status === "reconnecting" && <Banner busy>Reconnecting…</Banner>}
+      header={<ChannelHeader channel={selected}>{membersToggle}</ChannelHeader>}
+      members={
+        <MemberList
+          origin={connection.origin}
+          online={members.filter((m) => view.online[m.id])}
+          offline={members.filter((m) => !view.online[m.id])}
+          typing={typing}
+        />
+      }
+    />
   );
 }
 
-function MemberGroup(props: { title: string; origin: string; members: Account[]; online: boolean; typing: Set<string> }) {
-  const { title, origin, members, online, typing } = props;
-  if (members.length === 0) {
-    return null;
-  }
+/** The shell in the shape it is about to take, while the first `ready` is on its way. */
+function Connecting(props: { collapsed: boolean; membersOpen: boolean; membersToggle: ReactNode }) {
+  const { collapsed, membersOpen, membersToggle } = props;
   return (
-    <section>
-      <h2>
-        {title} — {members.length}
-      </h2>
-      <ul>
-        {members.map((m) => (
-          <li key={m.id} className={online ? "member" : "member offline"}>
-            <Avatar origin={origin} account={m} online={online} />
-            <span className="member-name">{m.displayName}</span>
-            {typing.has(m.id) && <span className="typing">typing…</span>}
-          </li>
-        ))}
-      </ul>
-    </section>
+    <AppShell
+      collapsed={collapsed}
+      membersOpen={membersOpen}
+      rail={<ServerRail />}
+      sidebar={
+        <Sidebar name={<Skeleton width="120px" />} collapsed={collapsed}>
+          <div className="sn-shell-loading" aria-hidden="true">
+            {["70%", "55%", "80%", "45%"].map((width) => (
+              <Skeleton key={width} width={collapsed ? "100%" : width} />
+            ))}
+          </div>
+        </Sidebar>
+      }
+      header={<ChannelHeader channel={null}>{membersToggle}</ChannelHeader>}
+      members={
+        <aside className="sn-members" aria-hidden="true">
+          <div className="sn-shell-loading">
+            {["60%", "75%", "50%"].map((width) => (
+              <Skeleton key={width} width={width} />
+            ))}
+          </div>
+        </aside>
+      }
+    >
+      <div className="sn-shell-loading-messages" aria-busy="true">
+        <span className="sn-visually-hidden" role="status">
+          Connecting…
+        </span>
+        <Skeleton variant="message" />
+        <Skeleton variant="message" width="64%" />
+        <Skeleton variant="message" width="82%" />
+      </div>
+    </AppShell>
   );
-}
-
-function Avatar({ origin, account, online }: { origin: string; account: Account; online: boolean }) {
-  return (
-    <span className="avatar" style={account.avatarId ? undefined : { background: colourFor(account.id) }}>
-      {account.avatarId ? (
-        <img src={`${origin}/api/v1/blobs/${account.avatarId}`} alt="" />
-      ) : (
-        initials(account.displayName)
-      )}
-      <span className={online ? "status online" : "status"} aria-label={online ? "Online" : "Offline"} />
-    </span>
-  );
-}
-
-function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  return words
-    .slice(0, 2)
-    .map((w) => [...w][0] ?? "")
-    .join("")
-    .toUpperCase();
-}
-
-/** A steady colour per account for avatars without a picture. */
-function colourFor(id: string): string {
-  let hash = 0;
-  for (const char of id) {
-    hash = (hash * 31 + char.charCodeAt(0)) | 0;
-  }
-  return `hsl(${Math.abs(hash) % 360} 45% 45%)`;
 }

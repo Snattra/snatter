@@ -5,9 +5,10 @@ Linux built around it. TypeScript, [React](https://react.dev),
 [Vite](https://vite.dev). Licensed under AGPL-3.0 (see the repository root
 `LICENSE`).
 
-| Directory | Contents                                   |
-|-----------|--------------------------------------------|
-| `web/`    | The app itself, built for every mode       |
+| Directory        | Contents                                                      |
+|------------------|---------------------------------------------------------------|
+| `web/`           | The app itself, built for every mode                          |
+| `design-system/` | The design system: tokens, guidelines, component previews     |
 
 ## Requirements
 

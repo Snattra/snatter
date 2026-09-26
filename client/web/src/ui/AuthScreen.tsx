@@ -2,9 +2,16 @@ import { type FormEvent, useEffect, useState } from "react";
 import { unwrap } from "../api/client";
 import type { ServerInfo } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
+import { Button, Field, Tabs } from "./controls";
 import { describeError } from "./errors";
+import { Backdrop, Callout, Card } from "./surfaces";
 
 type Tab = "log_in" | "register";
+
+const tabs: { id: Tab; label: string }[] = [
+  { id: "log_in", label: "Sign in" },
+  { id: "register", label: "Create account" },
+];
 
 export function AuthScreen({ connection, notice }: { connection: ServerConnection; notice: string | null }) {
   const [info, setInfo] = useState<ServerInfo | null>(null);
@@ -64,79 +71,64 @@ export function AuthScreen({ connection, notice }: { connection: ServerConnectio
   const setup = info?.registration.setupRequired === true;
 
   return (
-    <div className="center">
-      <div className="card auth">
-        <h1>{info?.community.name ?? "Snatter"}</h1>
-        {info?.community.description && <p className="muted">{info.community.description}</p>}
-        {notice && <p className="notice">{notice}</p>}
+    <Backdrop>
+      <Card title={info?.community.name ?? "Snatter"} description={info?.community.description}>
+        {notice && <p className="sn-notice">{notice}</p>}
 
         {setup ? (
-          <div className="setup">
-            <h2>Set up your server</h2>
-            <p>
-              This server has no accounts yet. The account you create now becomes its owner, with full control over
-              the server and its settings.
-            </p>
-          </div>
+          <Callout title="Set up your server">
+            This server has no accounts yet. The account you create now becomes its owner, with full control over the
+            server and its settings.
+          </Callout>
         ) : (
-          <div className="tabs" role="tablist">
-            <button role="tab" aria-selected={tab === "log_in"} onClick={() => setTab("log_in")}>
-              Sign in
-            </button>
-            <button role="tab" aria-selected={tab === "register"} onClick={() => setTab("register")}>
-              Create account
-            </button>
-          </div>
+          <Tabs label="Account" tabs={tabs} value={tab} onChange={setTab} />
         )}
 
         {tab === "log_in" && !setup ? (
-          <form onSubmit={logIn}>
-            <label>
-              Username
-              <input name="username" autoComplete="username" required />
-            </label>
-            <label>
-              Password
-              <input name="password" type="password" autoComplete="current-password" required />
-            </label>
-            <button type="submit" disabled={busy !== null}>
-              Sign in
-            </button>
+          <form className="sn-form" onSubmit={logIn}>
+            <Field label="Username" name="username" autoComplete="username" required />
+            <Field label="Password" name="password" type="password" autoComplete="current-password" required />
+            <Button variant="primary" type="submit" block busy={busy !== null}>
+              {busy ?? "Sign in"}
+            </Button>
           </form>
         ) : (
-          <form onSubmit={register}>
-            <label>
-              Username
-              <input name="username" autoComplete="username" required minLength={3} maxLength={32} pattern="[A-Za-z0-9_.]+" />
-            </label>
-            <label>
-              Display name <span className="muted">(optional)</span>
-              <input name="displayName" autoComplete="nickname" maxLength={64} />
-            </label>
-            <label>
-              Password
-              <input name="password" type="password" autoComplete="new-password" required minLength={8} maxLength={128} />
-            </label>
+          <form className="sn-form" onSubmit={register}>
+            <Field
+              label="Username"
+              name="username"
+              autoComplete="username"
+              required
+              minLength={3}
+              maxLength={32}
+              pattern="[A-Za-z0-9_.]+"
+            />
+            <Field label="Display name" optional name="displayName" autoComplete="nickname" maxLength={64} />
+            <Field
+              label="Password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              maxLength={128}
+            />
             {info?.registration.mode === "invite_only" && !setup && (
-              <label>
-                Invite code
-                <input name="inviteCode" required pattern="[A-Za-z0-9]{8}" />
-              </label>
+              <Field label="Invite code" name="inviteCode" required pattern="[A-Za-z0-9]{8}" />
             )}
-            <button type="submit" disabled={busy !== null || info === null}>
-              Create account
-            </button>
+            <Button variant="primary" type="submit" block busy={busy !== null} disabled={info === null}>
+              {busy ?? "Create account"}
+            </Button>
           </form>
         )}
 
-        {busy && <p className="muted">{busy}</p>}
         {error && (
-          <p className="error" role="alert">
+          <p className="sn-form-error" role="alert">
             {error}
           </p>
         )}
-      </div>
-    </div>
+      </Card>
+    </Backdrop>
   );
 }
 

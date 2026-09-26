@@ -1,0 +1,33 @@
+<!-- @dsCard group="Surfaces" height=470 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Card</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .sn-backdrop { min-height: 100vh; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var tab = useState("log_in");
+    return h(S.Backdrop, null,
+      h(S.Card, { title: "Pondside", description: "A small server for the Thursday crew." },
+        h(S.Tabs, { label: "Account", value: tab[0], onChange: tab[1], tabs: [{ id: "log_in", label: "Sign in" }, { id: "register", label: "Create account" }] }),
+        h(S.Field, { label: "Username", autoComplete: "username" }),
+        h(S.Field, { label: "Password", type: "password", autoComplete: "current-password" }),
+        h(S.Button, { variant: "primary", block: true, type: "submit" }, tab[0] === "log_in" ? "Sign in" : "Create account")));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

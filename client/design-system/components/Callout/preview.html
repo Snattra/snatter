@@ -1,0 +1,27 @@
+<!-- @dsCard group="Surfaces" height=232 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Callout</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { min-height: 100vh; padding: var(--space-24); background: var(--panel); }
+  .stack { display: grid; gap: var(--space-12); max-width: 352px; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  ReactDOM.createRoot(document.getElementById("root")).render(h("div", { className: "demo" }, h("div", { className: "stack" },
+    h(S.Callout, { title: "Set up your server" }, "This server has no accounts yet. The account you create now becomes its owner, with full control over the server and its settings."),
+    h(S.Callout, { tone: "warning", title: "Invite only" }, "You need an invite code from a member to join."))));
+
+</script>
+</body>
+</html>

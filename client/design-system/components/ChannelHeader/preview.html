@@ -1,0 +1,28 @@
+<!-- @dsCard group="Navigation" height=48 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ChannelHeader</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var open = useState(true);
+    return h(S.ChannelHeader, { name: "general", type: "text", topic: "Say hi. Keep it friendly. Screenshots go in #screenshots." },
+      h(S.IconButton, { icon: "members", label: open[0] ? "Hide members" : "Show members", pressed: open[0], onClick: function () { open[1](!open[0]); } }));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

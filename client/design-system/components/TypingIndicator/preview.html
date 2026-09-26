@@ -1,0 +1,28 @@
+<!-- @dsCard group="Feedback" height=140 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TypingIndicator</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: grid; gap: var(--space-12); padding: var(--space-16) var(--space-24); background: var(--panel-raised); min-height: 100vh; align-content: start; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  ReactDOM.createRoot(document.getElementById("root")).render(h("div", { className: "demo" },
+    h(S.TypingIndicator, { names: ["Wigeon"] }),
+    h(S.TypingIndicator, { names: ["Wigeon", "Teal"] }),
+    h(S.TypingIndicator, { names: ["Wigeon", "Teal", "Gadwall", "Pintail"] }),
+    h("span", null, h(S.TypingIndicator, { compact: true }))));
+
+</script>
+</body>
+</html>

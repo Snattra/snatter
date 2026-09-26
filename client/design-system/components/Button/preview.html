@@ -1,0 +1,39 @@
+<!-- @dsCard group="Actions" height=150 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Button</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: grid; align-content: start; gap: var(--space-16); min-height: 100vh; padding: var(--space-24); background: var(--panel); }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-12); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var busy = useState(false);
+    return h("div", { className: "demo" },
+      h("div", { className: "row" },
+        h(S.Button, { variant: "primary" }, "Create account"),
+        h(S.Button, null, "Cancel"),
+        h(S.Button, { variant: "danger" }, "Ban member"),
+        h(S.Button, { variant: "link" }, "Sign out")),
+      h("div", { className: "row" },
+        h(S.Button, { variant: "primary", busy: busy[0], onClick: function () { busy[1](true); setTimeout(function () { busy[1](false); }, 1600); } }, busy[0] ? "Signing in…" : "Sign in (click)"),
+        h(S.Button, { variant: "primary", disabled: true }, "Disabled"),
+        h(S.Button, { variant: "primary", size: "sm" }, "Small"),
+        h(S.Button, { size: "sm" }, "Small secondary")));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

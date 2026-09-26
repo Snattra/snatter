@@ -1,0 +1,37 @@
+<!-- @dsCard group="People" height=150 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Avatar</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: grid; gap: var(--space-16); padding: var(--space-24); background: var(--panel); min-height: 100vh; align-content: start; }
+  .row { display: flex; align-items: center; gap: var(--space-16); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var on = useState(false);
+    var names = ["Mallard", "Teal", "Wigeon", "Gadwall", "Pintail", "Shoveler", "Eider"];
+    return h("div", { className: "demo" },
+      h("div", { className: "row" }, names.map(function (n) { return h(S.Avatar, { key: n, name: n, status: "online" }); })),
+      h("div", { className: "row" },
+        h(S.Avatar, { name: "Mallard Duck", size: "lg" }),
+        h(S.Avatar, { name: "Mallard Duck" }),
+        h(S.Avatar, { name: "Mallard Duck", size: "sm" }),
+        h(S.Avatar, { name: "Scaup", status: on[0] ? "online" : "offline" }),
+        h(S.Button, { size: "sm", onClick: function () { on[1](!on[0]); } }, on[0] ? "Go offline" : "Bring Scaup online")));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>
