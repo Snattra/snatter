@@ -1,0 +1,25 @@
+<!-- @dsCard group="People" height=60 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UserPanel</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { width: var(--sidebar-width); background: var(--panel); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  ReactDOM.createRoot(document.getElementById("root")).render(h("div", { className: "demo" },
+    h(S.UserPanel, { name: "Mallard", status: "online", action: h(S.Button, { variant: "link" }, "Sign out") })));
+
+</script>
+</body>
+</html>

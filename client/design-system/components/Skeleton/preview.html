@@ -1,0 +1,32 @@
+<!-- @dsCard group="Feedback" height=250 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skeleton</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: grid; grid-template-columns: 1fr 200px; min-height: 100vh; }
+  .msgs { padding: var(--space-16) 0; background: var(--panel-raised); }
+  .mem { display: grid; gap: var(--space-16); align-content: start; padding: var(--space-24) var(--space-16); background: var(--panel); }
+  .mem-row { display: flex; align-items: center; gap: var(--space-8); }
+  .mem-row .sn-skeleton-circle { width: var(--avatar-md); height: var(--avatar-md); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  ReactDOM.createRoot(document.getElementById("root")).render(h("div", { className: "demo", "aria-busy": "true" },
+    h("div", { className: "msgs" }, h(S.Skeleton, { variant: "message" }), h(S.Skeleton, { variant: "message", width: "64%" }), h(S.Skeleton, { variant: "message", width: "82%" })),
+    h("div", { className: "mem" }, [70, 55, 80, 45].map(function (w, i) {
+      return h("div", { key: i, className: "mem-row" }, h(S.Skeleton, { variant: "circle" }), h(S.Skeleton, { width: w + "%" }));
+    }))));
+
+</script>
+</body>
+</html>

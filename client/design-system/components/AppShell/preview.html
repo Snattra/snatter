@@ -1,0 +1,70 @@
+<!-- @dsCard group="Layout" height=560 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AppShell</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  var CH = [
+    { id: "c1", name: "general", type: "text", topic: "Say hi. Keep it friendly." },
+    { id: "c2", name: "screenshots", type: "text", topic: "Post your best frames.", unread: true },
+    { id: "c3", name: "patch-notes", type: "text", topic: "What changed on the server." },
+    { id: "c4", name: "Lounge", type: "voice" },
+    { id: "c5", name: "Squad up", type: "voice_text", topic: "Voice and chat for the evening run." }
+  ];
+  function Demo() {
+    var sel = useState("c1"), col = useState(false), mem = useState(true), srv = useState("pond");
+    var msgs = useState([
+      { id: 1, author: "Teal", text: "Anyone up for a round after dinner?", time: "18:31" },
+      { id: 2, author: "Teal", text: "Same server as last week.", time: "18:31", head: false },
+      { id: 3, author: "Mallard", text: "Count me in, ten minutes.", time: "18:33", color: "#c4a7ff" }
+    ]);
+    var ch = CH.find(function (c) { return c.id === sel[0]; });
+    function send(text) {
+      var last = msgs[0][msgs[0].length - 1];
+      msgs[1](msgs[0].concat([{ id: Date.now(), author: "Mallard", color: "#c4a7ff", text: text, time: "18:40", head: last.author !== "Mallard", isNew: true }]));
+    }
+    return h(S.AppShell, {
+      style: { height: "100vh" },
+      collapsed: col[0],
+      membersOpen: mem[0],
+      rail: h(S.ServerRail, null,
+        [{ id: "pond", name: "Pondside" }, { id: "raid", name: "Raid Night", unread: true }, { id: "lan", name: "LAN Party" }].map(function (s) {
+          return h(S.RailServer, { key: s.id, name: s.name, unread: s.unread, selected: srv[0] === s.id, onClick: function () { srv[1](s.id); } });
+        }),
+        h(S.RailDivider),
+        h(S.RailServer, { name: "Add a server", icon: "plus", variant: "action" })),
+      sidebar: h(S.Sidebar, { name: "Pondside", collapsed: col[0], onToggle: function () { col[1](!col[0]); },
+        footer: h(S.UserPanel, { name: "Mallard", action: h(S.Button, { variant: "link" }, "Sign out") }) },
+        h(S.ChannelList, null, CH.map(function (c) {
+          return h(S.ChannelItem, { key: c.id, name: c.name, type: c.type, unread: c.unread, selected: sel[0] === c.id, onClick: function () { sel[1](c.id); } });
+        }))),
+      header: h(S.ChannelHeader, { name: ch.name, type: ch.type, topic: ch.topic },
+        h(S.IconButton, { icon: "members", label: mem[0] ? "Hide members" : "Show members", pressed: mem[0], onClick: function () { mem[1](!mem[0]); } })),
+      footer: h(S.Composer, { placeholder: "Message #" + ch.name, onSend: send, footer: h(S.TypingIndicator, { names: ["Wigeon"] }) }),
+      members: h(S.MemberList, { groups: [
+        { title: "Online", online: true, members: [{ id: "a1", name: "Mallard", color: "#c4a7ff" }, { id: "a2", name: "Teal" }, { id: "a3", name: "Wigeon", typing: true }] },
+        { title: "Offline", online: false, members: [{ id: "a4", name: "Eider" }, { id: "a5", name: "Pintail" }] }
+      ] })
+    }, h(S.MessageList, null,
+      h(S.SystemMessage, { time: "Today at 18:30" }, h("strong", null, "Teal"), " joined the server."),
+      msgs[0].map(function (m) {
+        return h(S.Message, { key: m.id, author: m.author, color: m.color, time: "Today at " + m.time, shortTime: m.time, head: m.head !== false, isNew: m.isNew }, m.text);
+      })));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

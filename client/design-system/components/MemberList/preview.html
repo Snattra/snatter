@@ -1,0 +1,40 @@
+<!-- @dsCard group="People" height=330 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MemberList</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { width: var(--members-width); height: 100vh; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var scaup = useState(false);
+    var online = [
+      { id: "a1", name: "Gadwall" },
+      { id: "a2", name: "Mallard", color: "#c4a7ff" },
+      { id: "a3", name: "Teal", typing: true },
+      { id: "a4", name: "Wigeon" }
+    ];
+    var offline = [{ id: "a5", name: "Eider" }, { id: "a6", name: "Pintail" }];
+    var scaupM = { id: "a7", name: "Scaup" };
+    if (scaup[0]) online = online.concat([scaupM]); else offline = offline.concat([scaupM]);
+    online.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    offline.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    React.useEffect(function () { var t = setInterval(function () { scaup[1](function (v) { return !v; }); }, 3000); return function () { clearInterval(t); }; }, []);
+    return h("div", { className: "demo" }, h(S.MemberList, { groups: [{ title: "Online", online: true, members: online }, { title: "Offline", online: false, members: offline }] }));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!-- @dsCard group="Navigation" height=330 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ServerRail</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: flex; height: 100vh; }
+  .fill { flex: 1; background: var(--panel); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var sel = useState("pond");
+    var servers = [{ id: "pond", name: "Pondside" }, { id: "raid", name: "Raid Night", unread: true }, { id: "lan", name: "LAN Party" }];
+    return h("div", { className: "demo" },
+      h(S.ServerRail, null,
+        servers.map(function (s) { return h(S.RailServer, { key: s.id, name: s.name, unread: s.unread, selected: sel[0] === s.id, onClick: function () { sel[1](s.id); } }); }),
+        h(S.RailDivider),
+        h(S.RailServer, { name: "Add a server", icon: "plus", variant: "action" })),
+      h("div", { className: "fill" }));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

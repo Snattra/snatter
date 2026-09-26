@@ -1,0 +1,75 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Snatter</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--text-strong); font-family: var(--font-sans); overflow: hidden; }
+  .cover { position: relative; width: 960px; height: 288px; overflow: hidden; }
+  .art { position: absolute; top: 0; left: 480px; width: 480px; height: 288px; overflow: hidden; }
+  .art svg { display: block; }
+  .accent { fill: url(#sheen); }
+  .stop-a { stop-color: var(--accent); }
+  .stop-b { stop-color: var(--accent-sheen); }
+  .pane { fill: var(--panel-active); }
+  .cut { fill: var(--bg); }
+  .pill { fill: url(#sheen); }
+  .dot { fill: var(--online); }
+  .ring { fill: var(--panel-active); }
+  .slab { rx: var(--radius-lg); }
+  .block { rx: var(--radius-md); }
+  .disc { rx: calc(var(--server-icon) / 2); }
+  .m22 { rx: calc(var(--radius-lg) + var(--space-6)); }
+  .m18 { rx: calc(var(--radius-lg) + var(--space-2)); }
+  .sq { rx: var(--radius-lg); }
+  .tip { rx: var(--space-2); }
+  .words { position: absolute; left: var(--space-32); bottom: var(--space-32); max-width: 440px; }
+  .name { margin: 0; font-size: 96px; line-height: 0.92; font-weight: 700; letter-spacing: -0.02em; color: var(--text-strong); }
+  .tag { margin: var(--space-12) 0 0 4px; font-size: 14px; line-height: 20px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 288" width="480" height="288">
+<defs>
+<linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+<stop class="stop-a" offset="0"/>
+<stop class="stop-b" offset="1"/>
+</linearGradient>
+</defs>
+<!--
+  blocks      the sheen slab 160×232 bleeding off the top (gradient-accent, accent to accent-sheen: the signature, the largest) · panel-active block bleeding off the right and bottom (the panes) · online 12px dot once (presence only) · a 6×40 sheen pill once (selection); ground bg — about a third of 960×288
+  arrangement the app's own columns: a 72px rail of server shapes, then the slab, then the pane block, space-16 gutters
+  pattern     the server icon's morph, frozen: 48px shapes at a 56px pitch (server-icon + space-8) a rail of discs (half of server-icon) with the selected one settled to radius-lg, then two rows cut into the block in bg stepping disc, radius-lg + space-6, + space-2, radius-lg; chosen because "a circle that settles into a rounded square" is the system's own signature
+  scales      sides server-icon and space steps; gutters space-16; pitch server-icon + space-8; corners radius-md, radius-lg, and radius-lg + space-2 / space-6 for the in-between shapes
+-->
+<rect class="pane disc" x="12" y="12" width="48" height="48" rx="24"/>
+<rect class="pane disc" x="12" y="68" width="48" height="48" rx="24"/>
+<rect class="accent sq" x="12" y="124" width="48" height="48" rx="16"/>
+<rect class="pill tip" x="-2" y="128" width="6" height="40" rx="2"/>
+<rect class="pane disc" x="12" y="180" width="48" height="48" rx="24"/>
+<rect class="pane disc" x="12" y="236" width="48" height="48" rx="24"/>
+<rect class="accent slab" x="88" y="-24" width="160" height="232" rx="16"/>
+<rect class="pane block" x="264" y="56" width="240" height="256" rx="8"/>
+<rect class="cut disc" x="280" y="72" width="48" height="48" rx="24"/>
+<rect class="cut m22" x="336" y="72" width="48" height="48" rx="22"/>
+<rect class="cut m18" x="392" y="72" width="48" height="48" rx="18"/>
+<rect class="cut sq" x="448" y="72" width="48" height="48" rx="16"/>
+<rect class="cut disc" x="280" y="128" width="48" height="48" rx="24"/>
+<rect class="cut m22" x="336" y="128" width="48" height="48" rx="22"/>
+<rect class="cut m18" x="392" y="128" width="48" height="48" rx="18"/>
+<rect class="cut sq" x="448" y="128" width="48" height="48" rx="16"/>
+<circle class="ring" cx="322" cy="170" r="9"/>
+<circle class="dot" cx="322" cy="170" r="6"/>
+</svg>
+</div>
+<div class="words">
+<h1 class="name">Snatter</h1>
+<p class="tag">The server you run yourself.</p>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,106 @@
+/*
+ * Snatter design tokens, the Harbor palette: navy panes and an azure sheen
+ * that turns cyan on whatever is chosen. Every colour, size and motion in
+ * styles.css comes from here.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, darkest to lightest */
+  --bg: #0c141e;
+  --panel: #151e28;
+  --panel-raised: #1c242f;
+  --panel-hover: #18212c;
+  --panel-active: #27313e;
+  --floating: #060e17;
+  --divider: var(--bg);
+
+  /* Ink */
+  --text: #e0e7ef;
+  --text-strong: #f3f7fd;
+  --muted: #98a6b8;
+
+  /* Accent: fills carry dark on-accent labels, never white */
+  --accent: #65bdfd;
+  --accent-sheen: #58d1e5;
+  --accent-strong: #4ca2e6;
+  --accent-text: var(--accent);
+  --focus: var(--accent);
+  --accent-soft: #65bdfd24;
+  --on-accent: #051729;
+
+  /* Status */
+  --online: #5ed476;
+  --warning: #f9c64e;
+  --on-warning: var(--bg);
+  --warning-soft: #f9c64e1f;
+  --danger: #f0555b;
+  --danger-text: #fe8a88;
+  --danger-strong: #c92f36;
+  --on-danger: #ffffff;
+  --danger-soft: #f0555b1f;
+
+  /* Shadows */
+  --shadow-lift: 0 16px 40px -12px #010309cc;
+  --shadow-float: 0 0 0 1px #01030980, 0 8px 20px #01030966;
+  --shadow-glow: 0 0 0 3px #65bdfd33;
+  --shadow-glow-danger: 0 0 0 3px #f0555b33;
+  --shadow-accent: 0 6px 20px -6px #65bdfd8c;
+
+  /* Gradients, built from the colours above */
+  --gradient-accent: linear-gradient(135deg, var(--accent) 0%, var(--accent-sheen) 100%);
+  --gradient-edge: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 60%, transparent) 30%, color-mix(in srgb, var(--accent-sheen) 60%, transparent) 70%, transparent 100%);
+  --gradient-backdrop: radial-gradient(70% 60% at 15% 0%, color-mix(in srgb, var(--accent) 16%, transparent) 0%, transparent 70%);
+  --gradient-backdrop-far: radial-gradient(60% 60% at 95% 100%, color-mix(in srgb, var(--accent-sheen) 12%, transparent) 0%, transparent 70%);
+  --gradient-mention: linear-gradient(90deg, color-mix(in srgb, var(--warning) 18%, transparent) 0%, color-mix(in srgb, var(--warning) 6%, transparent) 45%, color-mix(in srgb, var(--warning) 2%, transparent) 100%);
+  --gradient-shimmer: linear-gradient(90deg, #ffffff00 0%, #ffffff0f 50%, #ffffff00 100%);
+
+  /* Spacing, named by pixel value */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-round: 50%;
+  --radius-pill: 9999px;
+
+  /* The app shell's frame */
+  --rail-width: 72px;
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 56px;
+  --members-width: 240px;
+  --header-height: 48px;
+  --server-icon: 48px;
+  --avatar-md: 32px;
+  --avatar-lg: 40px;
+  --icon-size: 18px;
+
+  /* Motion */
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+  --duration-loop: 1200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Opacity */
+  --opacity-disabled: 0.6;
+  --opacity-offline: 0.45;
+
+  /* Type */
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}

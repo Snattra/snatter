@@ -1,0 +1,40 @@
+<!-- @dsCard group="Messages" height=440 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Message</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { min-height: 100vh; background: var(--panel-raised); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var extra = useState([]);
+    var pending = useState(true);
+    React.useEffect(function () { var t = setTimeout(function () { pending[1](false); }, 1800); return function () { clearTimeout(t); }; }, []);
+    var actions = h(React.Fragment, null, h(S.IconButton, { icon: "plus", label: "Add reaction" }), h(S.IconButton, { icon: "close", label: "Delete" }));
+    return h("div", { className: "demo" },
+      h(S.MessageList, null,
+        h(S.SystemMessage, { time: "Today at 18:30" }, h("strong", null, "Teal"), " joined the server."),
+        h(S.Message, { author: "Teal", time: "Today at 18:31", actions: actions }, "Anyone up for a round after dinner?"),
+        h(S.Message, { author: "Teal", head: false, shortTime: "18:31", actions: actions }, "Server is on ", h("code", null, "play.pondside.gg"), ", same as last week."),
+        h(S.Message, { author: "Mallard", color: "#c4a7ff", time: "Today at 18:33", mentioned: true, actions: actions }, h("a", { href: "#" }, "@Teal"), " count me in, give me ten minutes."),
+        h(S.Message, { author: "Wigeon", time: "Today at 18:34", state: pending[0] ? "pending" : "sent" }, "Bringing snacks, back in five."),
+        h(S.Message, { author: "Wigeon", head: false, shortTime: "18:34", state: "failed" }, "Does anyone still have the map pack?"),
+        extra[0].map(function (id) { return h(S.Message, { key: id, author: "Gadwall", time: "Today at 18:35", isNew: true }, "A new message rises in."); })),
+      h("div", { style: { padding: "0 16px 16px 72px" } }, h(S.Button, { size: "sm", onClick: function () { extra[1](extra[0].concat([Date.now()])); } }, "Receive a message")));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

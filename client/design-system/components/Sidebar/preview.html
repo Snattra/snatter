@@ -1,0 +1,44 @@
+<!-- @dsCard group="Navigation" height=330 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sidebar</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: grid; grid-template-columns: var(--sidebar-width) 1fr; height: 100vh; transition: grid-template-columns var(--duration-slow) var(--ease-standard); }
+  .demo.collapsed { grid-template-columns: var(--sidebar-collapsed) 1fr; }
+  .fill { background: var(--panel-raised); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var sel = useState("c1");
+    var col = useState(false);
+    var channels = [
+      { id: "c1", name: "general", type: "text" },
+      { id: "c2", name: "screenshots", type: "text", unread: true },
+      { id: "c3", name: "patch-notes", type: "text" },
+      { id: "c4", name: "Lounge", type: "voice" },
+      { id: "c5", name: "Squad up", type: "voice_text" }
+    ];
+    return h("div", { className: col[0] ? "demo collapsed" : "demo" },
+      h(S.Sidebar, { name: "Pondside", collapsed: col[0], onToggle: function () { col[1](!col[0]); },
+        footer: h(S.UserPanel, { name: "Mallard", action: h(S.Button, { variant: "link" }, "Sign out") }) },
+        h(S.ChannelList, null, channels.map(function (c) {
+          return h(S.ChannelItem, { key: c.id, name: c.name, type: c.type, unread: c.unread, selected: sel[0] === c.id, onClick: function () { sel[1](c.id); } });
+        }))),
+      h("div", { className: "fill" }));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

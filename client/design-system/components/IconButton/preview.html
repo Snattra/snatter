@@ -1,0 +1,32 @@
+<!-- @dsCard group="Actions" height=48 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IconButton</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: flex; align-items: center; gap: var(--space-8); height: var(--header-height); padding: 0 var(--space-16); background: var(--panel-raised); border-bottom: 1px solid var(--divider); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var open = useState(true);
+    return h("div", { className: "demo" },
+      h(S.IconButton, { icon: "members", label: open[0] ? "Hide members" : "Show members", pressed: open[0], onClick: function () { open[1](!open[0]); } }),
+      h(S.IconButton, { icon: "chevron-left", label: "Collapse channels" }),
+      h(S.IconButton, { icon: "plus", label: "Attach" }),
+      h(S.IconButton, { icon: "close", label: "Dismiss" }));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

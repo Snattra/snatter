@@ -1,0 +1,32 @@
+<!-- @dsCard group="Forms" height=290 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Field</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { min-height: 100vh; padding: var(--space-24); background: var(--panel); }
+  .stack { display: grid; gap: var(--space-12); max-width: 352px; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  function Demo() {
+    var err = useState("That username is taken.");
+    return h("div", { className: "demo" }, h("div", { className: "stack" },
+      h(S.Field, { label: "Display name", optional: true, placeholder: "How others see you", hint: "Up to 64 characters." }),
+      h(S.Field, { label: "Username", defaultValue: "mallard", error: err[0] }),
+      h(S.Button, { variant: "primary", onClick: function () { err[1](err[0] === "That username is taken." ? "Usernames use letters, digits, _ and ." : "That username is taken."); } }, "Try again (shakes)")));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>
