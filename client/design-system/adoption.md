@@ -10,11 +10,12 @@ The web client (`client/web` in the Snatter repository) is built on this system.
 | Card, Callout, Banner, Tooltip, Skeleton | `ui/surfaces.tsx`, with `Backdrop` |
 | Avatar, MemberList, UserPanel, TypingIndicator | `ui/people.tsx`; the member list's typing mark is `TypingDots` |
 | AppShell, ServerRail, Sidebar, ChannelHeader | `ui/layout.tsx`, with `RailServer`, `ChannelList` and `ChannelItem` |
+| Message, SystemMessage, Composer, NewMessages | `ui/messages.tsx`: `Message` with `UserMessageRow` and `PendingRow`, `SystemMessageRow`, `NewMessagesDivider`, `UnreadBar`; `ui/ChannelView.tsx` puts them together |
 | Icon | `ui/icons.tsx`, with `ChannelIcon` |
 
 The app's components take the app's own data (an `Account`, a `Channel`, the connection's origin) instead of the display props in `components/index.d.ts`. They render the same markup and classes, so the app and these previews look and move the same.
 
-Not in the app yet, because the features behind them are not built: `Message`, `SystemMessage` and `Composer` (the channel body stays empty until messages are fetched), unread marks, the add-server action, Field hints and errors, and the warning Callout and the danger and accent Banners. Their styles are in `components/bundle.css`. Bring each block into `styles.css` together with the component that uses it.
+Not in the app yet, because the features behind them are not built: mentions and the mention highlight, the message actions toolbar, role colours on names, the Composer's attach button, the add-server action and the server rail's unread pill, Field hints and errors, and the warning Callout and the danger and accent Banners. Their styles are in `components/bundle.css`. Bring each block into `styles.css` together with the component that uses it.
 
 Rules for keeping the two in step:
 - A token changes in `tokens.json` and `client/web/src/tokens.css` in the same commit.

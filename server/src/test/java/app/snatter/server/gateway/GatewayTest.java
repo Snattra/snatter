@@ -225,6 +225,66 @@ class GatewayTest {
     }
 
     @Test
+    void readMarkersStartAtWhatIsThereAndFollowTheMember() {
+        String owner = TestUsers.ownerToken();
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User bob = TestUsers.register();
+        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
+        String reading = createChannel(Map.of("type", "text", "name", "reading"));
+        String secret = createChannel(Map.of("type", "text", "name", "secret", "requiredRoleIds", List.of(crew)));
+        try {
+            String before = send(owner, reading, Map.of("content", "before alice looked")).then().statusCode(201).extract().path("id");
+            String hiddenBefore = send(owner, secret, Map.of("content", "before alice could see")).then().statusCode(201).extract().path("id");
+            try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
+                 GatewayTestClient aliceElsewhere = GatewayTestClient.identified(alice.token());
+                 GatewayTestClient bobGateway = GatewayTestClient.identified(bob.token())) {
+                // What was there before she first saw the channel counts as read; voice channels have no state.
+                String state = "readStates.find { it.channelId == '" + reading + "' }";
+                assertEquals(before, aliceGateway.ready().getString(state + ".lastReadMessageId"));
+                assertEquals(before, aliceGateway.ready().getString(state + ".lastMessageId"));
+                assertFalse(aliceGateway.ready().getList("readStates.channelId").contains(GENERAL_VOICE));
+                assertFalse(aliceGateway.ready().getList("readStates.channelId").contains(secret));
+
+                String unread = send(bob.token(), reading, Map.of("content", "for alice")).then().statusCode(201).extract().path("id");
+                as(alice.token()).body(Map.of("lastReadMessageId", unread)).put("/api/v1/channels/" + reading + "/read-state")
+                    .then().statusCode(200);
+                for (GatewayTestClient gateway : List.of(aliceGateway, aliceElsewhere)) {
+                    JsonPath moved = gateway.await("read_state_updated", readState(reading));
+                    assertEquals(unread, moved.getString("readState.lastReadMessageId"));
+                }
+
+                // Sending reads up to the message sent; marking an older message read changes nothing.
+                String own = send(alice.token(), reading, Map.of("content", "mine")).then().statusCode(201).extract().path("id");
+                for (GatewayTestClient gateway : List.of(aliceGateway, aliceElsewhere)) {
+                    assertEquals(own, gateway.await("read_state_updated", readState(reading)).getString("readState.lastReadMessageId"));
+                }
+                as(alice.token()).body(Map.of("lastReadMessageId", before)).put("/api/v1/channels/" + reading + "/read-state")
+                    .then().statusCode(200);
+
+                // A channel that becomes visible starts out read.
+                TestUsers.assignRole(alice.id(), crew);
+                aliceGateway.await("channel_created", channel(secret));
+                JsonPath revealed = aliceGateway.await("read_state_updated", readState(secret));
+                assertEquals(hiddenBefore, revealed.getString("readState.lastReadMessageId"));
+
+                // Nobody else hears about Alice's reading.
+                awaitMarker(aliceGateway, bob);
+                aliceGateway.assertNone("read_state_updated", readState(reading));
+                awaitMarker(bobGateway, bob);
+                bobGateway.assertNone("read_state_updated", f -> own.equals(f.getString("readState.lastReadMessageId")));
+            }
+        } finally {
+            deleteChannel(reading);
+            deleteChannel(secret);
+            TestUsers.deleteRole(crew);
+        }
+    }
+
+    private static Predicate<JsonPath> readState(String channelId) {
+        return frame -> channelId.equals(frame.getString("readState.channelId"));
+    }
+
+    @Test
     void roleAndChannelAccessChangesArriveAsDifferences() {
         String owner = TestUsers.ownerToken();
         TestUsers.User member = TestUsers.register();

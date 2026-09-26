@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Account, Channel, GatewayServerFrame } from "../api/types";
-import { TYPING_SHOWN_MS, applyFrame, fromReady, sortedChannels, typingIn } from "./serverView";
+import type { Account, Channel, GatewayServerFrame, Message } from "../api/types";
+import { TYPING_SHOWN_MS, applyFrame, fromReady, hasUnread, sortedChannels, typingIn } from "./serverView";
 
 type Ready = Extract<GatewayServerFrame, { type: "ready" }>;
 type Event = Exclude<GatewayServerFrame, Ready>;
@@ -14,6 +14,15 @@ function account(id: string, displayName: string): Account {
 
 function channel(id: string, position: number): Channel {
   return { id, type: "text", name: id, position, requiredRoleIds: [], createdAt: "2026-01-01T00:00:00Z" };
+}
+
+/** Message ids that order by their number, as the server's do by time. */
+function messageId(n: number): string {
+  return `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`;
+}
+
+function message(n: number, channelId: string, authorId: string): Message {
+  return { kind: "user", id: messageId(n), channelId, authorId, content: "hi", createdAt: "2026-01-01T00:00:00Z" };
 }
 
 function ready(): Ready {
@@ -34,6 +43,10 @@ function ready(): Ready {
     members: [me, bob],
     presences: [{ accountId: "me", status: "online" }],
     channels: [channel("b", 1), channel("a", 0)],
+    readStates: [
+      { channelId: "a", lastReadMessageId: messageId(2), lastMessageId: messageId(2) },
+      { channelId: "b", lastReadMessageId: messageId(1), lastMessageId: messageId(3) },
+    ],
   };
 }
 
@@ -57,6 +70,7 @@ describe("serverView", () => {
       { type: "channel_deleted", seq: 4, channelId: "a" },
     );
     expect(sortedChannels(view).map((c) => c.name)).toEqual(["renamed", "b"]);
+    expect(view.reading["a"]).toBeUndefined();
   });
 
   it("follows presence", () => {
@@ -78,22 +92,45 @@ describe("serverView", () => {
     expect(typingIn(typing, "a", 1_000).map((m) => m.id)).toEqual(["bob"]);
     expect(typingIn(typing, "a", 1_000 + TYPING_SHOWN_MS)).toEqual([]);
 
-    const sent = applyFrame(
-      typing,
-      {
-        type: "message_created",
-        seq: 3,
-        message: {
-          kind: "user",
-          id: "m1",
-          channelId: "a",
-          authorId: "bob",
-          content: "hi",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      },
+    const sent = applyFrame(typing, { type: "message_created", seq: 3, message: message(4, "a", "bob") }, 1_000);
+    expect(typingIn(sent, "a", 1_000)).toEqual([]);
+  });
+
+  it("knows which channels have unread messages", () => {
+    const view = fromReady(ready());
+    expect(hasUnread(view, "a")).toBe(false);
+    expect(hasUnread(view, "b")).toBe(true);
+
+    const others = apply({ type: "message_created", seq: 2, message: message(4, "a", "bob") });
+    expect(hasUnread(others, "a")).toBe(true);
+
+    // The member's own messages are read as they arrive.
+    const own = apply({ type: "message_created", seq: 2, message: message(4, "a", "me") });
+    expect(hasUnread(own, "a")).toBe(false);
+  });
+
+  it("moves read markers forward only", () => {
+    const read = apply({
+      type: "read_state_updated",
+      seq: 2,
+      readState: { channelId: "b", lastReadMessageId: messageId(3), lastMessageId: messageId(3) },
+    });
+    expect(hasUnread(read, "b")).toBe(false);
+
+    const stale = applyFrame(
+      read,
+      { type: "read_state_updated", seq: 3, readState: { channelId: "b", lastReadMessageId: messageId(1), lastMessageId: messageId(3) } },
       1_000,
     );
-    expect(typingIn(sent, "a", 1_000)).toEqual([]);
+    expect(stale.reading["b"]).toEqual({ lastRead: messageId(3), last: messageId(3) });
+  });
+
+  it("starts reading a channel that becomes visible", () => {
+    const view = apply(
+      { type: "channel_created", seq: 2, channel: channel("c", 2) },
+      { type: "read_state_updated", seq: 3, readState: { channelId: "c", lastReadMessageId: null, lastMessageId: null } },
+      { type: "message_created", seq: 4, message: message(5, "c", "bob") },
+    );
+    expect(hasUnread(view, "c")).toBe(true);
   });
 });

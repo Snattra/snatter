@@ -9,7 +9,7 @@ the client README.
 |------------------------|-----------------------------------------------------------|
 | `api/`                 | Typed REST client and type aliases, from the generated `schema.d.ts` |
 | `gateway/`             | The gateway connection: identify, sequence checks, reconnects |
-| `state/`               | The per-server view and the store holding it              |
+| `state/`               | The per-server view, channel message logs and the store holding them |
 | `servers/`             | `ServerConnection`: session, REST and gateway of one server |
 | `auth/`                | Registration challenge solving                            |
 | `platform/`            | What the app needs from where it runs                     |
@@ -43,11 +43,31 @@ The server sends state, then differences, and the client mirrors that. A
 server's `ServerView` (`state/serverView.ts`) is built from `ready` and
 replaced by `applyFrame` for every later frame; both are pure functions,
 unit-tested without a browser. After a reconnect the next `ready` replaces the
-view wholesale. Messages will be fetched over REST per channel and live
-alongside, not in, the view.
+view wholesale.
+
+Messages live alongside the view, not in it: each channel opened so far has
+a `ChannelLog` (`state/channelLog.ts`) in the server's store entry, holding
+its newest messages without gaps, oldest first, plus the member's own
+messages still on their way. Opening a channel fetches the newest page;
+scrolling up fetches the page `before` the oldest one held. Gateway message
+events update the logs that are held, and a log starts before its first page
+arrives so nothing that comes live meanwhile is lost. Logs survive
+reconnects: after `ready`, `ServerConnection` fetches what each one missed
+with `after`, or starts it over from the newest page if it missed more than
+one page. Sending shows the message at once as pending under a random
+`nonce`; the stored message carries the nonce back (in the response and on
+the sender's gateway connections) and replaces it. A failed send stays in
+the list to retry or discard.
+
+Read markers are part of the view: `reading` holds, per channel, the newest
+message read and the newest message there is, from `ready` and
+`read_state_updated`, and a channel is unread while the second is after the
+first. Message ids are UUID version 7, so comparing them orders messages
+(`state/ids.ts`). The member's own messages count as read as they arrive.
 
 Typing indicators keep only when each ends; `typingIn` filters by the current
-time, and the UI ticks a clock (`useNow`) only while someone is typing.
+time, and the UI ticks a clock (`useNow`) only while someone is typing. The
+composer sends `typing` when the text is not blank, at most every 8 seconds.
 
 ## Gateway
 
@@ -102,7 +122,17 @@ The look comes from the design system in `client/design-system/`: its
 says which animation means what, and each component has guidelines and a
 live preview under `components/`. In the app, `tokens.css` holds the tokens
 as CSS custom properties, `styles.css` the `sn-` component classes, and
-`ui/controls.tsx`, `ui/surfaces.tsx`, `ui/people.tsx` and `ui/layout.tsx`
-the components built on them. `design-system/adoption.md` maps one onto the
+`ui/controls.tsx`, `ui/surfaces.tsx`, `ui/people.tsx`, `ui/layout.tsx` and
+`ui/messages.tsx` the components built on them.
+
+`ui/ChannelView.tsx` is the channel body. It scrolls from the end
+(`flex-direction: column-reverse`), so the newest message stays in place and
+older pages load above without the view jumping. While the page has focus
+and the view is at the newest message, the member is reading, and the read
+marker follows after a short delay. The new-messages divider is placed from
+the marker when the channel opens and stays while it is shown; when the
+member stops reading with no divider showing, one is placed after what they
+last saw. The unread bar offers to jump back to the divider, loading older
+pages until it is held. `design-system/adoption.md` maps one onto the
 other. Change a token in `tokens.json` and `tokens.css` together, and design
 a new component there before building it here.

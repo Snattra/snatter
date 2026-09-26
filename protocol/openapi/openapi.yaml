@@ -23,8 +23,8 @@ info:
 
     1. Connect and send `identify` with a session token within 10 seconds.
     2. The server answers with `ready`: the caller's account, permissions,
-       the server, its roles, members, who is online and the channels the
-       caller can see.
+       the server, its roles, members, who is online, the channels the
+       caller can see and how far they have read each one.
     3. From then on the server pushes events. Each carries `seq`, counting
        up from 1 (`ready`) per connection, so gaps are detectable. The
        client may send `typing` frames.
@@ -1167,6 +1167,46 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/channels/{id}/read-state:
+    put:
+      tags: [messages]
+      operationId: markRead
+      summary: Mark a channel read up to a message
+      description: |
+        Moves the caller's read marker in the channel forward to a message
+        in it (`message_not_found` otherwise). The marker never moves back:
+        an older message leaves it where it is. The caller's gateway
+        connections get `read_state_updated` when it moves. Sending a
+        message moves the sender's marker to it. Voice-only channels have no
+        messages (`voice_only_channel`).
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChannelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReadStateUpdate"
+      responses:
+        "200":
+          description: The read state after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/blobs/{id}:
     get:
       tags: [blobs]
@@ -1493,6 +1533,40 @@ components:
           minLength: 1
           maxLength: 4000
           pattern: '^\s*\S[\s\S]*$'
+
+    ReadState:
+      type: object
+      description: |
+        How far the member has read a channel: messages after
+        `lastReadMessageId` are unread. The first time a member can see a
+        channel, everything in it so far counts as read.
+      required: [channelId]
+      properties:
+        channelId:
+          $ref: "#/components/schemas/ChannelId"
+        lastReadMessageId:
+          allOf:
+            - $ref: "#/components/schemas/MessageId"
+          nullable: true
+          description: |
+            The newest message read. Null when the channel was empty as the
+            member first saw it and nothing has been read since, so every
+            message in it is unread. The message may have been deleted.
+        lastMessageId:
+          allOf:
+            - $ref: "#/components/schemas/MessageId"
+          nullable: true
+          description: |
+            The channel's newest message when this was sent, null if it has
+            none; later ones arrive as `message_created`. The channel has
+            unread messages while this is after `lastReadMessageId`.
+
+    ReadStateUpdate:
+      type: object
+      required: [lastReadMessageId]
+      properties:
+        lastReadMessageId:
+          $ref: "#/components/schemas/MessageId"
 
     Permission:
       type: string
@@ -2238,6 +2312,7 @@ components:
         - $ref: "#/components/schemas/GatewayMessageDeleted"
         - $ref: "#/components/schemas/GatewayPresenceUpdated"
         - $ref: "#/components/schemas/GatewayTypingStarted"
+        - $ref: "#/components/schemas/GatewayReadStateUpdated"
       discriminator:
         propertyName: type
         mapping:
@@ -2257,6 +2332,7 @@ components:
           message_deleted: "#/components/schemas/GatewayMessageDeleted"
           presence_updated: "#/components/schemas/GatewayPresenceUpdated"
           typing_started: "#/components/schemas/GatewayTypingStarted"
+          read_state_updated: "#/components/schemas/GatewayReadStateUpdated"
 
     GatewayServerFrameBase:
       type: object
@@ -2275,7 +2351,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object
-          required: [account, permissions, server, roles, members, presences, channels]
+          required: [account, permissions, server, roles, members, presences, channels, readStates]
           properties:
             account:
               $ref: "#/components/schemas/Account"
@@ -2302,6 +2378,11 @@ components:
               items:
                 $ref: "#/components/schemas/Channel"
               description: The channels the member can see, top first
+            readStates:
+              type: array
+              items:
+                $ref: "#/components/schemas/ReadState"
+              description: One for each of those channels that keeps messages
 
     GatewayServerUpdated:
       description: The public server description changed
@@ -2457,3 +2538,17 @@ components:
               $ref: "#/components/schemas/ChannelId"
             accountId:
               $ref: "#/components/schemas/AccountId"
+
+    GatewayReadStateUpdated:
+      description: |
+        The member's read marker in a channel moved, from any of their
+        sessions or by sending a message there. Also sent right after
+        `channel_created` for a channel with messages that became visible,
+        saying where reading starts in it.
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [readState]
+          properties:
+            readState:
+              $ref: "#/components/schemas/ReadState"

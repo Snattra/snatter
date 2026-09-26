@@ -12,6 +12,7 @@ import app.snatter.api.model.GatewayMessageDeletedDto;
 import app.snatter.api.model.GatewayMessageUpdatedDto;
 import app.snatter.api.model.GatewayPermissionsChangedDto;
 import app.snatter.api.model.GatewayPresenceUpdatedDto;
+import app.snatter.api.model.GatewayReadStateUpdatedDto;
 import app.snatter.api.model.GatewayReadyDto;
 import app.snatter.api.model.GatewayRoleCreatedDto;
 import app.snatter.api.model.GatewayRoleDeletedDto;
@@ -42,6 +43,9 @@ import app.snatter.server.channel.ChannelRepository;
 import app.snatter.server.channel.ChannelResource;
 import app.snatter.server.message.MessageEvent;
 import app.snatter.server.message.MessageResource;
+import app.snatter.server.message.ReadState;
+import app.snatter.server.message.ReadStateEvent;
+import app.snatter.server.message.ReadStateRepository;
 import app.snatter.server.message.UserMessage;
 import app.snatter.server.role.Permission;
 import app.snatter.server.role.PermissionDtos;
@@ -62,6 +66,8 @@ import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.TransactionPhase;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -108,6 +114,7 @@ public class Gateway {
     private final AccountRepository accounts;
     private final RoleRepository roles;
     private final ChannelRepository channels;
+    private final ReadStateRepository readStates;
     private final ServerSettingsService settings;
     private final ServerInfoDtos serverInfo;
     private final GatewayConfig config;
@@ -125,13 +132,14 @@ public class Gateway {
     private final Map<AccountId, ScheduledFuture<?>> timeoutEnds = new HashMap<>();
 
     public Gateway(Principals principals, AuthService auth, AccountRepository accounts, RoleRepository roles,
-                   ChannelRepository channels, ServerSettingsService settings, ServerInfoDtos serverInfo,
-                   GatewayConfig config, ObjectMapper json) {
+                   ChannelRepository channels, ReadStateRepository readStates, ServerSettingsService settings,
+                   ServerInfoDtos serverInfo, GatewayConfig config, ObjectMapper json) {
         this.principals = principals;
         this.auth = auth;
         this.accounts = accounts;
         this.roles = roles;
         this.channels = channels;
+        this.readStates = readStates;
         this.settings = settings;
         this.serverInfo = serverInfo;
         this.config = config;
@@ -217,6 +225,7 @@ public class Gateway {
         watchTimeout(client.principal);
         client.roles = byId(roles.findAll());
         client.channels = visibleChannels(client.principal, channels.findAll());
+        List<ReadState> reading = startReading(accountId, client.channels.values());
         List<Account> members = accounts.findAll();
         send(client, seq -> new GatewayReadyDto()
             .seq(seq)
@@ -226,7 +235,22 @@ public class Gateway {
             .roles(client.roles.values().stream().map(RoleResource::toDto).toList())
             .members(members.stream().map(AccountDtos::toDto).toList())
             .presences(online.stream().map(id -> presence(id, PresenceStatusDto.ONLINE)).toList())
-            .channels(client.channels.values().stream().map(ChannelResource::toDto).toList()));
+            .channels(client.channels.values().stream().map(ChannelResource::toDto).toList())
+            .readStates(reading.stream().map(MessageResource::toDto).toList()));
+    }
+
+    /**
+     * The member's read states in those of the channels that keep messages,
+     * starting them at the newest message where they are seen for the first
+     * time.
+     */
+    private List<ReadState> startReading(AccountId accountId, Collection<Channel> seen) {
+        List<ChannelId> ids = seen.stream().filter(c -> c.type().hasMessages()).map(Channel::id).toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        readStates.startReading(accountId, ids);
+        return readStates.find(accountId, ids);
     }
 
     /**
@@ -312,6 +336,17 @@ public class Gateway {
 
     void onMessage(@Observes(during = TransactionPhase.AFTER_SUCCESS) MessageEvent event) {
         run(() -> dispatchMessage(event));
+    }
+
+    void onReadState(@Observes(during = TransactionPhase.AFTER_SUCCESS) ReadStateEvent event) {
+        run(() -> {
+            ChannelId channelId = event.readState().channelId();
+            for (Client client : liveClients()) {
+                if (client.principal.accountId().equals(event.accountId()) && client.channels.containsKey(channelId)) {
+                    send(client, seq -> new GatewayReadStateUpdatedDto().seq(seq).readState(MessageResource.toDto(event.readState())));
+                }
+            }
+        });
     }
 
     void onChannel(@Observes(during = TransactionPhase.AFTER_SUCCESS) ChannelEvent event) {
@@ -445,10 +480,12 @@ public class Gateway {
 
     private void syncChannels(Client client, List<Channel> allChannels) {
         Map<ChannelId, Channel> now = visibleChannels(client.principal, allChannels);
+        List<Channel> appeared = new ArrayList<>();
         for (Channel channel : now.values()) {
             Channel before = client.channels.get(channel.id());
             if (before == null) {
                 send(client, seq -> new GatewayChannelCreatedDto().seq(seq).channel(ChannelResource.toDto(channel)));
+                appeared.add(channel);
             } else if (!before.equals(channel)) {
                 send(client, seq -> new GatewayChannelUpdatedDto().seq(seq).channel(ChannelResource.toDto(channel)));
             }
@@ -459,6 +496,9 @@ public class Gateway {
             }
         }
         client.channels = now;
+        for (ReadState state : startReading(client.principal.accountId(), appeared)) {
+            send(client, seq -> new GatewayReadStateUpdatedDto().seq(seq).readState(MessageResource.toDto(state)));
+        }
     }
 
     // --- Sending --------------------------------------------------------------

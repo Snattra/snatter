@@ -42,6 +42,10 @@ textarea {
   from { transform: translateY(-100%); }
 }
 
+@keyframes sn-drop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+
 @keyframes sn-typing {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-3px); opacity: 1; }
@@ -703,6 +707,24 @@ textarea {
   color: var(--accent);
 }
 
+.sn-channel-unread {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.sn-channel-unread::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-8));
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--text-strong);
+  animation: sn-fade-in var(--duration-base) var(--ease-out);
+}
+
 .sn-channel-name {
   flex: 1;
 }
@@ -871,6 +893,11 @@ textarea {
   animation: sn-fade-in var(--duration-fast) var(--ease-out);
 }
 
+.sn-typing strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .sn-typing-dots {
   display: inline-flex;
   gap: 3px;
@@ -893,6 +920,296 @@ textarea {
 .sn-typing-dot:nth-child(3) {
   background-position: -16px 0;
   animation-delay: 320ms;
+}
+
+/* ---------- Message ---------- */
+
+.sn-messages {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-16) 0;
+}
+
+.sn-message {
+  position: relative;
+  min-height: 22px;
+  padding: var(--space-2) var(--space-16) var(--space-2) 72px;
+  transition: background-color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-message:hover {
+  background: var(--panel-hover);
+}
+
+.sn-message-head {
+  margin-top: var(--space-16);
+}
+
+.sn-message-new {
+  animation: sn-rise-in var(--duration-base) var(--ease-out);
+}
+
+.sn-message-mentioned,
+.sn-message-mentioned:hover {
+  background: var(--gradient-mention);
+}
+
+.sn-message > .sn-avatar {
+  position: absolute;
+  left: var(--space-16);
+  top: var(--space-4);
+}
+
+.sn-message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+}
+
+.sn-message-author {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.sn-message-time {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.sn-message-gutter-time {
+  position: absolute;
+  left: 0;
+  top: var(--space-4);
+  width: 72px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity var(--duration-instant) var(--ease-standard);
+}
+
+.sn-message:hover .sn-message-gutter-time {
+  opacity: 1;
+}
+
+.sn-message-content {
+  color: var(--text);
+  overflow-wrap: anywhere;
+  transition: color var(--duration-base) var(--ease-standard);
+}
+
+.sn-message-pending .sn-message-content {
+  color: var(--muted);
+}
+
+.sn-message-failed {
+  background: var(--danger-soft);
+}
+
+.sn-message-failed:hover {
+  background: var(--danger-soft);
+}
+
+.sn-message-error {
+  display: block;
+  color: var(--danger-text);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.sn-message-content code {
+  padding: 1px var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.sn-message-content a {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+.sn-message-content a:hover {
+  text-decoration: underline;
+}
+
+.sn-message-actions {
+  position: absolute;
+  top: calc(-1 * var(--space-16));
+  right: var(--space-16);
+  display: flex;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--floating);
+  box-shadow: var(--shadow-float);
+  opacity: 0;
+  transform: translateY(4px) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.sn-message:hover .sn-message-actions,
+.sn-message:focus-within .sn-message-actions {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.sn-message-system {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  color: var(--muted);
+  padding-left: 0;
+}
+
+.sn-message-system > .sn-icon {
+  width: 72px;
+  color: var(--accent);
+}
+
+.sn-message-system > .sn-message-time {
+  margin-left: var(--space-8);
+}
+
+.sn-message-system strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---------- New messages ---------- */
+
+.sn-new-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: var(--space-16) var(--space-16) var(--space-4);
+  color: var(--accent-text);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* the line runs up to the label at the right edge */
+.sn-new-divider::before {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--accent);
+}
+
+.sn-new-divider + .sn-message-head {
+  margin-top: 0;
+}
+
+.sn-unread-bar {
+  position: absolute;
+  top: var(--space-8);
+  left: var(--space-16);
+  right: var(--space-16);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--floating);
+  box-shadow: var(--shadow-float);
+  font-size: 13px;
+  line-height: 18px;
+  animation: sn-drop-in var(--duration-base) var(--ease-out);
+}
+
+.sn-unread-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sn-unread-bar-text strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+/* ---------- Composer ---------- */
+
+.sn-composer-area {
+  flex: none;
+  padding: 0 var(--space-16) var(--space-8);
+}
+
+.sn-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.sn-composer:focus-within {
+  border-color: transparent;
+  background: linear-gradient(var(--bg), var(--bg)) padding-box, var(--gradient-accent) border-box;
+  box-shadow: var(--shadow-glow);
+}
+
+.sn-composer textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 200px;
+  margin: 0;
+  padding: var(--space-2) 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: none;
+  color: var(--text);
+  field-sizing: content;
+}
+
+.sn-composer textarea::placeholder {
+  color: var(--muted);
+}
+
+.sn-composer-send {
+  color: var(--accent-text);
+  opacity: 0;
+  transform: scale(0.6);
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-base) var(--ease-spring),
+    color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-composer-ready .sn-composer-send {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.sn-composer-send:hover {
+  color: var(--text-strong);
+}
+
+.sn-composer-foot {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--space-4);
 }
 
 /* ---------- Skeleton ---------- */
@@ -960,6 +1277,7 @@ textarea {
 }
 
 .sn-shell-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -1025,6 +1343,50 @@ textarea {
   animation: sn-rise-in var(--duration-base) var(--ease-out);
 }
 
+/* The channel scrolls from the end: column-reverse pins the view to the newest
+   message and keeps it in place while older pages load above. */
+.sn-channel-scroll {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column-reverse;
+  overflow-y: auto;
+}
+
+.sn-channel-start {
+  margin: var(--space-16) var(--space-16) 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.sn-channel-start strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 21px;
+  line-height: 28px;
+  font-weight: 700;
+}
+
+.sn-channel-note {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--space-16);
+  color: var(--muted);
+}
+
+/* Message text is plain for now; keep the author's line breaks. */
+.sn-message-content {
+  white-space: pre-wrap;
+}
+
+.sn-message-error .sn-button {
+  margin-left: var(--space-8);
+  font-size: inherit;
+  line-height: inherit;
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -1037,7 +1399,10 @@ textarea {
   .sn-card,
   .sn-banner,
   .sn-member,
-  .sn-form-error {
+  .sn-form-error,
+  .sn-message-new,
+  .sn-unread-bar,
+  .sn-channel-unread::before {
     animation-name: sn-fade-in !important;
   }
 

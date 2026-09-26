@@ -288,6 +288,21 @@ channel does the same.
 stored message, so a client can replace its pending copy. The gateway hands
 it back the same way, to the sending session only.
 
+**Read markers** (`read_state` table) record, per member and channel, the
+newest message the member has read; later messages are unread. A marker only
+moves forward: `PUT .../read-state` with an older message leaves it, and
+`ReadStateRepository.advance` does the comparison in its upsert, since
+message ids order messages. Sending a message moves the sender's marker to
+it, so members never see their own messages as unread. Each move fires
+`ReadStateEvent`, which the gateway sends as `read_state_updated` to that
+member's connections only. A member gets a marker the first time they can
+see a channel with messages, at its newest message then: what was already
+there counts as read. That happens when the gateway builds `ready` or
+reveals a channel (`ReadStateRepository.startReading`); a channel that was
+empty gets a null marker, so everything posted in it is new. `ready` and
+`read_state_updated` carry the channel's newest message id along with the
+marker, which is all a client needs to show unread channels.
+
 ## Gateway
 
 Live updates go over one WebSocket, `/api/v1/gateway`, built on Quarkus
@@ -348,6 +363,12 @@ rather than answered, so typing cannot probe for hidden channels. Each
 connection gets one `typing` per channel through every 5 seconds. Nothing is
 remembered: clients show the indicator for 10 seconds or until a message from
 that member arrives, and keep it alive by sending `typing` every 8 seconds.
+
+**Read markers.** `ready` carries the member's read state for every visible
+channel with messages, creating markers for channels seen for the first
+time. A channel revealed later is followed by `read_state_updated` with its
+new marker, and markers moved over REST or by sending reach the member's
+other connections the same way (see "Messages").
 
 **Sessions.** Connections authenticate once, with `identify`, and keep the
 principal for their lifetime; its permissions are resolved again when roles

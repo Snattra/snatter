@@ -9,6 +9,8 @@ import app.snatter.api.model.MessageCreateDto;
 import app.snatter.api.model.MessageDto;
 import app.snatter.api.model.MessageReferenceDto;
 import app.snatter.api.model.MessageUpdateDto;
+import app.snatter.api.model.ReadStateDto;
+import app.snatter.api.model.ReadStateUpdateDto;
 import app.snatter.api.model.RegistrationModeChangedNoticeDto;
 import app.snatter.api.model.RegistrationModeDto;
 import app.snatter.api.model.ServerRenamedNoticeDto;
@@ -68,6 +70,11 @@ public class MessageResource implements MessagesApi {
         return RestResponse.noContent();
     }
 
+    @Override
+    public RestResponse<ReadStateDto> markRead(ChannelId id, ReadStateUpdateDto body) {
+        return RestResponse.ok(toDto(messages.markRead(actor(), id, body.getLastReadMessageId())));
+    }
+
     private AccountPrincipal actor() {
         return (AccountPrincipal) identity.getPrincipal();
     }
@@ -97,6 +104,13 @@ public class MessageResource implements MessagesApi {
                 .content(m.replyTo().content()))
             .createdAt(m.createdAt())
             .editedAt(m.editedAt());
+    }
+
+    public static ReadStateDto toDto(ReadState state) {
+        return new ReadStateDto()
+            .channelId(state.channelId())
+            .lastReadMessageId(state.lastReadId())
+            .lastMessageId(state.lastMessageId());
     }
 
     private static SystemNoticeDto toDto(SystemNotice notice) {

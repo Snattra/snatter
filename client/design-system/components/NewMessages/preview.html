@@ -1,0 +1,45 @@
+<!-- @dsCard group="Messages" height=380 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NewMessages</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { position: relative; height: 100vh; background: var(--panel-raised); }
+  .demo .scroll { height: 100%; overflow-y: auto; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState, useRef = React.useRef;
+
+  function Demo() {
+    var read = useState(false);
+    var barShown = useState(true);
+    var scroller = useRef(null);
+    function jump() {
+      var divider = scroller.current && scroller.current.querySelector(".sn-new-divider");
+      if (divider) divider.scrollIntoView({ block: "center", behavior: "smooth" });
+      barShown[1](false);
+    }
+    return h("div", { className: "demo" },
+      !read[0] && barShown[0] && h(S.UnreadBar, { count: 3, since: "18:31", onJump: jump, onMarkRead: function () { read[1](true); } }),
+      h("div", { className: "scroll", ref: scroller },
+        h(S.MessageList, null,
+          h(S.Message, { author: "Teal", time: "Today at 18:30" }, "Anyone up for a round after dinner?"),
+          h(S.Message, { author: "Teal", head: false, shortTime: "18:31" }, "Server is on the usual address."),
+          !read[0] && h(S.NewMessagesDivider),
+          h(S.Message, { author: "Mallard", time: "Today at 18:40" }, "Count me in."),
+          h(S.Message, { author: "Wigeon", time: "Today at 18:41" }, "Same, give me ten minutes."),
+          h(S.Message, { author: "Wigeon", head: false, shortTime: "18:41" }, "Bringing snacks."))));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

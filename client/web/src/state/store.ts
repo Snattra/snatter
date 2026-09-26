@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ChannelLog } from "./channelLog";
 import type { ServerView } from "./serverView";
 
 /**
@@ -14,6 +15,11 @@ export interface ServerEntry {
   origin: string;
   status: ConnectionStatus;
   view: ServerView | null;
+  /**
+   * Messages of the channels opened so far, by channel id. Kept across
+   * reconnects, which catch them up, so they outlive the view.
+   */
+  logs: Record<string, ChannelLog>;
   /** Why the server ended the last session, to show when signing in again. */
   notice: string | null;
 }
@@ -36,6 +42,6 @@ export function useServer(origin: string): ServerEntry {
   return useServers((state) => state.servers[origin]) ?? blank(origin);
 }
 
-function blank(origin: string): ServerEntry {
-  return { origin, status: "unknown", view: null, notice: null };
+export function blank(origin: string): ServerEntry {
+  return { origin, status: "unknown", view: null, logs: {}, notice: null };
 }

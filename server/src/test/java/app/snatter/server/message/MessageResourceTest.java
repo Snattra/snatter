@@ -214,6 +214,51 @@ class MessageResourceTest {
         }
     }
 
+    private static Response markRead(String token, String channel, String messageId) {
+        return as(token).body(Map.of("lastReadMessageId", messageId)).put("/api/v1/channels/" + channel + "/read-state");
+    }
+
+    @Test
+    void readMarkersOnlyMoveForwardAndSendingMovesTheSenders() {
+        String owner = TestUsers.ownerToken();
+        String channel = createChannel("text", "reading");
+        String other = createChannel("text", "elsewhere");
+        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
+        String hidden = as(owner).body(Map.of("type", "text", "name", "hidden", "requiredRoleIds", List.of(crew)))
+            .post("/api/v1/channels").then().statusCode(201).extract().path("id");
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User bob = TestUsers.register();
+        try {
+            String first = send(bob.token(), channel, "one");
+            String second = send(bob.token(), channel, "two");
+
+            markRead(alice.token(), channel, second).then().statusCode(200)
+                .body("channelId", equalTo(channel))
+                .body("lastReadMessageId", equalTo(second))
+                .body("lastMessageId", equalTo(second));
+            markRead(alice.token(), channel, first).then().statusCode(200)
+                .body("lastReadMessageId", equalTo(second));
+
+            // Bob's own messages are read to him as he sends them.
+            String third = send(bob.token(), channel, "three");
+            markRead(bob.token(), channel, first).then().statusCode(200)
+                .body("lastReadMessageId", equalTo(third))
+                .body("lastMessageId", equalTo(third));
+
+            String elsewhere = send(bob.token(), other, "not here");
+            markRead(alice.token(), channel, elsewhere).then().statusCode(404).body("error", equalTo("message_not_found"));
+            markRead(alice.token(), channel, UUID.randomUUID().toString()).then().statusCode(404).body("error", equalTo("message_not_found"));
+            markRead(alice.token(), GENERAL_VOICE, first).then().statusCode(400).body("error", equalTo("voice_only_channel"));
+            markRead(alice.token(), hidden, first).then().statusCode(404).body("error", equalTo("channel_not_found"));
+            markRead(alice.token(), channel, "not-a-uuid").then().statusCode(400);
+        } finally {
+            deleteChannel(channel);
+            deleteChannel(other);
+            deleteChannel(hidden);
+            TestUsers.deleteRole(crew);
+        }
+    }
+
     @Test
     void channelChangesLeaveNoticesInTheChannel() {
         String owner = TestUsers.ownerToken();

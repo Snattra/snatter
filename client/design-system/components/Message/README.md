@@ -13,5 +13,5 @@ One message in a channel. It is a *head* (avatar, author, time) when it starts a
 
 `SystemMessage` renders server notices (someone joined, a channel or the server renamed, the topic changed) as one `muted` line behind an accent arrow. Names in it go in `<strong>`.
 
-- Do start a new head when the author changes or after a long pause.
+- Do start a new head when the author changes, after a long pause, and under the NewMessagesDivider.
 - Don't use a role colour that falls under 4.5:1 on `panel-raised`; fall back to `text-strong`.

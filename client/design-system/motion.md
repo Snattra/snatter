@@ -29,6 +29,7 @@ These live in `bundle.css` as keyframes and transitions. Each one has one meanin
 | `sn-rise-in`: 4px up and fade (`ease-out`) | New messages, cards, field errors | Something new arrived here |
 | Content fades from `muted` to `text` | A pending message confirming | It was delivered |
 | `sn-slide-down` from the header edge | Banner | The connection changed |
+| `sn-drop-in`: 4px down and fade (`ease-out`) | Unread bar | There is more to read above |
 | `sn-shake`: 4px each way, once | Invalid field on submit | That didn't work; look here |
 | `sn-typing`: three sheen dots, 160ms apart | Typing indicator | Someone is writing |
 | `sn-ping`: two rings from the dot | Presence turning online | They just arrived |

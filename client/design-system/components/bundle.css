@@ -61,6 +61,10 @@ textarea {
   from { transform: translateY(-100%); }
 }
 
+@keyframes sn-drop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+
 @keyframes sn-typing {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-3px); opacity: 1; }
@@ -1159,6 +1163,63 @@ textarea {
   font-weight: 600;
 }
 
+/* ---------- New messages ---------- */
+
+.sn-new-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: var(--space-16) var(--space-16) var(--space-4);
+  color: var(--accent-text);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+/* the line runs up to the label at the right edge */
+.sn-new-divider::before {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--accent);
+}
+
+.sn-new-divider + .sn-message-head {
+  margin-top: 0;
+}
+
+.sn-unread-bar {
+  position: absolute;
+  top: var(--space-8);
+  left: var(--space-16);
+  right: var(--space-16);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--floating);
+  box-shadow: var(--shadow-float);
+  font-size: 13px;
+  line-height: 18px;
+  animation: sn-drop-in var(--duration-base) var(--ease-out);
+}
+
+.sn-unread-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sn-unread-bar-text strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
 /* ---------- Composer ---------- */
 
 .sn-composer-area {
@@ -1325,6 +1386,7 @@ textarea {
   .sn-message-new,
   .sn-field-error,
   .sn-banner,
+  .sn-unread-bar,
   .sn-member,
   .sn-channel-unread::before {
     animation-name: sn-fade-in !important;

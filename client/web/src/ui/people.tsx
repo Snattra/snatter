@@ -5,24 +5,75 @@ import { classes } from "./classes";
 interface AvatarProps {
   origin: string;
   account: Account;
-  online: boolean;
+  /** Shows the presence dot; leave out where presence does not matter, as beside a message. */
+  online?: boolean;
   /** Pings the presence dot once as it mounts, for someone who has just come online. */
   arrived?: boolean;
+  /** `lg` heads a message group. */
+  size?: "md" | "lg";
 }
 
-export function Avatar({ origin, account, online, arrived = false }: AvatarProps) {
+export function Avatar({ origin, account, online, arrived = false, size = "md" }: AvatarProps) {
   return (
-    <span className={classes("sn-avatar", !online && "sn-avatar-offline")}>
+    <span className={classes("sn-avatar", size === "lg" && "sn-avatar-lg", online === false && "sn-avatar-offline")}>
       <span className="sn-avatar-face" style={account.avatarId ? undefined : { background: colourFor(account.id) }}>
         {account.avatarId ? <img src={`${origin}/api/v1/blobs/${account.avatarId}`} alt="" /> : initials(account.displayName)}
       </span>
-      <span
-        className={classes("sn-status", online && "sn-status-online", online && arrived && "sn-status-announce")}
-        role="img"
-        aria-label={online ? "Online" : "Offline"}
-      />
+      {online !== undefined && (
+        <span
+          className={classes("sn-status", online && "sn-status-online", online && arrived && "sn-status-announce")}
+          role="img"
+          aria-label={online ? "Online" : "Offline"}
+        />
+      )}
     </span>
   );
+}
+
+/**
+ * Who is typing in the channel, under the composer: "**Teal** is typing…".
+ * It stays mounted while nobody types so screen readers hear the next change.
+ */
+export function TypingIndicator({ names }: { names: string[] }) {
+  if (names.length === 0) {
+    return <span className="sn-typing" role="status" aria-live="polite" />;
+  }
+  return (
+    <span className="sn-typing" role="status" aria-live="polite">
+      <span className="sn-typing-dots" aria-hidden="true">
+        <span className="sn-typing-dot" />
+        <span className="sn-typing-dot" />
+        <span className="sn-typing-dot" />
+      </span>
+      <span>{typingText(names)}</span>
+    </span>
+  );
+}
+
+function typingText(names: string[]): ReactNode {
+  const [a, b, c] = names;
+  switch (names.length) {
+    case 1:
+      return (
+        <>
+          <strong>{a}</strong> is typing…
+        </>
+      );
+    case 2:
+      return (
+        <>
+          <strong>{a}</strong> and <strong>{b}</strong> are typing…
+        </>
+      );
+    case 3:
+      return (
+        <>
+          <strong>{a}</strong>, <strong>{b}</strong> and <strong>{c}</strong> are typing…
+        </>
+      );
+    default:
+      return "Several people are typing…";
+  }
 }
 
 /** Three dots in the sheen, bouncing in turn, for someone typing in the current channel. */

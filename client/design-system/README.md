@@ -69,7 +69,7 @@ The platform's own UI face (`sans`: system-ui) at a 15px base, with `mono` for c
 
 ## Iconography
 
-Filled glyphs on a 24px grid, drawn inline at `icon-size` (18px) as SVG with `fill="currentColor"`, so they follow the ink of their control. Use `hash` for text channels, `speaker` for voice and voice-and-text channels, `members` for the member-list toggle, and the chevrons to collapse and expand the sidebar. `plus`, `close`, `send` and `arrow-right` complete the set. There is no icon font and no emoji in the chrome. An icon is always decorative: label the button that holds it.
+Filled glyphs on a 24px grid, drawn inline at `icon-size` (18px) as SVG with `fill="currentColor"`, so they follow the ink of their control. Use `hash` for text channels, `speaker` for voice and voice-and-text channels, `members` for the member-list toggle, and the chevrons to collapse and expand the sidebar. `plus`, `close`, `send`, `arrow-right` and `arrow-up` complete the set. There is no icon font and no emoji in the chrome. An icon is always decorative: label the button that holds it.
 
 ## Brand mark
 

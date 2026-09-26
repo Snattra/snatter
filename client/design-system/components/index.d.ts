@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-export type IconName = "hash" | "speaker" | "members" | "chevron-left" | "chevron-right" | "plus" | "close" | "send" | "arrow-right";
+export type IconName = "hash" | "speaker" | "members" | "chevron-left" | "chevron-right" | "plus" | "close" | "send" | "arrow-right" | "arrow-up";
 export type ChannelType = "text" | "voice" | "voice_text";
 export type Presence = "online" | "offline";
 
@@ -276,6 +276,24 @@ export interface MessageProps {
 export declare function Message(props: MessageProps): React.ReactElement;
 export declare function SystemMessage(props: { time?: string; dateTime?: string; isNew?: boolean; children?: React.ReactNode }): React.ReactElement;
 
+/* ---------- New messages ---------- */
+
+/** The line above the first unread message. Goes between two rows of a MessageList. */
+export declare function NewMessagesDivider(props: { label?: string }): React.ReactElement;
+
+export interface UnreadBarProps {
+  /** How many messages are unread, when known; otherwise the bar says "New messages". */
+  count?: number | null;
+  /** When the member stopped reading, "18:31" or "Yesterday at 18:31". */
+  since?: string;
+  /** Scrolls to the NewMessagesDivider. */
+  onJump: () => void;
+  /** Shows "Mark as read" when given. */
+  onMarkRead?: () => void;
+}
+/** Over the top of the channel body while the first unread message is scrolled out of view above. */
+export declare function UnreadBar(props: UnreadBarProps): React.ReactElement;
+
 /* ---------- Layout ---------- */
 
 export interface AppShellProps {
@@ -305,6 +323,7 @@ declare global {
       AppShell: typeof AppShell; ServerRail: typeof ServerRail; RailServer: typeof RailServer; RailDivider: typeof RailDivider;
       Sidebar: typeof Sidebar; ChannelList: typeof ChannelList; ChannelItem: typeof ChannelItem; ChannelIcon: typeof ChannelIcon;
       ChannelHeader: typeof ChannelHeader; MessageList: typeof MessageList; Message: typeof Message; SystemMessage: typeof SystemMessage;
+      NewMessagesDivider: typeof NewMessagesDivider; UnreadBar: typeof UnreadBar;
       Composer: typeof Composer; TypingIndicator: typeof TypingIndicator; MemberList: typeof MemberList; Member: typeof Member;
       UserPanel: typeof UserPanel; Avatar: typeof Avatar; Button: typeof Button; IconButton: typeof IconButton; Tabs: typeof Tabs;
       Field: typeof Field; Card: typeof Card; Backdrop: typeof Backdrop; Callout: typeof Callout; Banner: typeof Banner;

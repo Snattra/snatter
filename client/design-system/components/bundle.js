@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"Snatter","components":[{"name":"AppShell"},{"name":"ServerRail"},{"name":"Sidebar"},{"name":"ChannelHeader"},{"name":"Message"},{"name":"Composer"},{"name":"TypingIndicator"},{"name":"MemberList"},{"name":"UserPanel"},{"name":"Avatar"},{"name":"Button"},{"name":"IconButton"},{"name":"Tabs"},{"name":"Field"},{"name":"Card"},{"name":"Callout"},{"name":"Banner"},{"name":"Tooltip"},{"name":"Skeleton"},{"name":"Icon"}]} */
+/* @ds-bundle: {"format":4,"namespace":"Snatter","components":[{"name":"AppShell"},{"name":"ServerRail"},{"name":"Sidebar"},{"name":"ChannelHeader"},{"name":"Message"},{"name":"NewMessages"},{"name":"Composer"},{"name":"TypingIndicator"},{"name":"MemberList"},{"name":"UserPanel"},{"name":"Avatar"},{"name":"Button"},{"name":"IconButton"},{"name":"Tabs"},{"name":"Field"},{"name":"Card"},{"name":"Callout"},{"name":"Banner"},{"name":"Tooltip"},{"name":"Skeleton"},{"name":"Icon"}]} */
 (function () {
   "use strict";
   var React = window.React;
@@ -43,7 +43,8 @@
     plus: "M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z",
     close: "M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z",
     send: "M3.4 20.4 21 12 3.4 3.6v6.6L16 12 3.4 13.8z",
-    "arrow-right": "M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z"
+    "arrow-right": "M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z",
+    "arrow-up": "M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20z"
   };
 
   function Icon(props) {
@@ -623,6 +624,27 @@
     );
   }
 
+  /* ---------- New messages ---------- */
+
+  function NewMessagesDivider(props) {
+    return h("div", { className: "sn-new-divider", role: "separator", "aria-label": "New messages" }, props.label || "New");
+  }
+
+  function UnreadBar(props) {
+    var count = props.count;
+    var what =
+      count === undefined || count === null
+        ? "New messages"
+        : [h("strong", { key: 0 }, count), count === 1 ? " new message" : " new messages"];
+    return h(
+      "div",
+      { className: "sn-unread-bar", role: "status" },
+      h("span", { className: "sn-unread-bar-text" }, what, props.since && " since " + props.since),
+      props.onMarkRead && h(Button, { variant: "link", size: "sm", onClick: props.onMarkRead }, "Mark as read"),
+      h(Button, { size: "sm", onClick: props.onJump }, h(Icon, { name: "arrow-up" }), "Jump to first unread")
+    );
+  }
+
   /* ---------- Layout ---------- */
 
   function AppShell(props) {
@@ -665,6 +687,8 @@
     MessageList: MessageList,
     Message: Message,
     SystemMessage: SystemMessage,
+    NewMessagesDivider: NewMessagesDivider,
+    UnreadBar: UnreadBar,
     Composer: Composer,
     TypingIndicator: TypingIndicator,
     MemberList: MemberList,

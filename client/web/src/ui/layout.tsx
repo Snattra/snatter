@@ -18,6 +18,8 @@ interface AppShellProps {
   membersOpen: boolean;
   /** The channel body, which scrolls. */
   children?: ReactNode;
+  /** Under the body: the Composer. */
+  footer?: ReactNode;
 }
 
 /**
@@ -26,7 +28,7 @@ interface AppShellProps {
  * member list stays mounted, inert, so it keeps its place.
  */
 export function AppShell(props: AppShellProps) {
-  const { rail, sidebar, banner, header, members, collapsed, membersOpen, children } = props;
+  const { rail, sidebar, banner, header, members, collapsed, membersOpen, children, footer } = props;
   return (
     <div className={classes("sn-shell", collapsed && "sn-shell-collapsed", !membersOpen && "sn-shell-members-closed")}>
       {rail}
@@ -35,6 +37,7 @@ export function AppShell(props: AppShellProps) {
         {banner}
         {header}
         <div className="sn-shell-body">{children}</div>
+        {footer}
       </main>
       <div className="sn-shell-members" inert={!membersOpen}>
         {members}
@@ -108,18 +111,27 @@ export function ChannelList({ children }: { children: ReactNode }) {
   );
 }
 
-export function ChannelItem({ channel, selected, onClick }: { channel: Channel; selected: boolean; onClick: () => void }) {
+interface ChannelItemProps {
+  channel: Channel;
+  selected: boolean;
+  /** Has messages the member has not read: bold, with a small pill at the pane's edge. */
+  unread: boolean;
+  onClick: () => void;
+}
+
+export function ChannelItem({ channel, selected, unread, onClick }: ChannelItemProps) {
   const collapsed = useContext(Collapsed);
   return (
     <button
       type="button"
-      className="sn-channel"
+      className={classes("sn-channel", unread && "sn-channel-unread")}
       aria-current={selected ? "page" : undefined}
       title={collapsed ? channel.name : undefined}
       onClick={onClick}
     >
       <ChannelIcon channel={channel} />
       <span className="sn-channel-name sn-truncate sn-collapse-fade">{channel.name}</span>
+      {unread && <span className="sn-visually-hidden">, unread</span>}
     </button>
   );
 }

@@ -12,21 +12,26 @@ import jakarta.transaction.Transactional;
 import java.util.List;
 
 /**
- * Messages in channels. Reading needs the channel to be visible, sending
- * needs {@code SEND_MESSAGES}. Authors edit and delete their own
- * messages; {@code MANAGE_MESSAGES} deletes any.
+ * Messages in channels and how far members have read them. Reading needs
+ * the channel to be visible, sending needs {@code SEND_MESSAGES}. Authors
+ * edit and delete their own messages; {@code MANAGE_MESSAGES} deletes any.
  */
 @ApplicationScoped
 public class MessageService {
 
     private final MessageRepository messages;
+    private final ReadStateRepository readStates;
     private final ChannelService channels;
     private final Event<MessageEvent> events;
+    private final Event<ReadStateEvent> readEvents;
 
-    public MessageService(MessageRepository messages, ChannelService channels, Event<MessageEvent> events) {
+    public MessageService(MessageRepository messages, ReadStateRepository readStates, ChannelService channels,
+                          Event<MessageEvent> events, Event<ReadStateEvent> readEvents) {
         this.messages = messages;
+        this.readStates = readStates;
         this.channels = channels;
         this.events = events;
+        this.readEvents = readEvents;
     }
 
     /**
@@ -59,7 +64,26 @@ public class MessageService {
         UserMessage message = UserMessage.create(channelId, author.accountId(), content.strip(), replyTo);
         messages.insert(message);
         events.fire(new MessageEvent.Created(message, author.sessionId(), nonce));
+        // Their own message is never unread to the author.
+        advance(author, channelId, message.id());
         return message;
+    }
+
+    /** Moves the member's read marker in the channel forward to one of its messages. */
+    @Transactional
+    public ReadState markRead(AccountPrincipal member, ChannelId channelId, MessageId lastReadId) {
+        requireReadable(member, channelId);
+        require(channelId, lastReadId);
+        return advance(member, channelId, lastReadId);
+    }
+
+    private ReadState advance(AccountPrincipal member, ChannelId channelId, MessageId lastReadId) {
+        boolean moved = readStates.advance(member.accountId(), channelId, lastReadId);
+        ReadState state = readStates.find(member.accountId(), channelId);
+        if (moved) {
+            readEvents.fire(new ReadStateEvent(member.accountId(), state));
+        }
+        return state;
     }
 
     @Transactional
