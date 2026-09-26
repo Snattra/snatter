@@ -1,11 +1,12 @@
 import { type ReactNode, useRef, useState } from "react";
 import type { Account, Channel } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
-import { canSend, hasUnread, sortedChannels, typingIn } from "../state/serverView";
+import { canInvite, canSend, hasUnread, sortedChannels, typingIn } from "../state/serverView";
 import type { ServerEntry } from "../state/store";
 import { ChannelView } from "./ChannelView";
 import { Button, IconButton } from "./controls";
 import { useNow, usePreference } from "./hooks";
+import { InviteButton } from "./invites";
 import { AppShell, ChannelHeader, ChannelItem, ChannelList, RailServer, ServerRail, Sidebar } from "./layout";
 import { Composer } from "./messages";
 import { MemberList, TypingIndicator, UserPanel } from "./people";
@@ -106,6 +107,7 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
           online={members.filter((m) => view.online[m.id])}
           offline={members.filter((m) => !view.online[m.id])}
           typing={new Set(typists.map((m) => m.id))}
+          footer={canInvite(view) && <InviteButton connection={connection} community={community} />}
         />
       }
     >

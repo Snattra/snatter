@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"Snatter","components":[{"name":"AppShell"},{"name":"ServerRail"},{"name":"Sidebar"},{"name":"ChannelHeader"},{"name":"Message"},{"name":"NewMessages"},{"name":"Composer"},{"name":"TypingIndicator"},{"name":"MemberList"},{"name":"UserPanel"},{"name":"Avatar"},{"name":"Button"},{"name":"IconButton"},{"name":"Tabs"},{"name":"Field"},{"name":"Card"},{"name":"Callout"},{"name":"Banner"},{"name":"Tooltip"},{"name":"Skeleton"},{"name":"Icon"}]} */
+/* @ds-bundle: {"format":4,"namespace":"Snatter","components":[{"name":"AppShell"},{"name":"ServerRail"},{"name":"Sidebar"},{"name":"ChannelHeader"},{"name":"Message"},{"name":"NewMessages"},{"name":"Composer"},{"name":"TypingIndicator"},{"name":"MemberList"},{"name":"UserPanel"},{"name":"Avatar"},{"name":"Button"},{"name":"IconButton"},{"name":"Tabs"},{"name":"Field"},{"name":"Card"},{"name":"Callout"},{"name":"Banner"},{"name":"Tooltip"},{"name":"Popover"},{"name":"Invite"},{"name":"Skeleton"},{"name":"Icon"}]} */
 (function () {
   "use strict";
   var React = window.React;
@@ -44,7 +44,9 @@
     close: "M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z",
     send: "M3.4 20.4 21 12 3.4 3.6v6.6L16 12 3.4 13.8z",
     "arrow-right": "M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z",
-    "arrow-up": "M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20z"
+    "arrow-up": "M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20z",
+    "person-add":
+      "M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
   };
 
   function Icon(props) {
@@ -286,6 +288,148 @@
     );
   }
 
+  /* ---------- Popover ---------- */
+
+  // var(--space-8): between the popover and its control, and from the window's edge.
+  var POPOVER_GAP = 8;
+
+  /** Lines the popover up with its control: right edges together, above or below it. */
+  function placePopover(popover, anchor, side) {
+    var rect = anchor.getBoundingClientRect();
+    var root = document.documentElement;
+    popover.style.right = Math.max(POPOVER_GAP, root.clientWidth - rect.right) + "px";
+    if (side === "bottom") {
+      popover.style.top = rect.bottom + POPOVER_GAP + "px";
+      popover.style.bottom = "auto";
+    } else {
+      popover.style.bottom = root.clientHeight - rect.top + POPOVER_GAP + "px";
+      popover.style.top = "auto";
+    }
+  }
+
+  function Popover(props) {
+    var id = useStableId(props.id);
+    var ref = useRef(null);
+    var side = props.side || "top";
+    var anchorRef = props.anchorRef;
+    var onToggle = props.onToggle;
+
+    useEffect(
+      function () {
+        var el = ref.current;
+        if (!el) return;
+        function before(e) {
+          if (e.newState === "open" && anchorRef && anchorRef.current) placePopover(el, anchorRef.current, side);
+        }
+        function toggled(e) {
+          if (onToggle) onToggle(e.newState === "open");
+        }
+        // Its place was worked out for the old window size.
+        function resized() {
+          if (el.matches(":popover-open")) el.hidePopover();
+        }
+        el.addEventListener("beforetoggle", before);
+        el.addEventListener("toggle", toggled);
+        window.addEventListener("resize", resized);
+        return function () {
+          el.removeEventListener("beforetoggle", before);
+          el.removeEventListener("toggle", toggled);
+          window.removeEventListener("resize", resized);
+        };
+      },
+      [anchorRef, side, onToggle]
+    );
+
+    return h(
+      "div",
+      {
+        id: id,
+        ref: ref,
+        popover: "auto",
+        role: "dialog",
+        "aria-labelledby": id + "-title",
+        className: cx("sn-popover", side === "bottom" && "sn-popover-bottom", props.className)
+      },
+      h("h2", { id: id + "-title", className: "sn-popover-title" }, props.title),
+      props.description && h("p", { className: "sn-popover-description" }, props.description),
+      props.children
+    );
+  }
+
+  /* ---------- Invite ---------- */
+
+  function InviteButton(props) {
+    return h(
+      "button",
+      {
+        type: "button",
+        ref: props.buttonRef,
+        className: "sn-invite-button",
+        popovertarget: props.popoverId,
+        "aria-expanded": !!props.expanded
+      },
+      h(Icon, { name: "person-add" }),
+      props.label || "Invite people"
+    );
+  }
+
+  function InviteLink(props) {
+    var copied = useState(false);
+    var blocked = useState(false);
+    var urlRef = useRef(null);
+
+    useEffect(
+      function () {
+        if (!copied[0]) return;
+        var t = setTimeout(function () {
+          copied[1](false);
+        }, 2000);
+        return function () {
+          clearTimeout(t);
+        };
+      },
+      [copied[0]]
+    );
+
+    if (props.error) {
+      return h(
+        "div",
+        { className: "sn-invite-foot" },
+        h("p", { className: "sn-invite-status sn-invite-status-error", role: "alert" }, props.error),
+        props.onRetry && h(Button, { size: "sm", onClick: props.onRetry }, "Try again")
+      );
+    }
+    if (!props.url) {
+      return h("p", { className: "sn-invite-status", role: "status" }, h(Spinner), "Creating a link…");
+    }
+
+    function copy() {
+      function done() {
+        blocked[1](false);
+        copied[1](true);
+      }
+      function fail() {
+        window.getSelection().selectAllChildren(urlRef.current);
+        blocked[1](true);
+      }
+      if (navigator.clipboard) navigator.clipboard.writeText(props.url).then(done, fail);
+      else fail();
+    }
+
+    return h(
+      React.Fragment,
+      null,
+      h("p", { ref: urlRef, className: "sn-invite-url" }, props.url),
+      h(
+        "div",
+        { className: "sn-invite-foot" },
+        h("span", null, blocked[0] ? "Your browser blocked copying, so the link is selected instead." : props.expiry),
+        h(Button, { size: "sm", variant: copied[0] ? "secondary" : "primary", onClick: copy }, copied[0] ? "Copied" : "Copy")
+      ),
+      h("span", { className: "sn-visually-hidden", role: "status" }, copied[0] ? "Link copied" : "")
+    );
+  }
+
   /* ---------- Feedback ---------- */
 
   function Banner(props) {
@@ -454,7 +598,7 @@
     return h(
       "aside",
       { className: cx("sn-members", props.className), "aria-label": props.label || "Members" },
-      (props.groups || []).map(function (group) {
+      h("div", { className: "sn-members-list" }, (props.groups || []).map(function (group) {
         if (!group.members || group.members.length === 0) return null;
         return h(
           "section",
@@ -468,7 +612,8 @@
             })
           )
         );
-      })
+      })),
+      props.footer && h("div", { className: "sn-members-foot" }, props.footer)
     );
   }
 
@@ -704,6 +849,9 @@
     Callout: Callout,
     Banner: Banner,
     Tooltip: Tooltip,
+    Popover: Popover,
+    InviteButton: InviteButton,
+    InviteLink: InviteLink,
     Skeleton: Skeleton,
     Spinner: Spinner,
     Icon: Icon,

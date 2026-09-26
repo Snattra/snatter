@@ -11,3 +11,4 @@
 - `send.svg`: send a message from the composer.
 - `arrow-right.svg`: the marker of a system message (someone joined, a channel was renamed).
 - `arrow-up.svg`: jump back up to the first unread message.
+- `person-add.svg`: invite people, at the foot of the member list.

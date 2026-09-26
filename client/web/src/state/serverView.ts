@@ -2,6 +2,7 @@ import type {
   Account,
   Channel,
   GatewayServerFrame,
+  Permission,
   PermissionSet,
   ReadState,
   Role,
@@ -145,9 +146,18 @@ export function hasUnread(view: ServerView, channelId: string): boolean {
   return reading?.last != null && isAfter(reading.last, reading.lastRead);
 }
 
-/** Whether the member may send messages; a timeout empties their permissions. */
+/** Whether the member holds a permission; the owner holds them all, and a timeout empties them. */
+export function can(view: ServerView, permission: Permission): boolean {
+  return view.permissions.owner || view.permissions.permissions.includes(permission);
+}
+
 export function canSend(view: ServerView): boolean {
-  return view.permissions.owner || view.permissions.permissions.includes("SEND_MESSAGES");
+  return can(view, "SEND_MESSAGES");
+}
+
+/** Whether to offer inviting people: only needed while registration is invite only. */
+export function canInvite(view: ServerView): boolean {
+  return view.info.registration.mode === "invite_only" && can(view, "CREATE_INVITE");
 }
 
 /** Who is typing in a channel right now, other than the member themselves. */

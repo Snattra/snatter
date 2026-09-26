@@ -7,10 +7,11 @@ The web client (`client/web` in the Snatter repository) is built on this system.
 | `tokens.json` | `tokens.css`: every token as a custom property on `:root`. The gradients are built there from the colour tokens with `color-mix()`, so they follow the colours. |
 | `components/bundle.css` | `styles.css`: the same `sn-` classes, for the components the app uses so far. |
 | Button, IconButton, Tabs, Field | `ui/controls.tsx`, with `Spinner` |
-| Card, Callout, Banner, Tooltip, Skeleton | `ui/surfaces.tsx`, with `Backdrop` |
+| Card, Callout, Banner, Tooltip, Popover, Skeleton | `ui/surfaces.tsx`, with `Backdrop` |
 | Avatar, MemberList, UserPanel, TypingIndicator | `ui/people.tsx`; the member list's typing mark is `TypingDots` |
 | AppShell, ServerRail, Sidebar, ChannelHeader | `ui/layout.tsx`, with `RailServer`, `ChannelList` and `ChannelItem` |
 | Message, SystemMessage, Composer, NewMessages | `ui/messages.tsx`: `Message` with `UserMessageRow` and `PendingRow`, `SystemMessageRow`, `NewMessagesDivider`, `UnreadBar`; `ui/ChannelView.tsx` puts them together |
+| Invite | `ui/invites.tsx`: `InviteButton` holds the Popover and `InviteLink` |
 | Icon | `ui/icons.tsx`, with `ChannelIcon` |
 
 The app's components take the app's own data (an `Account`, a `Channel`, the connection's origin) instead of the display props in `components/index.d.ts`. They render the same markup and classes, so the app and these previews look and move the same.

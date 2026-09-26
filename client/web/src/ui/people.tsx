@@ -94,17 +94,22 @@ interface MemberListProps {
   online: Account[];
   offline: Account[];
   typing: Set<string>;
+  /** Pinned under the list, such as the InviteButton. */
+  footer?: ReactNode;
 }
 
 /** Members under "Online" and "Offline" headings; someone coming online moves up with a ping. */
-export function MemberList({ origin, online, offline, typing }: MemberListProps) {
+export function MemberList({ origin, online, offline, typing, footer }: MemberListProps) {
   // Members on the list when it first renders are simply there; only later arrivals ping.
   const [settled, setSettled] = useState(false);
   useEffect(() => setSettled(true), []);
   return (
     <aside className="sn-members" aria-label="Members">
-      <MemberGroup title="Online" origin={origin} members={online} online typing={typing} settled={settled} />
-      <MemberGroup title="Offline" origin={origin} members={offline} online={false} typing={typing} settled={settled} />
+      <div className="sn-members-list">
+        <MemberGroup title="Online" origin={origin} members={online} online typing={typing} settled={settled} />
+        <MemberGroup title="Offline" origin={origin} members={offline} online={false} typing={typing} settled={settled} />
+      </div>
+      {footer && <div className="sn-members-foot">{footer}</div>}
     </aside>
   );
 }

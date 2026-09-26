@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { unwrap } from "../api/client";
-import type { ServerInfo } from "../api/types";
+import type { InvitePreview, ServerInfo } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
 import { Button, Field, Tabs } from "./controls";
 import { describeError } from "./errors";
@@ -13,9 +13,17 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "register", label: "Create account" },
 ];
 
-export function AuthScreen({ connection, notice }: { connection: ServerConnection; notice: string | null }) {
+interface AuthScreenProps {
+  connection: ServerConnection;
+  notice: string | null;
+  /** The code of the invite link the page was opened from. */
+  invite: string | null;
+}
+
+export function AuthScreen({ connection, notice, invite }: AuthScreenProps) {
   const [info, setInfo] = useState<ServerInfo | null>(null);
-  const [tab, setTab] = useState<Tab>("log_in");
+  const [preview, setPreview] = useState<InvitePreview | null>(null);
+  const [tab, setTab] = useState<Tab>(invite === null ? "log_in" : "register");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,6 +33,17 @@ export function AuthScreen({ connection, notice }: { connection: ServerConnectio
       .then(unwrap)
       .then(setInfo, (e: unknown) => setError(describeError(e)));
   }, [connection]);
+
+  // Who sent the invite, and whether it still works, before anyone fills in the form.
+  useEffect(() => {
+    if (invite === null) {
+      return;
+    }
+    connection.api
+      .GET("/api/v1/invites/{code}", { params: { path: { code: invite } } })
+      .then(unwrap)
+      .then(setPreview, (e: unknown) => setError(describeError(e)));
+  }, [connection, invite]);
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label);
@@ -81,7 +100,15 @@ export function AuthScreen({ connection, notice }: { connection: ServerConnectio
             server and its settings.
           </Callout>
         ) : (
-          <Tabs label="Account" tabs={tabs} value={tab} onChange={setTab} />
+          <>
+            {preview && (
+              <Callout title="You have an invite">
+                {preview.inviter ? `${preview.inviter.displayName} invited you to join.` : "You are invited to join."} Create
+                an account to accept.
+              </Callout>
+            )}
+            <Tabs label="Account" tabs={tabs} value={tab} onChange={setTab} />
+          </>
         )}
 
         {tab === "log_in" && !setup ? (
@@ -113,8 +140,15 @@ export function AuthScreen({ connection, notice }: { connection: ServerConnectio
               minLength={8}
               maxLength={128}
             />
-            {info?.registration.mode === "invite_only" && !setup && (
-              <Field label="Invite code" name="inviteCode" required pattern="[A-Za-z0-9]{8}" />
+            {(info?.registration.mode === "invite_only" || invite !== null) && !setup && (
+              <Field
+                label="Invite code"
+                name="inviteCode"
+                required={info?.registration.mode === "invite_only"}
+                optional={info?.registration.mode !== "invite_only"}
+                pattern="[A-Za-z0-9]{8}"
+                defaultValue={invite ?? undefined}
+              />
             )}
             <Button variant="primary" type="submit" block busy={busy !== null} disabled={info === null}>
               {busy ?? "Create account"}

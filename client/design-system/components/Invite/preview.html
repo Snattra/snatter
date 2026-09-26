@@ -1,0 +1,47 @@
+<!-- @dsCard group="People" height=420 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invite</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: grid; grid-template-columns: 1fr var(--members-width); height: 100vh; }
+  .fill { background: var(--panel-raised); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState, useRef = React.useRef, useCallback = React.useCallback;
+
+  function Demo() {
+    var open = useState(false);
+    var url = useState(null);
+    var anchor = useRef(null);
+    var onToggle = useCallback(function (isOpen) {
+      open[1](isOpen);
+      // Pretend the server takes a moment to make the link.
+      if (isOpen) setTimeout(function () { url[1]("https://chat.example.com/invite/k3Jd8QzP"); }, 600);
+    }, []);
+    var members = [{ id: "a1", name: "Gadwall" }, { id: "a2", name: "Mallard" }, { id: "a3", name: "Teal" }];
+    return h("div", { className: "demo" },
+      h("div", { className: "fill" }),
+      h(S.MemberList, {
+        groups: [{ title: "Online", online: true, members: members }, { title: "Offline", online: false, members: [{ id: "a4", name: "Eider" }] }],
+        footer: h(React.Fragment, null,
+          h(S.InviteButton, { popoverId: "invite", buttonRef: anchor, expanded: open[0] }),
+          h(S.Popover, { id: "invite", anchorRef: anchor, onToggle: onToggle, title: "Invite people to Pondside", description: "Anyone with this link can create an account and join." },
+            h(S.InviteLink, { url: url[0], expiry: "Expires in 7 days." })))
+      }));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+  // open it so the resting look shows
+  setTimeout(function () { var b = document.querySelector(".sn-invite-button"); if (b) b.click(); }, 50);
+
+</script>
+</body>
+</html>

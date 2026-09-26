@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Account, Channel, GatewayServerFrame, Message } from "../api/types";
-import { TYPING_SHOWN_MS, applyFrame, fromReady, hasUnread, sortedChannels, typingIn } from "./serverView";
+import { TYPING_SHOWN_MS, applyFrame, canInvite, fromReady, hasUnread, sortedChannels, typingIn } from "./serverView";
 
 type Ready = Extract<GatewayServerFrame, { type: "ready" }>;
 type Event = Exclude<GatewayServerFrame, Ready>;
@@ -132,5 +132,23 @@ describe("serverView", () => {
       { type: "message_created", seq: 4, message: message(5, "c", "bob") },
     );
     expect(hasUnread(view, "c")).toBe(true);
+  });
+
+  it("offers invites only while registration is invite only, to members allowed to create them", () => {
+    const open = fromReady(ready());
+    const inviteOnly = { ...open.info, registration: { ...open.info.registration, mode: "invite_only" as const } };
+    const closed = applyFrame(open, { type: "server_updated", seq: 2, server: inviteOnly }, 1_000);
+    const allowed = applyFrame(
+      closed,
+      { type: "permissions_changed", seq: 3, permissions: { owner: false, permissions: ["CREATE_INVITE"] } },
+      1_000,
+    );
+    const owner = applyFrame(closed, { type: "permissions_changed", seq: 3, permissions: { owner: true, permissions: [] } }, 1_000);
+    const reopened = applyFrame(allowed, { type: "server_updated", seq: 4, server: open.info }, 1_000);
+
+    expect(canInvite(closed)).toBe(false);
+    expect(canInvite(allowed)).toBe(true);
+    expect(canInvite(owner)).toBe(true);
+    expect(canInvite(reopened)).toBe(false);
   });
 });

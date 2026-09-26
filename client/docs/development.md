@@ -99,6 +99,16 @@ A fresh server reports `registration.setupRequired`; the sign-in screen then
 only offers creating the first account, which becomes the owner and needs no
 invite or challenge.
 
+Invite links are `/invite/{code}` on the server's address, which serves the
+app for every path. Opened signed out, the sign-in screen switches to
+creating an account with the code filled in and says who sent the invite
+(`previewInvite`); once signed in, the address goes back to `/`. Members see
+"Invite people" at the foot of the member list while registration is invite
+only and they hold `CREATE_INVITE`. It hands out their newest invite that
+has no use limit and runs for at least another day, or else creates one that
+lasts a week (`state/invites.ts`), so opening it again does not pile up
+invites.
+
 Registration solves the server's ALTCHA proof of work in a Web Worker
 (`auth/altcha.worker.ts`) so the page stays responsive.
 
@@ -122,7 +132,7 @@ The look comes from the design system in `client/design-system/`: its
 says which animation means what, and each component has guidelines and a
 live preview under `components/`. In the app, `tokens.css` holds the tokens
 as CSS custom properties, `styles.css` the `sn-` component classes, and
-`ui/controls.tsx`, `ui/surfaces.tsx`, `ui/people.tsx`, `ui/layout.tsx` and
+`ui/controls.tsx`, `ui/surfaces.tsx`, `ui/people.tsx`, `ui/layout.tsx`, `ui/invites.tsx` and
 `ui/messages.tsx` the components built on them.
 
 `ui/ChannelView.tsx` is the channel body. It scrolls from the end

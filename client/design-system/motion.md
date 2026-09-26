@@ -5,7 +5,7 @@ Every animation in Snatter answers one question: *what just changed?* A thing ar
 ## Timing
 
 - `duration-instant` (100ms): hover fills and colour, press feedback. Hover must feel immediate.
-- `duration-fast` (150ms): focus glows, tooltips, fades.
+- `duration-fast` (150ms): focus glows, tooltips, popovers, fades.
 - `duration-base` (200ms): selection moving (the tab fill, the rail pill, a server icon's shape), the sheen sliding on a hovered button, and arrivals (a message, a banner).
 - `duration-slow` (300ms): layout (the sidebar collapsing, the member list sliding shut) and a card entering.
 - `duration-loop` (1200ms): one cycle of an ambient loop: the typing dots, and the skeleton sweep at the same pace.
@@ -30,6 +30,7 @@ These live in `bundle.css` as keyframes and transitions. Each one has one meanin
 | Content fades from `muted` to `text` | A pending message confirming | It was delivered |
 | `sn-slide-down` from the header edge | Banner | The connection changed |
 | `sn-drop-in`: 4px down and fade (`ease-out`) | Unread bar | There is more to read above |
+| `sn-pop-in`: 4px out of its control, scale 96% to 100% (`duration-fast`, `ease-out`) | Popover | It opened from what you clicked |
 | `sn-shake`: 4px each way, once | Invalid field on submit | That didn't work; look here |
 | `sn-typing`: three sheen dots, 160ms apart | Typing indicator | Someone is writing |
 | `sn-ping`: two rings from the dot | Presence turning online | They just arrived |

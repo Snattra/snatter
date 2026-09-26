@@ -65,6 +65,10 @@ textarea {
   from { opacity: 0; transform: translateY(-4px); }
 }
 
+@keyframes sn-pop-in {
+  from { opacity: 0; transform: var(--sn-from) scale(0.96); }
+}
+
 @keyframes sn-typing {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-3px); opacity: 1; }
@@ -516,6 +520,53 @@ textarea {
   translate: 0 -50%;
 }
 
+/* ---------- Popover ---------- */
+
+/* In the top layer, so no pane clips it. Its control's position is set from
+   script (right, and top or bottom); stretched from the left edge and capped
+   by max-width, the auto margin lines it up with the control's right edge and
+   it narrows rather than leave the window. */
+.sn-popover {
+  --sn-from: translateY(4px);
+  position: fixed;
+  inset: auto auto auto var(--space-8);
+  width: auto;
+  max-width: 340px;
+  margin: 0 0 0 auto;
+  padding: var(--space-16);
+  overflow: visible;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--floating);
+  box-shadow: var(--shadow-float);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+  transform-origin: bottom right;
+}
+
+.sn-popover-bottom {
+  --sn-from: translateY(-4px);
+  transform-origin: top right;
+}
+
+.sn-popover:popover-open {
+  animation: sn-pop-in var(--duration-fast) var(--ease-out);
+}
+
+.sn-popover-title {
+  margin: 0 0 var(--space-4);
+  color: var(--text-strong);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.sn-popover-description {
+  margin: 0 0 var(--space-12);
+  color: var(--muted);
+}
+
 /* ---------- Avatar ---------- */
 
 .sn-avatar {
@@ -913,11 +964,25 @@ textarea {
 /* ---------- Member list ---------- */
 
 .sn-members {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: var(--space-8) var(--space-8);
-  overflow-y: auto;
   background: var(--panel);
+}
+
+.sn-members-list {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-8);
+  overflow-y: auto;
+}
+
+/* Pinned under the list, so a long list never pushes it out of reach. */
+.sn-members-foot {
+  flex: none;
+  padding: var(--space-8);
+  border-top: 1px solid var(--divider);
 }
 
 .sn-member-group-title {
@@ -958,6 +1023,75 @@ textarea {
 
 .sn-member-offline .sn-member-name {
   color: var(--muted);
+}
+
+/* ---------- Invite ---------- */
+
+/* A row like a member's, its icon centred where their avatars sit. */
+.sn-invite-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-4) var(--space-8);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-instant) var(--ease-standard),
+    color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-invite-button .sn-icon {
+  margin: 0 calc((var(--avatar-md) - var(--icon-size)) / 2);
+}
+
+.sn-invite-button:hover {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.sn-invite-button[aria-expanded="true"] {
+  background: var(--panel-active);
+  color: var(--text-strong);
+}
+
+.sn-invite-url {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.sn-invite-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  color: var(--muted);
+}
+
+.sn-invite-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  color: var(--muted);
+}
+
+.sn-invite-status-error {
+  color: var(--danger-text);
 }
 
 /* ---------- Typing indicator ---------- */
@@ -1373,6 +1507,18 @@ textarea {
   width: var(--members-width);
 }
 
+/* ---------- Utilities ---------- */
+
+/* Read out, not shown: status changes that are otherwise only visible. */
+.sn-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -1387,6 +1533,7 @@ textarea {
   .sn-field-error,
   .sn-banner,
   .sn-unread-bar,
+  .sn-popover:popover-open,
   .sn-member,
   .sn-channel-unread::before {
     animation-name: sn-fade-in !important;

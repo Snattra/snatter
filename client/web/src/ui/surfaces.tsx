@@ -1,4 +1,5 @@
-import { cloneElement, type ReactElement, type ReactNode, useId } from "react";
+import { cloneElement, type ReactElement, type ReactNode, type RefObject, useEffect, useId, useRef } from "react";
+import { classes } from "./classes";
 import { Spinner } from "./controls";
 
 /** The full-screen ground with the accent glows, centring a Card. */
@@ -56,6 +57,73 @@ export function Tooltip({ label, side = "top", children }: TooltipProps) {
       </span>
     </span>
   );
+}
+
+/** Between a popover and its control, and from the window's edge: `space-8`. */
+const POPOVER_GAP = 8;
+
+interface PopoverProps {
+  /** The control opens it with `popoverTarget` set to this. */
+  id: string;
+  title: ReactNode;
+  description?: ReactNode;
+  /** The control it opens from; their right edges line up. */
+  anchor: RefObject<HTMLElement | null>;
+  side?: "top" | "bottom";
+  /** Called as it opens and closes, including on Escape and clicks outside. */
+  onToggle?: (open: boolean) => void;
+  children: ReactNode;
+}
+
+/**
+ * A small task beside the control that opened it. It lives in the top layer,
+ * so no pane clips it, and the browser closes it on Escape or a click outside.
+ */
+export function Popover({ id, title, description, anchor, side = "top", onToggle, children }: PopoverProps) {
+  const popover = useRef<HTMLDivElement>(null);
+
+  // Its place was worked out for the old window size.
+  useEffect(() => {
+    const close = () => {
+      if (popover.current?.matches(":popover-open")) {
+        popover.current.hidePopover();
+      }
+    };
+    window.addEventListener("resize", close);
+    return () => window.removeEventListener("resize", close);
+  }, []);
+
+  return (
+    <div
+      id={id}
+      ref={popover}
+      popover="auto"
+      role="dialog"
+      aria-labelledby={`${id}-title`}
+      className={classes("sn-popover", side === "bottom" && "sn-popover-bottom")}
+      onBeforeToggle={(event) => {
+        if (event.newState === "open" && popover.current !== null && anchor.current !== null) {
+          place(popover.current, anchor.current, side);
+        }
+      }}
+      onToggle={(event) => onToggle?.(event.newState === "open")}
+    >
+      <h2 id={`${id}-title`} className="sn-popover-title">
+        {title}
+      </h2>
+      {description && <p className="sn-popover-description">{description}</p>}
+      {children}
+    </div>
+  );
+}
+
+/** Right edges together, above or below the control; the stylesheet narrows it to fit the window. */
+function place(popover: HTMLElement, anchor: HTMLElement, side: "top" | "bottom") {
+  const rect = anchor.getBoundingClientRect();
+  const { clientWidth, clientHeight } = document.documentElement;
+  popover.style.right = `${Math.max(POPOVER_GAP, clientWidth - rect.right)}px`;
+  popover.style.top = side === "bottom" ? `${rect.bottom + POPOVER_GAP}px` : "auto";
+  popover.style.bottom = side === "bottom" ? "auto" : `${clientHeight - rect.top + POPOVER_GAP}px`;
 }
 
 /** A placeholder in the shape of content still loading. Mark the region it fills as busy. */

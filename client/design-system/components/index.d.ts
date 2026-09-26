@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-export type IconName = "hash" | "speaker" | "members" | "chevron-left" | "chevron-right" | "plus" | "close" | "send" | "arrow-right" | "arrow-up";
+export type IconName = "hash" | "speaker" | "members" | "chevron-left" | "chevron-right" | "plus" | "close" | "send" | "arrow-right" | "arrow-up" | "person-add";
 export type ChannelType = "text" | "voice" | "voice_text";
 export type Presence = "online" | "offline";
 
@@ -113,6 +113,49 @@ export interface TooltipProps {
 }
 export declare function Tooltip(props: TooltipProps): React.ReactElement;
 
+export interface PopoverProps {
+  /** Give the same id to the control as `popovertarget`; generated when left out. */
+  id?: string;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  /** The control it opens from; the right edges line up. */
+  anchorRef: React.RefObject<HTMLElement | null>;
+  /** Above the control (the default) or below it. */
+  side?: "top" | "bottom";
+  /** Called as it opens and closes, including light dismiss and Escape. */
+  onToggle?: (open: boolean) => void;
+  className?: string;
+  children?: React.ReactNode;
+}
+/** A small task on `floating` beside the control that opened it, in the top layer. Closes on Escape or a click outside. */
+export declare function Popover(props: PopoverProps): React.ReactElement;
+
+/* ---------- Invite ---------- */
+
+export interface InviteButtonProps {
+  /** The id of the Popover it opens. */
+  popoverId: string;
+  buttonRef?: React.Ref<HTMLButtonElement>;
+  /** While its popover is open. */
+  expanded?: boolean;
+  /** Defaults to "Invite people". */
+  label?: string;
+}
+/** A row at the foot of the member list that opens the invite popover. */
+export declare function InviteButton(props: InviteButtonProps): React.ReactElement;
+
+export interface InviteLinkProps {
+  /** The link to share; leave out while it is being created. */
+  url?: string;
+  /** "Expires in 7 days." */
+  expiry?: string;
+  /** Why no link could be made; replaces everything else. */
+  error?: string;
+  onRetry?: () => void;
+}
+/** The link in a well, when it expires, and a Copy button that confirms. Goes in a Popover. */
+export declare function InviteLink(props: InviteLinkProps): React.ReactElement;
+
 /* ---------- Feedback ---------- */
 
 export interface BannerProps {
@@ -188,6 +231,8 @@ export declare function Member(props: MemberProps): React.ReactElement;
 export interface MemberListProps {
   /** Rendered in order; an empty group is skipped. Headings read "Online — 3". */
   groups: { title: string; online?: boolean; members: MemberProps[] }[];
+  /** Pinned under the list, such as an InviteButton. */
+  footer?: React.ReactNode;
   label?: string;
   className?: string;
 }
@@ -327,7 +372,7 @@ declare global {
       Composer: typeof Composer; TypingIndicator: typeof TypingIndicator; MemberList: typeof MemberList; Member: typeof Member;
       UserPanel: typeof UserPanel; Avatar: typeof Avatar; Button: typeof Button; IconButton: typeof IconButton; Tabs: typeof Tabs;
       Field: typeof Field; Card: typeof Card; Backdrop: typeof Backdrop; Callout: typeof Callout; Banner: typeof Banner;
-      Tooltip: typeof Tooltip; Skeleton: typeof Skeleton; Spinner: typeof Spinner; Icon: typeof Icon;
+      Tooltip: typeof Tooltip; Popover: typeof Popover; InviteButton: typeof InviteButton; InviteLink: typeof InviteLink; Skeleton: typeof Skeleton; Spinner: typeof Spinner; Icon: typeof Icon;
       initials: typeof initials; colourFor: typeof colourFor;
     };
   }

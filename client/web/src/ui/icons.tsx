@@ -14,6 +14,8 @@ const paths = {
   send: "M3.4 20.4 21 12 3.4 3.6v6.6L16 12 3.4 13.8z",
   "arrow-right": "M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z",
   "arrow-up": "M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20z",
+  "person-add":
+    "M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
 } as const;
 
 export type IconName = keyof typeof paths;

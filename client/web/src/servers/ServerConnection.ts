@@ -1,5 +1,5 @@
 import { type Api, ApiRequestError, createApi, unwrap } from "../api/client";
-import type { GatewayCloseReason, GatewayServerFrame, Message } from "../api/types";
+import type { GatewayCloseReason, GatewayServerFrame, Invite, Message } from "../api/types";
 import { solveChallenge } from "../auth/altcha";
 import { Gateway } from "../gateway/Gateway";
 import { platform } from "../platform/platform";
@@ -17,6 +17,7 @@ import {
   withUpdated,
 } from "../state/channelLog";
 import { isAfter, later } from "../state/ids";
+import { INVITE_LIFETIME_SECONDS, reusableInvite } from "../state/invites";
 import { applyFrame, fromReady } from "../state/serverView";
 import { type ServerEntry, blank, useServers } from "../state/store";
 import { describeError } from "../ui/errors";
@@ -82,6 +83,24 @@ export class ServerConnection {
     } finally {
       await this.signOut(null);
     }
+  }
+
+  // --- Invites ----------------------------------------------------------------
+
+  /**
+   * A link for inviting people: the member's newest invite that can be
+   * handed out again, so asking twice does not pile up invites, or else a new
+   * one that works for a week.
+   */
+  async inviteLink(): Promise<Invite> {
+    const account = this.entry().view?.account;
+    if (account !== undefined) {
+      const reusable = reusableInvite(unwrap(await this.api.GET("/api/v1/invites")), account.id, Date.now());
+      if (reusable !== null) {
+        return reusable;
+      }
+    }
+    return unwrap(await this.api.POST("/api/v1/invites", { body: { expiresInSeconds: INVITE_LIFETIME_SECONDS } }));
   }
 
   // --- Messages ---------------------------------------------------------------
