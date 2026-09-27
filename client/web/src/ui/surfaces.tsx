@@ -1,6 +1,15 @@
-import { cloneElement, type ReactElement, type ReactNode, type RefObject, useEffect, useId, useRef } from "react";
+import {
+  cloneElement,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { classes } from "./classes";
-import { Spinner } from "./controls";
+import { IconButton, Spinner } from "./controls";
 
 /** The full-screen ground with the accent glows, centring a Card. */
 export function Backdrop({ children }: { children: ReactNode }) {
@@ -18,9 +27,11 @@ export function Card({ title, description, children }: { title: ReactNode; descr
   );
 }
 
-export function Callout({ title, children }: { title: string; children: ReactNode }) {
+/** A tinted explanation: `accent` for information, `warning` for caution. */
+export function Callout(props: { title: string; tone?: "accent" | "warning"; children: ReactNode }) {
+  const { title, tone = "accent", children } = props;
   return (
-    <div className="sn-callout" role="note">
+    <div className={classes("sn-callout", tone === "warning" && "sn-callout-warning")} role="note">
       <strong className="sn-callout-title">{title}</strong>
       <div>{children}</div>
     </div>
@@ -39,9 +50,22 @@ export function Banner({ busy = false, children }: { busy?: boolean; children: R
   );
 }
 
+/** A small pill naming something about a person: a role, with its colour as a dot (null for none), or "Owner" as `accent`. */
+export function Tag(props: { color?: string | null; accent?: boolean; children: ReactNode }) {
+  const { color, accent = false, children } = props;
+  return (
+    <span className={classes("sn-tag", accent && "sn-tag-accent")}>
+      {color !== undefined && (
+        <span className="sn-tag-dot" aria-hidden="true" style={color ? { background: color } : undefined} />
+      )}
+      {children}
+    </span>
+  );
+}
+
 interface TooltipProps {
   label: string;
-  side?: "top" | "right" | "bottom";
+  side?: "top" | "right" | "bottom" | "left";
   /** One focusable element, which the tooltip describes. */
   children: ReactElement<{ "aria-describedby"?: string }>;
 }
@@ -52,7 +76,8 @@ export function Tooltip({ label, side = "top", children }: TooltipProps) {
   return (
     <span className="sn-tooltip-anchor">
       {cloneElement(children, { "aria-describedby": id })}
-      <span id={id} role="tooltip" className={`sn-tooltip sn-tooltip-${side}`}>
+      {/* Hidden from names, so a tooltip inside a button is not read as part of it; aria-describedby still reads it. */}
+      <span id={id} role="tooltip" aria-hidden="true" className={`sn-tooltip sn-tooltip-${side}`}>
         {label}
       </span>
     </span>
@@ -124,6 +149,141 @@ function place(popover: HTMLElement, anchor: HTMLElement, side: "top" | "bottom"
   popover.style.right = `${Math.max(POPOVER_GAP, clientWidth - rect.right)}px`;
   popover.style.top = side === "bottom" ? `${rect.bottom + POPOVER_GAP}px` : "auto";
   popover.style.bottom = side === "bottom" ? "auto" : `${clientHeight - rect.top + POPOVER_GAP}px`;
+}
+
+interface ModalProps {
+  title: ReactNode;
+  /** One line under the title, such as the channel it is about. */
+  description?: ReactNode;
+  /** Called by the close button and Escape; stop rendering the modal to close it. */
+  onClose: () => void;
+  /** Makes the body and footer one form, with the browser's own validation off; check the fields yourself. */
+  onSubmit?: () => void;
+  /** Under the title, outside the scrolling body: Tabs. */
+  tabs?: ReactNode;
+  /** What went wrong, above the footer. */
+  error?: ReactNode;
+  /** Cancel, then the primary action. */
+  footer: ReactNode;
+  /** A destructive action at the footer's other end, such as Delete channel. */
+  footerStart?: ReactNode;
+  /** Wider, for settings with Tabs. */
+  wide?: boolean;
+  /** Beside the title, such as the member's avatar on a profile. */
+  leading?: ReactNode;
+  /** For a modal whose content changes: a new step focuses its own `data-autofocus` control. */
+  step?: string;
+  /** The body, which scrolls. Mark the control to focus first with `data-autofocus`. */
+  children: ReactNode;
+}
+
+/**
+ * A task over the app, open while it is mounted. It is a native modal
+ * dialog, so the top layer, the focus trap and Escape come from the browser;
+ * focus goes back to what opened it. A click on the scrim does not close it,
+ * so a half-filled form is never lost to a stray click.
+ */
+export function Modal(props: ModalProps) {
+  const {
+    title,
+    description,
+    onClose,
+    onSubmit,
+    tabs,
+    error,
+    footer,
+    footerStart,
+    wide = false,
+    leading,
+    step,
+    children,
+  } = props;
+  const id = useId();
+  const dialog = useRef<HTMLDialogElement>(null);
+  const shownStep = useRef(step);
+
+  useLayoutEffect(() => {
+    const element = dialog.current;
+    if (element === null) {
+      return;
+    }
+    if (!element.open) {
+      element.showModal();
+    }
+    element.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    // Closing it, not just removing it, is what hands focus back.
+    return () => element.close();
+  }, []);
+
+  // The control that had focus went with the step it was in.
+  useEffect(() => {
+    if (shownStep.current === step) {
+      return;
+    }
+    shownStep.current = step;
+    dialog.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+  }, [step]);
+
+  const content = (
+    <>
+      <div className="sn-modal-body">{children}</div>
+      {error && (
+        <p className="sn-modal-error" role="alert">
+          {error}
+        </p>
+      )}
+      <footer className="sn-modal-footer">
+        {footerStart && <div className="sn-modal-footer-start">{footerStart}</div>}
+        {footer}
+      </footer>
+    </>
+  );
+
+  // Only Escape (cancel) is heard, not the dialog's close event: that one also
+  // follows the close() above, late, which in development's mount, unmount and
+  // mount again would close the modal that just opened.
+  return (
+    <dialog
+      ref={dialog}
+      className={classes("sn-modal", wide && "sn-modal-wide")}
+      aria-labelledby={`${id}-title`}
+      aria-describedby={description ? `${id}-description` : undefined}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+    >
+      <header className="sn-modal-header">
+        {leading && <div className="sn-modal-leading">{leading}</div>}
+        <div className="sn-modal-heading">
+          <h2 id={`${id}-title`} className="sn-modal-title">
+            {title}
+          </h2>
+          {description && (
+            <p id={`${id}-description`} className="sn-modal-description">
+              {description}
+            </p>
+          )}
+        </div>
+        <IconButton icon="close" label="Close" onClick={onClose} />
+      </header>
+      {tabs && <div className="sn-modal-tabs">{tabs}</div>}
+      {onSubmit ? (
+        <form
+          className="sn-modal-form"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          {content}
+        </form>
+      ) : (
+        content
+      )}
+    </dialog>
+  );
 }
 
 /** A placeholder in the shape of content still loading. Mark the region it fills as busy. */

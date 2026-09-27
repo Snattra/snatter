@@ -27,10 +27,12 @@ public class AccountRepository {
         id(rs, "avatar_blob_id", BlobId::new),
         ids(rs, "role_ids", RoleId::new),
         instant(rs, "timed_out_until"),
+        instant(rs, "banned_at"),
         instant(rs, "created_at"));
 
     private static final String SELECT = """
         SELECT a.id, a.username, a.display_name, a.avatar_blob_id, a.timed_out_until, a.created_at,
+               (SELECT b.created_at FROM ban b WHERE b.account_id = a.id) AS banned_at,
                array_remove(array_agg(ar.role_id), NULL) AS role_ids
         FROM account a
         LEFT JOIN account_role ar ON ar.account_id = a.id
@@ -115,7 +117,7 @@ public class AccountRepository {
                 .bind("now", now)
                 .execute();
         });
-        return new Account(id, username, displayName, null, List.of(), null, now);
+        return new Account(id, username, displayName, null, List.of(), null, null, now);
     }
 
     public Optional<String> findPasswordHash(AccountId accountId) {

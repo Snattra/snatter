@@ -4,6 +4,7 @@ import app.snatter.server.account.Account;
 import app.snatter.server.account.AccountEvent;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.account.AccountRepository;
+import app.snatter.server.account.DisplayNames;
 import app.snatter.server.api.ApiException;
 import app.snatter.server.moderation.Ban;
 import app.snatter.server.moderation.BanRepository;
@@ -91,6 +92,8 @@ public class AuthService {
      */
     @Transactional
     public Login register(Registration registration, String ip, String userAgent) {
+        // Checked first, so a bad name spends no invite use or challenge.
+        String displayName = DisplayNames.normalize(registration.displayName());
         ServerSettings policy = settings.current();
         boolean firstAccount = settings.setupRequired();
 
@@ -112,9 +115,7 @@ public class AuthService {
         if (accounts.usernameExists(registration.username())) {
             throw ApiException.conflict("username_taken", "That username is already in use");
         }
-        String name = registration.displayName() == null || registration.displayName().isBlank()
-            ? registration.username()
-            : registration.displayName().strip();
+        String name = displayName == null ? registration.username() : displayName;
         Account account;
         try {
             account = accounts.createLocal(AccountId.newId(), registration.username(), name, hasher.hash(registration.password()));

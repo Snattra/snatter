@@ -303,6 +303,10 @@ public class Gateway {
     /** A timeout started, changed or ended: the member's permissions and everyone's view of them. */
     private void timeoutChanged(AccountId accountId) {
         syncAccess(accountId::equals);
+        memberUpdated(accountId);
+    }
+
+    private void memberUpdated(AccountId accountId) {
         accounts.findById(accountId).ifPresent(account ->
             broadcast(seq -> new GatewayMemberUpdatedDto().seq(seq).member(AccountDtos.toDto(account))));
     }
@@ -368,8 +372,7 @@ public class Gateway {
             switch (event) {
                 case AccountEvent.Registered _ -> accounts.findById(event.accountId()).ifPresent(account ->
                     broadcast(seq -> new GatewayMemberJoinedDto().seq(seq).member(AccountDtos.toDto(account))));
-                case AccountEvent.Updated _ -> accounts.findById(event.accountId()).ifPresent(account ->
-                    broadcast(seq -> new GatewayMemberUpdatedDto().seq(seq).member(AccountDtos.toDto(account))));
+                case AccountEvent.Updated _ -> memberUpdated(event.accountId());
                 case AccountEvent.TimeoutChanged changed -> timeoutChanged(changed.accountId());
                 case AccountEvent.Banned banned -> {
                     for (Client client : liveClients()) {
@@ -377,7 +380,9 @@ public class Gateway {
                             close(client, GatewayClose.BANNED);
                         }
                     }
+                    memberUpdated(banned.accountId());
                 }
+                case AccountEvent.Unbanned unbanned -> memberUpdated(unbanned.accountId());
             }
         });
     }
@@ -401,8 +406,7 @@ public class Gateway {
 
     private void roleAssignmentChanged(AccountId accountId) {
         syncAccess(accountId::equals);
-        accounts.findById(accountId).ifPresent(account ->
-            broadcast(seq -> new GatewayMemberUpdatedDto().seq(seq).member(AccountDtos.toDto(account))));
+        memberUpdated(accountId);
     }
 
     private void dispatchMessage(MessageEvent event) {

@@ -140,6 +140,11 @@ export function sortedChannels(view: ServerView): Channel[] {
   return Object.values(view.channels).sort((a, b) => a.position - b.position);
 }
 
+/** The roles in display order, highest first. */
+export function sortedRoles(view: ServerView): Role[] {
+  return Object.values(view.roles).sort((a, b) => b.position - a.position);
+}
+
 /** Whether the channel has messages newer than the member has read. */
 export function hasUnread(view: ServerView, channelId: string): boolean {
   const reading = view.reading[channelId];

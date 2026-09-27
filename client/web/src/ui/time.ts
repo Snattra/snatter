@@ -1,5 +1,7 @@
 const clock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
 const date = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
+const day = new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric" });
+const dayOfYear = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", day: "numeric" });
 
 /** "18:31", in the reader's locale. */
 export function shortTime(at: Date): string {
@@ -16,6 +18,28 @@ export function longTime(at: Date, now: Date): string {
     return `Yesterday at ${shortTime(at)}`;
   }
   return `${date.format(at)} ${shortTime(at)}`;
+}
+
+/** "today at 18:31", "tomorrow at 18:31", or the day and time further ahead, to go inside a sentence. */
+export function aheadTime(at: Date, now: Date): string {
+  const days = dayNumber(at) - dayNumber(now);
+  if (days === 0) {
+    return `today at ${shortTime(at)}`;
+  }
+  if (days === 1) {
+    return `tomorrow at ${shortTime(at)}`;
+  }
+  return `${dayText(at, now)} at ${shortTime(at)}`;
+}
+
+/** "27 September", with the year when it is not this one. */
+export function dayText(at: Date, now: Date): string {
+  return at.getFullYear() === now.getFullYear() ? day.format(at) : dayOfYear.format(at);
+}
+
+/** "27 September 2026". */
+export function dateText(at: Date): string {
+  return dayOfYear.format(at);
 }
 
 /** Like {@link longTime}, but only the time for today. */

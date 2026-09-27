@@ -25,7 +25,8 @@ import org.junit.jupiter.api.Test;
 class ChannelResourceTest {
 
     private static final String GENERAL_TEXT = "00000000-0000-7000-8000-000000000101";
-    private static final String GENERAL_VOICE = "00000000-0000-7000-8000-000000000102";
+    /** The voice channel older versions seeded; a fresh server no longer has it. */
+    private static final String SEEDED_BEFORE_V11_VOICE = "00000000-0000-7000-8000-000000000102";
 
     private static RequestSpecification as(String token) {
         return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON);
@@ -53,15 +54,14 @@ class ChannelResourceTest {
     }
 
     @Test
-    void freshServerHasAGeneralTextAndVoiceChannel() {
+    void freshServerHasOneGeneralTextChannel() {
         TestUsers.User member = TestUsers.register();
         as(member.token()).get("/api/v1/channels").then().statusCode(200)
             .body("find { it.id == '" + GENERAL_TEXT + "' }.type", equalTo("text"))
-            .body("find { it.id == '" + GENERAL_TEXT + "' }.name", equalTo("general"))
+            .body("find { it.id == '" + GENERAL_TEXT + "' }.name", equalTo("General"))
+            .body("find { it.id == '" + GENERAL_TEXT + "' }.position", equalTo(0))
             .body("find { it.id == '" + GENERAL_TEXT + "' }.bitrate", nullValue())
-            .body("find { it.id == '" + GENERAL_VOICE + "' }.type", equalTo("voice"))
-            .body("find { it.id == '" + GENERAL_VOICE + "' }.bitrate", equalTo(64000))
-            .body("find { it.id == '" + GENERAL_VOICE + "' }.userLimit", equalTo(0));
+            .body("id", not(hasItem(SEEDED_BEFORE_V11_VOICE)));
         given().get("/api/v1/channels").then().statusCode(401);
     }
 

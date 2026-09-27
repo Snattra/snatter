@@ -11,6 +11,7 @@ import java.util.List;
  * @param avatarId       blob holding the profile picture, or null if none is set
  * @param roleIds        assigned roles
  * @param timedOutUntil  end of the member's timeout, or null; a past instant means none
+ * @param bannedAt       when the member was banned, or null if they are not
  */
 public record Account(
         AccountId id,
@@ -19,6 +20,7 @@ public record Account(
         BlobId avatarId,
         List<RoleId> roleIds,
         Instant timedOutUntil,
+        Instant bannedAt,
         Instant createdAt) {
 
     public boolean isTimedOut(Instant now) {

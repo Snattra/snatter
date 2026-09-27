@@ -57,10 +57,11 @@ public class BanRepository {
             .execute());
     }
 
-    public void delete(AccountId accountId) {
-        jdbi.useHandle(h -> h
+    /** Returns false if the account was not banned. */
+    public boolean delete(AccountId accountId) {
+        return jdbi.withHandle(h -> h
             .createUpdate("DELETE FROM ban WHERE account_id = :accountId")
             .bind("accountId", accountId)
-            .execute());
+            .execute()) == 1;
     }
 }

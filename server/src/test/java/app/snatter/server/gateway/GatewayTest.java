@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 class GatewayTest {
 
     private static final String GENERAL_TEXT = "00000000-0000-7000-8000-000000000101";
-    private static final String GENERAL_VOICE = "00000000-0000-7000-8000-000000000102";
 
     private static RequestSpecification as(String token) {
         return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON);
@@ -58,7 +57,7 @@ class GatewayTest {
             assertEquals("Snatter", ready.getString("server.name"));
             assertTrue(ready.getList("roles.name").containsAll(List.of("User", "Moderator", "Admin")));
             assertTrue(ready.getList("members.id").contains(member.id()));
-            assertEquals("general", ready.getString("channels.find { it.id == '" + GENERAL_TEXT + "' }.name"));
+            assertEquals("General", ready.getString("channels.find { it.id == '" + GENERAL_TEXT + "' }.name"));
         }
     }
 
@@ -127,6 +126,7 @@ class GatewayTest {
         TestUsers.assignRole(alice.id(), crew);
         String crewOnly = createChannel(Map.of("type", "text", "name", "crew", "requiredRoleIds", List.of(crew)));
         String other = createChannel(Map.of("type", "text", "name", "other"));
+        String voice = createChannel(Map.of("type", "voice", "name", "voice only"));
         try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
              GatewayTestClient aliceElsewhere = GatewayTestClient.identified(alice.token());
              GatewayTestClient bobGateway = GatewayTestClient.identified(bob.token())) {
@@ -136,7 +136,7 @@ class GatewayTest {
 
             // Too soon after the first, in a voice-only channel, or where bob cannot see: nothing is passed on.
             aliceGateway.send(typing(GENERAL_TEXT));
-            aliceGateway.send(typing(GENERAL_VOICE));
+            aliceGateway.send(typing(voice));
             aliceGateway.send(typing(crewOnly));
             aliceGateway.send(typing(UUID.randomUUID().toString()));
             // A connection's frames are handled in order, so once this one is through, so are those above.
@@ -151,6 +151,7 @@ class GatewayTest {
         } finally {
             deleteChannel(crewOnly);
             deleteChannel(other);
+            deleteChannel(voice);
             TestUsers.deleteRole(crew);
         }
     }
@@ -231,6 +232,7 @@ class GatewayTest {
         TestUsers.User bob = TestUsers.register();
         String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
         String reading = createChannel(Map.of("type", "text", "name", "reading"));
+        String voice = createChannel(Map.of("type", "voice", "name", "voice only"));
         String secret = createChannel(Map.of("type", "text", "name", "secret", "requiredRoleIds", List.of(crew)));
         try {
             String before = send(owner, reading, Map.of("content", "before alice looked")).then().statusCode(201).extract().path("id");
@@ -242,7 +244,7 @@ class GatewayTest {
                 String state = "readStates.find { it.channelId == '" + reading + "' }";
                 assertEquals(before, aliceGateway.ready().getString(state + ".lastReadMessageId"));
                 assertEquals(before, aliceGateway.ready().getString(state + ".lastMessageId"));
-                assertFalse(aliceGateway.ready().getList("readStates.channelId").contains(GENERAL_VOICE));
+                assertFalse(aliceGateway.ready().getList("readStates.channelId").contains(voice));
                 assertFalse(aliceGateway.ready().getList("readStates.channelId").contains(secret));
 
                 String unread = send(bob.token(), reading, Map.of("content", "for alice")).then().statusCode(201).extract().path("id");
@@ -275,6 +277,7 @@ class GatewayTest {
             }
         } finally {
             deleteChannel(reading);
+            deleteChannel(voice);
             deleteChannel(secret);
             TestUsers.deleteRole(crew);
         }

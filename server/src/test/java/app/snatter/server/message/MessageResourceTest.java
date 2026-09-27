@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 class MessageResourceTest {
 
     private static final String GENERAL_TEXT = "00000000-0000-7000-8000-000000000101";
-    private static final String GENERAL_VOICE = "00000000-0000-7000-8000-000000000102";
 
     private static RequestSpecification as(String token) {
         return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON);
@@ -180,6 +179,7 @@ class MessageResourceTest {
         String owner = TestUsers.ownerToken();
         String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
         String channel = createChannel("text", "moderated");
+        String voice = createChannel("voice", "voice only");
         String hidden = as(owner).body(Map.of("type", "text", "name", "hidden", "requiredRoleIds", List.of(crew)))
             .post("/api/v1/channels").then().statusCode(201).extract().path("id");
         TestUsers.User member = TestUsers.register();
@@ -188,8 +188,8 @@ class MessageResourceTest {
             list(member.token(), hidden, "").then().statusCode(404).body("error", equalTo("channel_not_found"));
             send(member.token(), hidden, Map.of("content", "hello?")).then().statusCode(404);
 
-            list(member.token(), GENERAL_VOICE, "").then().statusCode(400).body("error", equalTo("voice_only_channel"));
-            send(member.token(), GENERAL_VOICE, Map.of("content", "hello?")).then().statusCode(400).body("error", equalTo("voice_only_channel"));
+            list(member.token(), voice, "").then().statusCode(400).body("error", equalTo("voice_only_channel"));
+            send(member.token(), voice, Map.of("content", "hello?")).then().statusCode(400).body("error", equalTo("voice_only_channel"));
 
             // Without the User role, and so without SEND_MESSAGES, a member can still read.
             String announcement = send(owner, channel, "patch notes");
@@ -209,6 +209,7 @@ class MessageResourceTest {
             list(member.token(), channel, "").then().body("size()", equalTo(0));
         } finally {
             deleteChannel(channel);
+            deleteChannel(voice);
             deleteChannel(hidden);
             TestUsers.deleteRole(crew);
         }
@@ -223,6 +224,7 @@ class MessageResourceTest {
         String owner = TestUsers.ownerToken();
         String channel = createChannel("text", "reading");
         String other = createChannel("text", "elsewhere");
+        String voice = createChannel("voice", "voice only");
         String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
         String hidden = as(owner).body(Map.of("type", "text", "name", "hidden", "requiredRoleIds", List.of(crew)))
             .post("/api/v1/channels").then().statusCode(201).extract().path("id");
@@ -248,12 +250,13 @@ class MessageResourceTest {
             String elsewhere = send(bob.token(), other, "not here");
             markRead(alice.token(), channel, elsewhere).then().statusCode(404).body("error", equalTo("message_not_found"));
             markRead(alice.token(), channel, UUID.randomUUID().toString()).then().statusCode(404).body("error", equalTo("message_not_found"));
-            markRead(alice.token(), GENERAL_VOICE, first).then().statusCode(400).body("error", equalTo("voice_only_channel"));
+            markRead(alice.token(), voice, first).then().statusCode(400).body("error", equalTo("voice_only_channel"));
             markRead(alice.token(), hidden, first).then().statusCode(404).body("error", equalTo("channel_not_found"));
             markRead(alice.token(), channel, "not-a-uuid").then().statusCode(400);
         } finally {
             deleteChannel(channel);
             deleteChannel(other);
+            deleteChannel(voice);
             deleteChannel(hidden);
             TestUsers.deleteRole(crew);
         }

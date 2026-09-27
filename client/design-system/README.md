@@ -13,7 +13,7 @@ Snatter is a self-hosted voice and text server for gamers and hobby communities.
 - **Casing.** Sentence case everywhere, buttons included: "Sign in", "Create account", "Collapse channels". Only member-list headings are uppercase, through `text-eyebrow` ("ONLINE — 3"), never typed in capitals.
 - **Progress.** Present participle and a real ellipsis (…), not three dots: "Signing in…", "Creating your account…", "Checking you are not a bot…", "Reconnecting…".
 - **Counts.** Use an em dash with spaces: "Online — 3".
-- **Errors.** Say what to do: "Usernames use letters, digits, _ and .". Don't write "Invalid input".
+- **Errors.** Say what to do: "Usernames use letters, digits and _.". Don't write "Invalid input".
 - **No emoji, no exclamation marks** in interface copy. People bring their own to their messages.
 - **Channel names** are shown as typed, lowercase by convention ("general", "patch-notes"), after their type icon, never with a typed `#`.
 
@@ -54,7 +54,7 @@ The platform's own UI face (`sans`: system-ui) at a 15px base, with `mono` for c
 - **The frame.** A `rail-width` (72px) server rail, a `sidebar-width` (240px) channel sidebar that collapses to `sidebar-collapsed` (56px), the channel, then a `members-width` (240px) member list. Every pane header is `header-height` (48px).
 - **Spacing** tokens are named by their pixel value. Rows and controls use 4, 6, 8, 10, 12 and 16. Cards pad 24, and the sign-in screen keeps 32 of margin.
 - **Radii.** `radius-sm` (4px) for controls and rows, `radius-md` (8px) for cards, callouts, the composer and anything floating, `radius-round` for people. A server icon is `radius-round` at rest and `radius-lg` (16px) when you reach for it.
-- **Elevation** comes from the surface ladder first. Shadows are cast in deep navy, not pure black. `shadow-lift` is for a card on the ground and `shadow-float` for tooltips, popovers and toolbars. `shadow-accent` is the accent glow under a hovered primary button and the selected server: the sheen's light spilling onto the ground.
+- **Elevation** comes from the surface ladder first. Shadows are cast in deep navy, not pure black. `shadow-lift` is for a card on the ground or a modal over the `scrim`, which dims the app toward `floating`, and `shadow-float` for tooltips, popovers and toolbars. `shadow-accent` is the accent glow under a hovered primary button and the selected server: the sheen's light spilling onto the ground.
 
 ## States
 
@@ -65,11 +65,12 @@ The platform's own UI face (`sans`: system-ui) at a 15px base, with `mono` for c
 | Primary button | sheen, `on-accent` label | sheen slides toward `accent-sheen` + `shadow-accent` | scale 98% | `opacity-disabled` |
 | Icon button | `muted` | `text` | `text-strong` (`aria-pressed`) | `opacity-disabled` |
 | Text field | `bg` well | — | sheen edge + `shadow-glow` | `opacity-disabled` |
+| Choice | `muted` ring | `panel-raised` row, `text` ring | sheen mark, `text-strong` label; a radio's row `panel-active` | `opacity-disabled` |
 | Member | name `text` | `panel-raised` | — | offline: name `muted`, avatar `opacity-offline` |
 
 ## Iconography
 
-Filled glyphs on a 24px grid, drawn inline at `icon-size` (18px) as SVG with `fill="currentColor"`, so they follow the ink of their control. Use `hash` for text channels, `speaker` for voice and voice-and-text channels, `members` for the member-list toggle, `person-add` for inviting people, and the chevrons to collapse and expand the sidebar. `plus`, `close`, `send`, `arrow-right` and `arrow-up` complete the set. There is no icon font and no emoji in the chrome. An icon is always decorative: label the button that holds it.
+Filled glyphs on a 24px grid, drawn inline at `icon-size` (18px) as SVG with `fill="currentColor"`, so they follow the ink of their control. Use `hash` for text channels, `speaker` for voice and voice-and-text channels, `members` for the member-list toggle, `person-add` for inviting people, `settings` for server and channel settings, and the chevrons to collapse and expand the sidebar. `plus`, `close`, `send`, `arrow-right`, `arrow-up`, `chevron-down` (a Select), `check` (a ticked Choice) and `ban` (a banned member) complete the set. There is no icon font and no emoji in the chrome. An icon is always decorative: label the button that holds it.
 
 ## Brand mark
 

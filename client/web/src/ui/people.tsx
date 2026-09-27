@@ -1,6 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 import type { Account } from "../api/types";
 import { classes } from "./classes";
+import { Icon } from "./icons";
+import { Tooltip } from "./surfaces";
+import { dayText } from "./time";
 
 interface AvatarProps {
   origin: string;
@@ -93,36 +96,48 @@ interface MemberListProps {
   origin: string;
   online: Account[];
   offline: Account[];
+  /** Still members: listed last, faded and marked. */
+  banned: Account[];
   typing: Set<string>;
+  /** Opens the member's profile. */
+  onOpen: (account: Account) => void;
   /** Pinned under the list, such as the InviteButton. */
   footer?: ReactNode;
 }
 
-/** Members under "Online" and "Offline" headings; someone coming online moves up with a ping. */
-export function MemberList({ origin, online, offline, typing, footer }: MemberListProps) {
+/**
+ * Members under "Online", "Offline" and "Banned" headings; someone coming
+ * online moves up with a ping. Each row opens the member's profile.
+ */
+export function MemberList({ origin, online, offline, banned, typing, onOpen, footer }: MemberListProps) {
   // Members on the list when it first renders are simply there; only later arrivals ping.
   const [settled, setSettled] = useState(false);
   useEffect(() => setSettled(true), []);
+  const group = { origin, typing, settled, onOpen };
   return (
     <aside className="sn-members" aria-label="Members">
       <div className="sn-members-list">
-        <MemberGroup title="Online" origin={origin} members={online} online typing={typing} settled={settled} />
-        <MemberGroup title="Offline" origin={origin} members={offline} online={false} typing={typing} settled={settled} />
+        <MemberGroup {...group} title="Online" members={online} state="online" />
+        <MemberGroup {...group} title="Offline" members={offline} state="offline" />
+        <MemberGroup {...group} title="Banned" members={banned} state="banned" />
       </div>
       {footer && <div className="sn-members-foot">{footer}</div>}
     </aside>
   );
 }
 
+type MemberState = "online" | "offline" | "banned";
+
 function MemberGroup(props: {
   title: string;
   origin: string;
   members: Account[];
-  online: boolean;
+  state: MemberState;
   typing: Set<string>;
   settled: boolean;
+  onOpen: (account: Account) => void;
 }) {
-  const { title, origin, members, online, typing, settled } = props;
+  const { title, origin, members, state, typing, settled, onOpen } = props;
   if (members.length === 0) {
     return null;
   }
@@ -133,23 +148,58 @@ function MemberGroup(props: {
       </h2>
       <ul>
         {members.map((m) => (
-          <Member key={m.id} origin={origin} account={m} online={online} typing={typing.has(m.id)} arrived={settled && online} />
+          <Member
+            key={m.id}
+            origin={origin}
+            account={m}
+            state={state}
+            typing={typing.has(m.id)}
+            arrived={settled && state === "online"}
+            onOpen={() => onOpen(m)}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-function Member(props: { origin: string; account: Account; online: boolean; typing: boolean; arrived: boolean }) {
-  const { origin, account, online, typing } = props;
+function Member(props: {
+  origin: string;
+  account: Account;
+  state: MemberState;
+  typing: boolean;
+  arrived: boolean;
+  onOpen: () => void;
+}) {
+  const { origin, account, state, typing, onOpen } = props;
   // Fixed when the row mounts: a row that moved into Online after the first render pings once.
   const [arrived] = useState(props.arrived);
+  const banned = state === "banned";
   return (
-    <li className={classes("sn-member", !online && "sn-member-offline")}>
-      <Avatar origin={origin} account={account} online={online} arrived={arrived} />
-      <span className="sn-member-name sn-truncate">{account.displayName}</span>
-      {typing && <TypingDots />}
+    <li>
+      <button
+        type="button"
+        className={classes("sn-member", state === "offline" && "sn-member-offline", banned && "sn-member-banned")}
+        aria-haspopup="dialog"
+        onClick={onOpen}
+      >
+        <Avatar origin={origin} account={account} online={banned ? undefined : state === "online"} arrived={arrived} />
+        <span className="sn-member-name sn-truncate">{account.displayName}</span>
+        {typing && <TypingDots />}
+        {banned && account.bannedAt && <BanMark at={account.bannedAt} />}
+      </button>
     </li>
+  );
+}
+
+/** The mark at the end of a banned member's row, saying since when on hover. */
+function BanMark({ at }: { at: string }) {
+  return (
+    <Tooltip label={`Banned on ${dayText(new Date(at), new Date())}`} side="left">
+      <span className="sn-member-mark" role="img" aria-label="Banned">
+        <Icon name="ban" />
+      </span>
+    </Tooltip>
   );
 }
 

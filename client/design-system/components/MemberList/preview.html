@@ -1,4 +1,4 @@
-<!-- @dsCard group="People" height=330 -->
+<!-- @dsCard group="People" height=470 -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -31,7 +31,15 @@
     online.sort(function (a, b) { return a.name.localeCompare(b.name); });
     offline.sort(function (a, b) { return a.name.localeCompare(b.name); });
     React.useEffect(function () { var t = setInterval(function () { scaup[1](function (v) { return !v; }); }, 3000); return function () { clearInterval(t); }; }, []);
-    return h("div", { className: "demo" }, h(S.MemberList, { groups: [{ title: "Online", online: true, members: online }, { title: "Offline", online: false, members: offline }] }));
+    var banned = [{ id: "a8", name: "Smew", bannedText: "Banned on 27 September" }];
+    return h("div", { className: "demo" }, h(S.MemberList, {
+      onOpen: function () {},
+      groups: [
+        { title: "Online", online: true, members: online },
+        { title: "Offline", online: false, members: offline },
+        { title: "Banned", online: false, banned: true, members: banned }
+      ]
+    }));
   }
   ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
 

@@ -104,9 +104,10 @@ at the current blob; replacing or clearing an avatar deletes the old blob.
 ## Server owner and settings
 
 The first account registered on a fresh server becomes the **server owner**,
-recorded in `server_settings.owner_account_id`. The owner holds every
-permission, sees every channel, is exempt from the role management rule, and
-cannot be demoted. Only the owner changes the server settings unless they
+recorded in `server_settings.owner_account_id` and published as
+`ServerInfo.ownerId`, so clients can mark the owner and leave them out of
+moderation. The owner holds every permission, sees every channel, is exempt
+from the role management rule, and cannot be demoted. Only the owner changes the server settings unless they
 grant `MANAGE_SERVER` explicitly; the seeded `Admin` role does not have it.
 Everything else is decided by permissions; see "Roles and permissions".
 
@@ -178,6 +179,12 @@ checks for a ban only after the password is verified, so guessers learn
 nothing, and answers `banned` with the reason in `ApiError.ban`, through
 `BannedException`. Messages stay. IP bans are not built yet.
 
+A banned member stays a member, and everyone may know it: `Account.bannedAt`
+is the ban's time, read with every account, and the gateway sends
+`member_updated` to everyone after the banned member's connections close.
+Lifting a ban fires `AccountEvent.Unbanned`, which does the same. The reason
+and who banned stay with `BAN_MEMBERS` (`GET /bans`).
+
 **Timeouts** (`account.timed_out_until`). The member keeps roles, sessions
 and their view of channels, but `RoleService.resolve` gives them no
 permissions until the instant passes, so they can read and nothing else.
@@ -196,8 +203,8 @@ channels, and only they, have a bitrate in bits per second and a user limit,
 0 meaning none; the table enforces this. New voice channels get
 `snatter.voice.default-bitrate` and no channel may exceed
 `snatter.voice.max-bitrate`; both are published in `ServerInfo.voice` for
-clients. The type is fixed at creation. A fresh server has a `general` text
-channel and a `General` voice channel.
+clients. The type is fixed at creation. A fresh server has one text channel,
+`General`.
 
 Channels form one flat list ordered by `position`, 0 at the top, and
 positions are always contiguous. `ChannelRepository` takes a
@@ -280,7 +287,7 @@ transaction that made the change:
 | `registration_mode_changed` | the system channel  | the owner             |
 
 The system channel is the `systemChannelId` server setting, the seeded
-`general` channel on a new server. It must be a channel with messages;
+`General` channel on a new server. It must be a channel with messages;
 setting it to an empty string turns server-wide notices off, and deleting the
 channel does the same.
 
@@ -530,13 +537,22 @@ Error codes so far: `validation_failed`, `username_taken`, `registration_closed`
 `invite_invalid`, `invite_not_found`, `invite_unusable`, `role_not_found`,
 `role_in_use`, `permission_escalation`,
 `channel_not_found`, `not_a_voice_channel`, `bitrate_too_high`, `invalid_required_role`,
-`required_role_not_held`, `banned`, `member_outranks_you`, `cannot_moderate_self`,
+`required_role_not_held`, `banned`, `member_outranks_you`, `cannot_moderate_self`, `invalid_display_name`,
 `voice_only_channel`, `message_not_found`, `invalid_reply`, `invalid_paging`,
 `invalid_credentials`, `account_not_found`, `blob_not_found`,
 `unsupported_image`, `image_dimensions`, `image_too_large`.
 
-Usernames are 3 to 32 characters of letters, digits, underscore and dot, and
-unique per server regardless of case. Passwords are 8 to 128 characters.
+Usernames are 3 to 32 characters of letters A to Z, digits and underscore,
+and unique per server regardless of case. Passwords are 8 to 128 characters.
+
+Display names (`account.DisplayNames`) may use letters of any script, digits,
+punctuation, symbols and plain spaces, and nothing else: no emoji, control or
+format characters (line breaks, bidirectional overrides, zero-width
+characters), other kinds of space, combining marks, or letters that draw
+nothing. They are trimmed and runs of spaces become one, but not otherwise
+normalized. They are checked first in registration, so a refused name spends
+no invite or challenge. Clients render names as text, never as markup, so the
+rules are about readable names that are hard to fake rather than injection.
 
 ## Testing
 

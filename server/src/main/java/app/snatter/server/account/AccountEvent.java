@@ -20,6 +20,10 @@ public sealed interface AccountEvent {
     record Banned(AccountId accountId, AccountId actor) implements AccountEvent {
     }
 
+    /** The member's ban was lifted, so they can log in again. */
+    record Unbanned(AccountId accountId, AccountId actor) implements AccountEvent {
+    }
+
     /** A timeout started, changed or was lifted early. One running out on its own fires nothing. */
     record TimeoutChanged(AccountId accountId, AccountId actor) implements AccountEvent {
     }

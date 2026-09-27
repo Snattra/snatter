@@ -1,0 +1,55 @@
+<!-- @dsCard group="Forms" height=560 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Choice</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { min-height: 100vh; padding: var(--space-24); background: var(--panel); }
+  .stack { display: grid; gap: var(--space-16); max-width: 432px; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  var types = [
+    { id: "text", icon: "hash", label: "Text", description: "Messages, for everyone who can see it." },
+    { id: "voice", icon: "speaker", label: "Voice", description: "Talk together, without messages." },
+    { id: "voice_text", icon: "speaker", label: "Voice and text", description: "Talk together, with messages alongside." }
+  ];
+  var roles = [
+    { id: "admin", name: "Admin" },
+    { id: "moderator", name: "Moderator", mine: true },
+    { id: "user", name: "User", mine: true }
+  ];
+
+  function Demo() {
+    var type = useState("voice_text"), priv = useState(true), picked = useState([]);
+    function toggle(id) {
+      picked[1](picked[0].indexOf(id) === -1 ? picked[0].concat(id) : picked[0].filter(function (r) { return r !== id; }));
+    }
+    return h("div", { className: "demo" }, h("div", { className: "stack" },
+      h(S.ChoiceGroup, { legend: "Type" }, types.map(function (t) {
+        return h(S.Choice, { key: t.id, type: "radio", name: "type", icon: t.icon, label: t.label, description: t.description,
+          checked: type[0] === t.id, onChange: function () { type[1](t.id); } });
+      })),
+      h(S.Choice, { type: "checkbox", label: "Private channel", description: "Only members with the roles you choose, and the owner, can see it.",
+        checked: priv[0], onChange: function (e) { priv[1](e.target.checked); } }),
+      priv[0] && h(S.ChoiceGroup, { legend: "Who can see it", error: picked[0].length === 0 ? "Choose at least one role that can see it." : null },
+        roles.map(function (r) {
+          return h(S.Choice, { key: r.id, type: "checkbox", label: r.name, description: r.mine ? "You have this role" : null,
+            checked: picked[0].indexOf(r.id) !== -1, onChange: function () { toggle(r.id); } });
+        })),
+      h(S.Choice, { type: "checkbox", label: "Check for bots at sign-up", description: "Not available on this server.", disabled: true })));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

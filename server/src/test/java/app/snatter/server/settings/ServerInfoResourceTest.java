@@ -39,12 +39,14 @@ class ServerInfoResourceTest {
 
     @Test
     void setupIsOverOnceTheOwnerExists() {
-        TestUsers.ownerToken();
+        String ownerId = given().header("Authorization", "Bearer " + TestUsers.ownerToken())
+            .get("/api/v1/accounts/me").then().statusCode(200).extract().path("id");
         given()
             .when().get("/api/v1/server-info")
             .then()
             .statusCode(200)
-            .body("registration.setupRequired", equalTo(false));
+            .body("registration.setupRequired", equalTo(false))
+            .body("ownerId", equalTo(ownerId));
     }
 
     @Test

@@ -18,12 +18,13 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
   color: inherit;
 }
 
-:where(button, a, input, textarea, [tabindex]):focus-visible {
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -48,6 +49,14 @@ textarea {
 
 @keyframes sn-pop-in {
   from { opacity: 0; transform: var(--sn-from) scale(0.96); }
+}
+
+@keyframes sn-shake {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
 }
 
 @keyframes sn-typing {
@@ -327,6 +336,228 @@ textarea {
   box-shadow: var(--shadow-glow);
 }
 
+.sn-field-invalid .sn-input {
+  border-color: var(--danger);
+  box-shadow: var(--shadow-glow-danger);
+  animation: sn-shake var(--duration-slow) var(--ease-standard);
+}
+
+.sn-field-hint,
+.sn-field-error {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
+
+.sn-field-hint {
+  color: var(--muted);
+}
+
+.sn-field-error {
+  color: var(--danger-text);
+  animation: sn-rise-in var(--duration-base) var(--ease-out);
+}
+
+textarea.sn-input {
+  display: block;
+  min-height: calc(3 * 22px + 2 * var(--space-8) + 2px);
+  resize: vertical;
+}
+
+/* A native select, its arrow replaced by the chevron so it reads like the other fields. */
+.sn-select {
+  position: relative;
+  display: grid;
+}
+
+.sn-select .sn-input {
+  appearance: none;
+  padding-right: calc(2 * var(--space-10) + var(--icon-size));
+  cursor: pointer;
+}
+
+.sn-select .sn-input option {
+  background: var(--floating);
+  color: var(--text);
+}
+
+.sn-select > .sn-icon {
+  position: absolute;
+  top: 50%;
+  right: var(--space-10);
+  translate: 0 -50%;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.sn-input:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+}
+
+/* ---------- Choice ---------- */
+
+/* A radio or checkbox as a row: the native input stays, out of sight but
+   focusable, and the mark is drawn beside the label. */
+.sn-choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-10);
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-instant) var(--ease-standard),
+    color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-choice:hover {
+  background: var(--panel-raised);
+}
+
+.sn-choice:has(> .sn-choice-input:checked) {
+  color: var(--text-strong);
+}
+
+/* A chosen option of a set is a selected row. */
+.sn-choice-radio:has(> .sn-choice-input:checked) {
+  background: var(--panel-active);
+}
+
+.sn-choice:has(> .sn-choice-input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sn-choice:has(> .sn-choice-input:disabled) {
+  opacity: var(--opacity-disabled);
+  background: none;
+  cursor: default;
+}
+
+.sn-choice-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sn-choice-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  /* centred on the first line of the label */
+  margin-top: 2px;
+  border: 2px solid var(--muted);
+  border-radius: var(--radius-sm);
+  color: var(--on-accent);
+  transition:
+    border-color var(--duration-instant) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.sn-choice-radio .sn-choice-mark {
+  border-radius: var(--radius-round);
+}
+
+.sn-choice:hover .sn-choice-mark {
+  border-color: var(--text);
+}
+
+/* Chosen: the mark fills with the sheen. */
+.sn-choice-input:checked + .sn-choice-mark {
+  border-color: transparent;
+  background: var(--accent-strong) var(--gradient-accent) border-box;
+}
+
+.sn-choice-mark .sn-icon,
+.sn-choice-radio .sn-choice-mark::after {
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-base) var(--ease-spring);
+}
+
+.sn-choice-mark .sn-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.sn-choice-radio .sn-choice-mark::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: var(--on-accent);
+}
+
+.sn-choice-input:checked + .sn-choice-mark .sn-icon,
+.sn-choice-radio .sn-choice-input:checked + .sn-choice-mark::after {
+  opacity: 1;
+  transform: none;
+}
+
+/* An icon beside the label, such as a channel type; it takes the accent when chosen. */
+.sn-choice > .sn-icon {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.sn-choice-input:checked ~ .sn-icon {
+  color: var(--accent);
+}
+
+.sn-choice-text {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sn-choice-label {
+  font-weight: 500;
+}
+
+.sn-choice-description {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* A set of choices under a legend, like a field's label. */
+.sn-choices {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.sn-choices-legend {
+  margin-bottom: var(--space-4);
+  padding: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.sn-choices-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sn-choices-invalid .sn-choice-input:not(:checked) + .sn-choice-mark {
+  border-color: var(--danger);
+}
+
 /* ---------- Card ---------- */
 
 .sn-card {
@@ -384,6 +615,10 @@ textarea {
   font-weight: 600;
 }
 
+.sn-callout-warning {
+  background: var(--warning-soft);
+}
+
 /* ---------- Banner ---------- */
 
 .sn-banner-slot {
@@ -403,6 +638,46 @@ textarea {
   font-weight: 500;
   text-align: center;
   animation: sn-slide-down var(--duration-base) var(--ease-out);
+}
+
+/* ---------- Tag ---------- */
+
+.sn-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sn-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--panel-active);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Standing out without being chosen, such as Owner: azure ink on the azure tint. */
+.sn-tag-accent {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* A role's colour as a mark; `muted` for a role without one. */
+.sn-tag-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--radius-round);
+  background: var(--muted);
 }
 
 /* ---------- Tooltip ---------- */
@@ -461,6 +736,13 @@ textarea {
   translate: 0 -50%;
 }
 
+.sn-tooltip-left {
+  --sn-from: translateX(4px);
+  right: calc(100% + var(--space-8));
+  top: 50%;
+  translate: 0 -50%;
+}
+
 /* ---------- Popover ---------- */
 
 /* In the top layer, so no pane clips it. Its control's position is set from
@@ -505,6 +787,160 @@ textarea {
 
 .sn-popover-description {
   margin: 0 0 var(--space-12);
+  color: var(--muted);
+}
+
+/* ---------- Modal ---------- */
+
+/* A native modal dialog, so the top layer, the focus trap and Escape come
+   from the browser. A card over the scrim: the one lit surface. */
+.sn-modal {
+  width: min(480px, 100vw - 2 * var(--space-16));
+  max-width: none;
+  max-height: calc(100vh - 2 * var(--space-32));
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--gradient-edge) top / 100% 1px no-repeat, var(--panel);
+  box-shadow: var(--shadow-lift);
+  color: var(--text);
+}
+
+.sn-modal[open] {
+  display: flex;
+  flex-direction: column;
+  animation: sn-rise-in var(--duration-slow) var(--ease-out);
+}
+
+.sn-modal::backdrop {
+  background: var(--scrim);
+  animation: sn-fade-in var(--duration-fast) var(--ease-out);
+}
+
+/* Settings with Tabs: a steady height, so switching tabs does not move the card. */
+.sn-modal-wide {
+  width: min(560px, 100vw - 2 * var(--space-16));
+  height: min(680px, 100vh - 2 * var(--space-32));
+}
+
+.sn-modal-header {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-24) var(--space-24) var(--space-12);
+}
+
+.sn-modal-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Beside the title, such as the avatar of the member a profile is about. */
+.sn-modal-leading {
+  flex: none;
+  align-self: center;
+}
+
+.sn-modal-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 21px;
+  line-height: 28px;
+  font-weight: 700;
+}
+
+.sn-modal-description {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: var(--space-4) 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* The close button lines up with the title's first line and the card's corner. */
+.sn-modal-header > .sn-icon-button {
+  margin: var(--space-2) calc(-1 * var(--space-8)) 0 0;
+}
+
+.sn-modal-tabs {
+  flex: none;
+  padding: var(--space-4) var(--space-24) var(--space-12);
+}
+
+.sn-modal-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Only the body scrolls; its padding leaves room for focus rings and glows. */
+.sn-modal-body {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: var(--space-16);
+  min-height: 0;
+  padding: var(--space-4) var(--space-24) var(--space-8);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.sn-modal-text {
+  margin: 0;
+}
+
+.sn-modal-error {
+  flex: none;
+  margin: 0;
+  padding: var(--space-8) var(--space-24) 0;
+  color: var(--danger-text);
+  font-size: 13px;
+  line-height: 18px;
+  animation: sn-rise-in var(--duration-base) var(--ease-out);
+}
+
+.sn-modal-footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-24) var(--space-24);
+}
+
+/* A destructive action, such as Delete channel, at the other end. */
+.sn-modal-footer-start {
+  margin-right: auto;
+}
+
+/* ---------- Profile ---------- */
+
+.sn-profile-facts {
+  display: grid;
+  gap: var(--space-16);
+  margin: 0;
+}
+
+.sn-profile-facts dt {
+  margin-bottom: var(--space-4);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.sn-profile-facts dd {
+  margin: 0;
+}
+
+.sn-profile-none {
   color: var(--muted);
 }
 
@@ -707,6 +1143,23 @@ textarea {
   font-weight: 600;
 }
 
+/* Actions beside the community name, such as Server settings. They fold
+   away with the name when the sidebar collapses; the padding keeps their
+   focus ring clear of the overflow that lets them fold. */
+.sn-pane-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  margin: calc(-1 * var(--space-4));
+  padding: var(--space-4);
+  overflow: hidden;
+}
+
+.sn-pane-header-name {
+  flex: 1;
+}
+
 .sn-truncate {
   min-width: 0;
   overflow: hidden;
@@ -778,6 +1231,12 @@ textarea {
 
 .sn-channel-name {
   flex: 1;
+}
+
+/* An action at the end of the list, such as Create channel: a channel row
+   that stays muted, its icon where theirs sit. */
+.sn-channel-action {
+  margin-top: var(--space-4);
 }
 
 /* Collapsing: labels fade while the column narrows; icons and avatars stay put. */
@@ -921,13 +1380,19 @@ textarea {
   list-style: none;
 }
 
+/* A row is a button that opens the member's profile. */
 .sn-member {
   display: flex;
   align-items: center;
   gap: var(--space-8);
+  width: 100%;
   padding: var(--space-4) var(--space-8);
+  border: none;
   border-radius: var(--radius-sm);
+  background: none;
   color: var(--text);
+  text-align: left;
+  cursor: pointer;
   animation: sn-fade-in var(--duration-base) var(--ease-out);
   transition: background-color var(--duration-instant) var(--ease-standard);
 }
@@ -943,6 +1408,21 @@ textarea {
 
 .sn-member-offline .sn-member-name {
   color: var(--muted);
+}
+
+/* Banned: faded like an offline member but with no presence dot, and marked with `ban`. */
+.sn-member-banned .sn-avatar-face {
+  opacity: var(--opacity-offline);
+}
+
+.sn-member-banned .sn-member-name {
+  color: var(--muted);
+}
+
+.sn-member-mark {
+  display: grid;
+  place-items: center;
+  color: var(--danger);
 }
 
 /* ---------- Invite ---------- */
@@ -1094,6 +1574,32 @@ textarea {
   top: var(--space-4);
 }
 
+/* A person's name that opens their profile: it reads as the name and underlines on hover. */
+.sn-name-button {
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.sn-name-button:hover {
+  text-decoration: underline;
+}
+
+/* The author's avatar opens their profile too; keyboards reach it through the name. */
+.sn-message-avatar {
+  position: absolute;
+  left: var(--space-16);
+  top: var(--space-4);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-round);
+  background: none;
+  cursor: pointer;
+}
+
 .sn-message-meta {
   display: flex;
   align-items: baseline;
@@ -1212,7 +1718,8 @@ textarea {
   margin-left: var(--space-8);
 }
 
-.sn-message-system strong {
+.sn-message-system strong,
+.sn-message-system .sn-name-button {
   color: var(--text);
   font-weight: 600;
 }
@@ -1510,6 +2017,35 @@ textarea {
   color: var(--muted);
 }
 
+/* A modal's body while what it shows is loading, or failed to. */
+.sn-modal-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  color: var(--muted);
+}
+
+.sn-modal-status-error {
+  flex: 1;
+  color: var(--danger-text);
+}
+
+/* A rate limit as a sentence: "[10] every [60] seconds". */
+.sn-rate {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+}
+
+.sn-rate .sn-input {
+  width: 7.5em;
+}
+
 /* Message text is plain for now; keep the author's line breaks. */
 .sn-message-content {
   white-space: pre-wrap;
@@ -1531,9 +2067,12 @@ textarea {
   }
 
   .sn-card,
+  .sn-modal[open],
   .sn-banner,
   .sn-member,
   .sn-form-error,
+  .sn-field-error,
+  .sn-modal-error,
   .sn-message-new,
   .sn-unread-bar,
   .sn-popover:popover-open,
@@ -1542,6 +2081,7 @@ textarea {
   }
 
   .sn-status-announce::after,
+  .sn-field-invalid .sn-input,
   .sn-skeleton {
     animation: none !important;
   }

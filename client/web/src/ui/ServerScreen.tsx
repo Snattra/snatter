@@ -1,19 +1,40 @@
 import { type ReactNode, useRef, useState } from "react";
 import type { Account, Channel } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
-import { canInvite, canSend, hasUnread, sortedChannels, typingIn } from "../state/serverView";
+import { isBanned, isTimedOut } from "../state/moderation";
+import { can, canInvite, canSend, hasUnread, sortedChannels, typingIn } from "../state/serverView";
 import type { ServerEntry } from "../state/store";
 import { ChannelView } from "./ChannelView";
+import { ChannelSettingsModal, CreateChannelModal } from "./channelSettings";
 import { Button, IconButton } from "./controls";
 import { useNow, usePreference } from "./hooks";
 import { InviteButton } from "./invites";
-import { AppShell, ChannelHeader, ChannelItem, ChannelList, RailServer, ServerRail, Sidebar } from "./layout";
+import {
+  AppShell,
+  ChannelAction,
+  ChannelHeader,
+  ChannelItem,
+  ChannelList,
+  RailServer,
+  ServerRail,
+  Sidebar,
+} from "./layout";
 import { Composer } from "./messages";
 import { MemberList, TypingIndicator, UserPanel } from "./people";
+import { ProfileModal } from "./profile";
+import { ServerSettingsModal } from "./serverSettings";
 import { Banner, Skeleton } from "./surfaces";
+import { aheadTime } from "./time";
 
 /** How often the member's typing is announced again while they keep typing, as the contract asks. */
 const TYPING_REPEAT_MS = 8_000;
+
+/** The modal open over the screen, if any. */
+type Dialog =
+  | { kind: "server-settings" }
+  | { kind: "create-channel" }
+  | { kind: "channel-settings"; channelId: string }
+  | { kind: "profile"; accountId: string };
 
 /**
  * The main screen, laid out left to right: the server rail, the channels of
@@ -22,6 +43,7 @@ const TYPING_REPEAT_MS = 8_000;
  */
 export function ServerScreen({ connection, entry }: { connection: ServerConnection; entry: ServerEntry }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
   const [channelsCollapsed, setChannelsCollapsed] = usePreference("channelsCollapsed", false);
   const [membersOpen, setMembersOpen] = usePreference("membersOpen", true);
   const view = entry.view;
@@ -46,94 +68,176 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
 
   const typists = selected === null ? [] : typingIn(view, selected.id, now);
   const members = Object.values(view.members).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  // Banned members stay members, listed last.
+  const present = members.filter((m) => !isBanned(m));
   const community = view.info.community.name;
   const hasMessages = selected !== null && selected.type !== "voice";
+  // Each modal shows only while the member may use it, and channel settings only while the channel is there.
+  const manageServer = can(view, "MANAGE_SERVER");
+  const manageChannels = can(view, "MANAGE_CHANNELS");
+  const editing = dialog?.kind === "channel-settings" ? view.channels[dialog.channelId] : undefined;
+  const profile = dialog?.kind === "profile" ? view.members[dialog.accountId] : undefined;
+  const closeDialog = () => setDialog(null);
+  const openProfile = (accountId: string) => setDialog({ kind: "profile", accountId });
 
   return (
-    <AppShell
-      collapsed={channelsCollapsed}
-      membersOpen={membersOpen}
-      rail={
-        <ServerRail>
-          <RailServer name={community} selected />
-        </ServerRail>
-      }
-      sidebar={
-        <Sidebar
-          name={community}
-          collapsed={channelsCollapsed}
-          onToggle={() => setChannelsCollapsed(!channelsCollapsed)}
-          footer={
-            <UserPanel
-              origin={connection.origin}
-              account={view.account}
-              action={
-                <Button variant="link" onClick={() => void connection.logOut()}>
-                  Sign out
-                </Button>
-              }
-            />
-          }
-        >
-          <ChannelList>
-            {channels.map((channel) => (
-              <ChannelItem
-                key={channel.id}
-                channel={channel}
-                selected={channel.id === selected?.id}
-                unread={channel.id !== selected?.id && hasUnread(view, channel.id)}
-                onClick={() => setSelectedId(channel.id)}
+    <>
+      <AppShell
+        collapsed={channelsCollapsed}
+        membersOpen={membersOpen}
+        rail={
+          <ServerRail>
+            <RailServer name={community} selected />
+          </ServerRail>
+        }
+        sidebar={
+          <Sidebar
+            name={community}
+            collapsed={channelsCollapsed}
+            onToggle={() => setChannelsCollapsed(!channelsCollapsed)}
+            actions={
+              manageServer && (
+                <IconButton
+                  icon="settings"
+                  label="Server settings"
+                  aria-haspopup="dialog"
+                  onClick={() => setDialog({ kind: "server-settings" })}
+                />
+              )
+            }
+            footer={
+              <UserPanel
+                origin={connection.origin}
+                account={view.account}
+                action={
+                  <Button variant="link" onClick={() => void connection.logOut()}>
+                    Sign out
+                  </Button>
+                }
               />
-            ))}
-          </ChannelList>
-        </Sidebar>
-      }
-      banner={entry.status === "reconnecting" && <Banner busy>Reconnecting…</Banner>}
-      header={<ChannelHeader channel={selected}>{membersToggle}</ChannelHeader>}
-      footer={
-        hasMessages && (
-          <ChannelComposer
-            key={selected.id}
-            connection={connection}
-            channel={selected}
-            allowed={canSend(view)}
-            typists={typists}
+            }
+          >
+            <ChannelList>
+              {channels.map((channel) => (
+                <ChannelItem
+                  key={channel.id}
+                  channel={channel}
+                  selected={channel.id === selected?.id}
+                  unread={channel.id !== selected?.id && hasUnread(view, channel.id)}
+                  onClick={() => setSelectedId(channel.id)}
+                />
+              ))}
+              {manageChannels && (
+                <ChannelAction
+                  icon="plus"
+                  label="Create channel"
+                  onClick={() => setDialog({ kind: "create-channel" })}
+                />
+              )}
+            </ChannelList>
+          </Sidebar>
+        }
+        banner={<StatusBanner reconnecting={entry.status === "reconnecting"} account={view.account} />}
+        header={
+          <ChannelHeader channel={selected}>
+            {manageChannels && selected !== null && (
+              <IconButton
+                icon="settings"
+                label="Channel settings"
+                aria-haspopup="dialog"
+                onClick={() => setDialog({ kind: "channel-settings", channelId: selected.id })}
+              />
+            )}
+            {membersToggle}
+          </ChannelHeader>
+        }
+        footer={
+          hasMessages && (
+            <ChannelComposer
+              key={selected.id}
+              connection={connection}
+              channel={selected}
+              allowed={canSend(view)}
+              timedOut={isTimedOut(view.account, Date.now())}
+              typists={typists}
+            />
+          )
+        }
+        members={
+          <MemberList
+            origin={connection.origin}
+            online={present.filter((m) => view.online[m.id])}
+            offline={present.filter((m) => !view.online[m.id])}
+            banned={members.filter(isBanned)}
+            typing={new Set(typists.map((m) => m.id))}
+            onOpen={(member) => openProfile(member.id)}
+            footer={canInvite(view) && <InviteButton connection={connection} community={community} />}
           />
-        )
-      }
-      members={
-        <MemberList
-          origin={connection.origin}
-          online={members.filter((m) => view.online[m.id])}
-          offline={members.filter((m) => !view.online[m.id])}
-          typing={new Set(typists.map((m) => m.id))}
-          footer={canInvite(view) && <InviteButton connection={connection} community={community} />}
+        }
+      >
+        {selected !== null &&
+          (hasMessages ? (
+            <ChannelView
+              key={selected.id}
+              connection={connection}
+              view={view}
+              channel={selected}
+              log={entry.logs[selected.id]}
+              onOpenProfile={openProfile}
+            />
+          ) : (
+            <p className="sn-channel-note">This is a voice channel. It has no messages, and voice is not built yet.</p>
+          ))}
+      </AppShell>
+      {dialog?.kind === "server-settings" && manageServer && (
+        <ServerSettingsModal connection={connection} view={view} onClose={closeDialog} />
+      )}
+      {dialog?.kind === "create-channel" && manageChannels && (
+        <CreateChannelModal
+          connection={connection}
+          view={view}
+          onClose={closeDialog}
+          onCreated={(channel) => {
+            setSelectedId(channel.id);
+            closeDialog();
+          }}
         />
-      }
-    >
-      {selected !== null &&
-        (hasMessages ? (
-          <ChannelView
-            key={selected.id}
-            connection={connection}
-            view={view}
-            channel={selected}
-            log={entry.logs[selected.id]}
-          />
-        ) : (
-          <p className="sn-channel-note">This is a voice channel. It has no messages, and voice is not built yet.</p>
-        ))}
-    </AppShell>
+      )}
+      {profile !== undefined && (
+        <ProfileModal key={profile.id} connection={connection} view={view} member={profile} onClose={closeDialog} />
+      )}
+      {editing !== undefined && manageChannels && (
+        <ChannelSettingsModal
+          key={editing.id}
+          connection={connection}
+          view={view}
+          channel={editing}
+          onClose={closeDialog}
+        />
+      )}
+    </>
   );
 }
 
 /** The composer for one channel, announcing typing while the member writes. */
-function ChannelComposer(props: { connection: ServerConnection; channel: Channel; allowed: boolean; typists: Account[] }) {
-  const { connection, channel, allowed, typists } = props;
+function ChannelComposer(props: {
+  connection: ServerConnection;
+  channel: Channel;
+  allowed: boolean;
+  timedOut: boolean;
+  typists: Account[];
+}) {
+  const { connection, channel, allowed, timedOut, typists } = props;
   const lastAnnounced = useRef(0);
   return (
     <Composer
-      placeholder={allowed ? `Message #${channel.name}` : "You cannot send messages in this channel"}
+      placeholder={
+        allowed
+          ? `Message #${channel.name}`
+          : timedOut
+            ? "You can't send messages while you're timed out"
+            : "You cannot send messages in this channel"
+      }
       disabled={!allowed}
       onChange={(text) => {
         const now = Date.now();
@@ -149,6 +253,25 @@ function ChannelComposer(props: { connection: ServerConnection; channel: Channel
       footer={<TypingIndicator names={typists.map((m) => m.displayName)} />}
     />
   );
+}
+
+/**
+ * Across the top of the channel: the connection coming back, or else the
+ * member's own timeout, which the gateway ends in the view when it runs out.
+ * One at a time, the connection first.
+ */
+function StatusBanner({ reconnecting, account }: { reconnecting: boolean; account: Account }) {
+  if (reconnecting) {
+    return <Banner busy>Reconnecting…</Banner>;
+  }
+  if (account.timedOutUntil != null && isTimedOut(account, Date.now())) {
+    return (
+      <Banner>
+        You're timed out until {aheadTime(new Date(account.timedOutUntil), new Date())}. You can read, but not write.
+      </Banner>
+    );
+  }
+  return null;
 }
 
 /** The shell in the shape it is about to take, while the first `ready` is on its way. */

@@ -39,7 +39,7 @@ public class ModerationResource implements ModerationApi {
     @Override
     @PermissionsAllowed("BAN_MEMBERS")
     public RestResponse<Void> unbanMember(AccountId accountId) {
-        moderation.unban(accountId);
+        moderation.unban(actor(), accountId);
         return RestResponse.noContent();
     }
 

@@ -9,7 +9,7 @@ the client README.
 |------------------------|-----------------------------------------------------------|
 | `api/`                 | Typed REST client and type aliases, from the generated `schema.d.ts` |
 | `gateway/`             | The gateway connection: identify, sequence checks, reconnects |
-| `state/`               | The per-server view, channel message logs and the store holding them |
+| `state/`               | The per-server view, channel message logs, the store holding them, and the forms for channels and settings |
 | `servers/`             | `ServerConnection`: session, REST and gateway of one server |
 | `auth/`                | Registration challenge solving                            |
 | `platform/`            | What the app needs from where it runs                     |
@@ -110,7 +110,65 @@ lasts a week (`state/invites.ts`), so opening it again does not pile up
 invites.
 
 Registration solves the server's ALTCHA proof of work in a Web Worker
-(`auth/altcha.worker.ts`) so the page stays responsive.
+(`auth/altcha.worker.ts`) so the page stays responsive. Before that, the form
+checks the username against the contract's pattern (letters, digits and _)
+and the display name against the server's rules (`state/names.ts`: letters
+of any script, digits, punctuation, symbols and spaces, no emoji or invisible
+characters), so a mistake is explained before any work is done. The server
+has the last word.
+
+## Managing the server
+
+Members with the right permissions run the server from modals, and see the
+controls for them only while they hold the permission (`can`), so gaining or
+losing a role shows or hides them at once:
+
+- `MANAGE_SERVER`: the `settings` button beside the community name opens
+  Server settings (`ui/serverSettings.tsx`) in three tabs: Overview (name,
+  description, the notices channel), Joining (registration mode, the bot
+  check, the role for new members, the public address) and Rate limits.
+- `MANAGE_CHANNELS`: "Create channel" at the end of the channel list, and the
+  `settings` button in the channel header for the current channel's name,
+  topic, voice settings and who can see it, and deleting it
+  (`ui/channelSettings.tsx`).
+
+A modal (`Modal` in `ui/surfaces.tsx`) is a native `<dialog>`, open while it
+is mounted, so `ServerScreen` opens one by rendering it. The browser's own
+form validation is off. Instead, `state/channelForm.ts` and
+`state/settingsForm.ts` hold each form as plain data and check it the way the
+server would (a private channel needs a role, and one the member holds unless
+they are the owner), so each problem shows on its field, and on its tab.
+They also work out the update to send, with only the fields the member
+changed. Those are compared with the channel or settings as they were when
+the modal opened, so a change someone else makes meanwhile survives unless
+the member changed the same field. The server settings are fetched as their
+modal opens (`GET /server-settings`); everything else comes from the view.
+
+Changes reach the view over the gateway like anyone else's; the REST
+responses are not applied to it. Creating a channel is the exception to
+waiting: `createChannel` resolves only once the gateway has announced the new
+channel (or after a few seconds), so the modal closes onto the channel,
+already selected.
+
+## Profiles and moderation
+
+A member's name in the member list, beside their message, or in a notice
+opens their profile (`ui/profile.tsx`): who they are, when they joined, their
+roles, and whether they are timed out or banned, for everyone. Banned members
+stay in the member list, last, faded and marked with `ban`; the tooltip on
+the mark says since when. The reason is only fetched, from `GET /bans`, for
+members holding `BAN_MEMBERS`.
+
+The profile offers only what the viewer may do, worked out by
+`state/moderation.ts` the way the server decides it, so nothing it offers is
+refused. Editing roles needs `MANAGE_ROLES` and covers the roles whose
+permissions the viewer all holds. Timing out and banning need their
+permission and a member whose roles grant nothing the viewer lacks, never the
+owner (`ServerInfo.ownerId`) or oneself. Lifting a ban needs only
+`BAN_MEMBERS`. Each action is a step of the same modal (`Modal`'s `step`,
+which moves focus to the new step), and like creating a channel it resolves
+once the gateway has brought the change into the view, so the profile shows
+it straight away.
 
 ## Platform
 
@@ -133,7 +191,9 @@ says which animation means what, and each component has guidelines and a
 live preview under `components/`. In the app, `tokens.css` holds the tokens
 as CSS custom properties, `styles.css` the `sn-` component classes, and
 `ui/controls.tsx`, `ui/surfaces.tsx`, `ui/people.tsx`, `ui/layout.tsx`, `ui/invites.tsx` and
-`ui/messages.tsx` the components built on them.
+`ui/messages.tsx` the components built on them. `ui/channelSettings.tsx`,
+`ui/serverSettings.tsx` and `ui/profile.tsx` put the modals together from
+those.
 
 `ui/ChannelView.tsx` is the channel body. It scrolls from the end
 (`flex-direction: column-reverse`), so the newest message stays in place and

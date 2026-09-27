@@ -57,8 +57,10 @@ public class ModerationService {
     }
 
     @Transactional
-    public void unban(AccountId accountId) {
-        bans.delete(accountId);
+    public void unban(AccountPrincipal actor, AccountId accountId) {
+        if (bans.delete(accountId)) {
+            events.fire(new AccountEvent.Unbanned(accountId, actor.accountId()));
+        }
     }
 
     /** Starts a timeout, or replaces the running one, lasting {@code duration} from now. */

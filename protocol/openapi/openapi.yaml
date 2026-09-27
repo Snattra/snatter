@@ -178,7 +178,8 @@ paths:
                 $ref: "#/components/schemas/AuthResponse"
         "400":
           description: |
-            Request is invalid (`validation_failed`), the challenge is missing
+            Request is invalid (`validation_failed`), the display name breaks
+            its rules (`invalid_display_name`), the challenge is missing
             (`challenge_required`), or the challenge is wrong, expired or already
             used (`challenge_invalid`)
           content:
@@ -396,7 +397,9 @@ paths:
         must hold every permission the member has (`member_outranks_you`);
         the owner cannot be banned (`member_outranks_you`), and nobody can
         ban themselves (`cannot_moderate_self`). Banning a banned member replaces
-        the reason. The member's messages stay.
+        the reason. The member's messages stay, and they stay a member:
+        everyone is sent `member_updated` with `bannedAt` set, while the
+        reason is only for `BAN_MEMBERS` (`listBans`).
       security:
         - session: []
       parameters:
@@ -430,7 +433,9 @@ paths:
       tags: [moderation]
       operationId: unbanMember
       summary: Lift a ban
-      description: Requires `BAN_MEMBERS`. Idempotent. The member can log in again.
+      description: |
+        Requires `BAN_MEMBERS`. Idempotent. The member can log in again, and
+        everyone is sent `member_updated` with `bannedAt` cleared.
       security:
         - session: []
       parameters:
@@ -1915,6 +1920,13 @@ components:
           example: 1
         community:
           $ref: "#/components/schemas/Community"
+        ownerId:
+          allOf:
+            - $ref: "#/components/schemas/AccountId"
+          nullable: true
+          description: |
+            The server owner, who holds every permission and cannot be
+            moderated; null on a fresh server with no accounts yet
 
     RegistrationMode:
       type: string
@@ -2105,8 +2117,8 @@ components:
           type: string
           minLength: 3
           maxLength: 32
-          pattern: "^[A-Za-z0-9_.]+$"
-          description: Unique on this server regardless of case
+          pattern: "^[A-Za-z0-9_]+$"
+          description: Letters A to Z, digits and underscores; unique on this server regardless of case
           example: robin
         password:
           type: string
@@ -2116,7 +2128,15 @@ components:
         displayName:
           type: string
           maxLength: 64
-          description: Defaults to the username
+          description: |
+            Letters of any script, digits, punctuation, symbols and plain
+            spaces; blank means the username. Surrounding whitespace is
+            removed and runs of spaces become one, and nothing else is
+            changed. Anything else is refused with `invalid_display_name`:
+            emoji (whatever is drawn as emoji by default, flags and skin
+            tones included), control and format characters such as line
+            breaks, bidirectional overrides and zero-width characters, other
+            kinds of space, combining marks, and letters that draw nothing.
         altcha:
           type: string
           maxLength: 2048
@@ -2180,6 +2200,14 @@ components:
           description: |
             End of the member's timeout, during which they keep their roles
             but hold no permissions; null when not timed out
+        bannedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When the member was banned, which everyone may know; null when
+            they are not. The reason is only for members holding
+            `BAN_MEMBERS` (`listBans`).
         createdAt:
           type: string
           format: date-time
@@ -2414,7 +2442,7 @@ components:
               $ref: "#/components/schemas/Account"
 
     GatewayMemberUpdated:
-      description: A member's profile or roles changed
+      description: A member's profile, roles, timeout or ban changed
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object

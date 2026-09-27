@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-export type IconName = "hash" | "speaker" | "members" | "chevron-left" | "chevron-right" | "plus" | "close" | "send" | "arrow-right" | "arrow-up" | "person-add";
+export type IconName = "hash" | "speaker" | "members" | "chevron-left" | "chevron-right" | "plus" | "close" | "send" | "arrow-right" | "arrow-up" | "person-add" | "settings" | "chevron-down" | "check" | "ban";
 export type ChannelType = "text" | "voice" | "voice_text";
 export type Presence = "online" | "offline";
 
@@ -66,6 +66,51 @@ export interface FieldProps extends React.InputHTMLAttributes<HTMLInputElement> 
 }
 export declare function Field(props: FieldProps): React.ReactElement;
 
+export interface TextAreaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label: React.ReactNode;
+  hint?: React.ReactNode;
+  error?: React.ReactNode;
+  optional?: boolean;
+}
+/** A Field around a textarea, three lines tall by default, for descriptions and topics. The member can make it taller. */
+export declare function TextArea(props: TextAreaProps): React.ReactElement;
+
+export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+  label: React.ReactNode;
+  hint?: React.ReactNode;
+  error?: React.ReactNode;
+  optional?: boolean;
+  /** The options. */
+  children?: React.ReactNode;
+}
+/** A Field around a native select, its arrow drawn as `chevron-down`. For one of a list that is too long, or too plain, for Choices. */
+export declare function Select(props: SelectProps): React.ReactElement;
+
+export interface ChoiceProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> {
+  /** radio: one of a set sharing a `name`; checkbox: on or off by itself. */
+  type: "radio" | "checkbox";
+  label: React.ReactNode;
+  /** One line under the label, in `muted`; screen readers hear it after the label. */
+  description?: React.ReactNode;
+  /** Beside the label, such as a channel type; it takes the accent when chosen. */
+  icon?: IconName;
+}
+/** A radio or checkbox as a row: a mark that fills with the sheen when chosen, a label and an optional description. */
+export declare function Choice(props: ChoiceProps): React.ReactElement;
+
+export interface ChoiceGroupProps {
+  /** Names the set, like a field's label. */
+  legend: React.ReactNode;
+  hint?: React.ReactNode;
+  /** Replaces the hint and edges the empty marks in `danger`. */
+  error?: React.ReactNode;
+  className?: string;
+  /** Choices. */
+  children?: React.ReactNode;
+}
+/** A fieldset of Choices under a legend. */
+export declare function ChoiceGroup(props: ChoiceGroupProps): React.ReactElement;
+
 export interface ComposerProps {
   placeholder?: string;
   /** Accessible name; defaults to the placeholder. */
@@ -105,10 +150,22 @@ export interface CalloutProps {
 }
 export declare function Callout(props: CalloutProps): React.ReactElement;
 
+export interface TagProps {
+  /** A role's colour for the dot, #rrggbb; null shows a `muted` dot, and leaving it out shows none. */
+  color?: string | null;
+  /** `accent-text` on `accent-soft`, for what should stand out without being chosen, such as Owner. */
+  accent?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+}
+/** A small pill naming something about a person, such as a role. Gather several in a `ul.sn-tags`. */
+export declare function Tag(props: TagProps): React.ReactElement;
+
 export interface TooltipProps {
   label: React.ReactNode;
-  side?: "top" | "right" | "bottom";
-  /** Exactly one focusable element; it gets aria-describedby. */
+  /** `left` for a mark at the end of a row, such as a banned member's. */
+  side?: "top" | "right" | "bottom" | "left";
+  /** Exactly one element, usually focusable; it gets aria-describedby. A mark inside a control needs role="img" and an aria-label. */
   children: React.ReactElement;
 }
 export declare function Tooltip(props: TooltipProps): React.ReactElement;
@@ -129,6 +186,37 @@ export interface PopoverProps {
 }
 /** A small task on `floating` beside the control that opened it, in the top layer. Closes on Escape or a click outside. */
 export declare function Popover(props: PopoverProps): React.ReactElement;
+
+export interface ModalProps {
+  id?: string;
+  /** In `text-title`, sentence case: "Create channel". */
+  title: React.ReactNode;
+  /** One line under the title, such as the channel it is about. */
+  description?: React.ReactNode;
+  /** The close button, Escape and Cancel call this; the owner then unmounts the modal. */
+  onClose?: () => void;
+  /** Wraps the body and footer in a form, with the browser's own validation off; the footer's submit button sends it. */
+  onSubmit?: (event: React.FormEvent<HTMLFormElement>) => void;
+  /** Under the title, outside the scrolling body: Tabs. */
+  tabs?: React.ReactNode;
+  /** What went wrong, in `danger-text` above the footer. */
+  error?: React.ReactNode;
+  /** Buttons at the right: Cancel, then the primary action. */
+  footer?: React.ReactNode;
+  /** A destructive action at the footer's other end, such as Delete channel. */
+  footerStart?: React.ReactNode;
+  /** 560px instead of 480px, for settings with Tabs. */
+  wide?: boolean;
+  /** Beside the title, such as the member's Avatar in a profile. */
+  leading?: React.ReactNode;
+  /** The step shown, for a modal whose content changes (a question before banning); a new step focuses its `data-autofocus` control. */
+  step?: string;
+  className?: string;
+  /** The body, which scrolls: Fields, Choices. Put `data-autofocus` on the control to focus first. */
+  children?: React.ReactNode;
+}
+/** A task over the app: a native modal <dialog> on the scrim, open while it is mounted. Escape closes it; a click outside does not. */
+export declare function Modal(props: ModalProps): React.ReactElement;
 
 /* ---------- Invite ---------- */
 
@@ -225,12 +313,21 @@ export interface MemberProps {
   typing?: boolean;
   /** Role colour for the name, #rrggbb; shown only while online. */
   color?: string;
+  /** Faded, without a presence dot, and marked with `ban`. */
+  banned?: boolean;
+  /** The ban mark's tooltip; defaults to "Banned". */
+  bannedText?: string;
+  /** Opens the member's profile. */
+  onClick?: () => void;
 }
+/** A row that opens the member's profile. */
 export declare function Member(props: MemberProps): React.ReactElement;
 
 export interface MemberListProps {
   /** Rendered in order; an empty group is skipped. Headings read "Online — 3". */
-  groups: { title: string; online?: boolean; members: MemberProps[] }[];
+  groups: { title: string; online?: boolean; banned?: boolean; members: MemberProps[] }[];
+  /** Called with a member's id when their row is clicked, to open their profile. */
+  onOpen?: (id: string) => void;
   /** Pinned under the list, such as an InviteButton. */
   footer?: React.ReactNode;
   label?: string;
@@ -263,6 +360,8 @@ export interface SidebarProps {
   collapsed?: boolean;
   /** Shows the collapse chevron. */
   onToggle?: () => void;
+  /** IconButtons beside the name, such as Server settings; they fold away when collapsed. */
+  actions?: React.ReactNode;
   /** A ChannelList. */
   children?: React.ReactNode;
   /** A UserPanel. */
@@ -279,6 +378,15 @@ export interface ChannelItemProps {
   onClick?: () => void;
 }
 export declare function ChannelItem(props: ChannelItemProps): React.ReactElement;
+export interface ChannelActionProps {
+  /** "Create channel"; also the tooltip when collapsed. */
+  label: string;
+  /** Defaults to `plus`. */
+  icon?: IconName;
+  onClick?: () => void;
+}
+/** An action at the end of a ChannelList, shaped like a channel row and always `muted`. */
+export declare function ChannelAction(props: ChannelActionProps): React.ReactElement;
 
 export interface ChannelHeaderProps {
   name: string;
@@ -316,6 +424,8 @@ export interface MessageProps {
   mentioned?: boolean;
   /** Hover toolbar, usually IconButtons. */
   actions?: React.ReactNode;
+  /** Makes the author's name (and, for the mouse, avatar) open their profile. */
+  onAuthor?: () => void;
   children?: React.ReactNode;
 }
 export declare function Message(props: MessageProps): React.ReactElement;
@@ -366,13 +476,13 @@ declare global {
   interface Window {
     Snatter: {
       AppShell: typeof AppShell; ServerRail: typeof ServerRail; RailServer: typeof RailServer; RailDivider: typeof RailDivider;
-      Sidebar: typeof Sidebar; ChannelList: typeof ChannelList; ChannelItem: typeof ChannelItem; ChannelIcon: typeof ChannelIcon;
+      Sidebar: typeof Sidebar; ChannelList: typeof ChannelList; ChannelItem: typeof ChannelItem; ChannelAction: typeof ChannelAction; ChannelIcon: typeof ChannelIcon;
       ChannelHeader: typeof ChannelHeader; MessageList: typeof MessageList; Message: typeof Message; SystemMessage: typeof SystemMessage;
       NewMessagesDivider: typeof NewMessagesDivider; UnreadBar: typeof UnreadBar;
       Composer: typeof Composer; TypingIndicator: typeof TypingIndicator; MemberList: typeof MemberList; Member: typeof Member;
       UserPanel: typeof UserPanel; Avatar: typeof Avatar; Button: typeof Button; IconButton: typeof IconButton; Tabs: typeof Tabs;
-      Field: typeof Field; Card: typeof Card; Backdrop: typeof Backdrop; Callout: typeof Callout; Banner: typeof Banner;
-      Tooltip: typeof Tooltip; Popover: typeof Popover; InviteButton: typeof InviteButton; InviteLink: typeof InviteLink; Skeleton: typeof Skeleton; Spinner: typeof Spinner; Icon: typeof Icon;
+      Field: typeof Field; TextArea: typeof TextArea; Select: typeof Select; Choice: typeof Choice; ChoiceGroup: typeof ChoiceGroup; Card: typeof Card; Backdrop: typeof Backdrop; Callout: typeof Callout; Tag: typeof Tag; Banner: typeof Banner;
+      Tooltip: typeof Tooltip; Popover: typeof Popover; Modal: typeof Modal; InviteButton: typeof InviteButton; InviteLink: typeof InviteLink; Skeleton: typeof Skeleton; Spinner: typeof Spinner; Icon: typeof Icon;
       initials: typeof initials; colourFor: typeof colourFor;
     };
   }

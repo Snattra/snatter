@@ -83,6 +83,26 @@ class ModerationResourceTest {
     }
 
     @Test
+    void everyoneSeesWhoIsBannedButOnlyModeratorsWhy() {
+        TestUsers.User mod = moderator();
+        TestUsers.User member = TestUsers.register();
+        TestUsers.User watcher = TestUsers.register();
+        try (GatewayTestClient watching = GatewayTestClient.identified(watcher.token())) {
+            ban(mod.token(), member.id(), Map.of("reason", "spamming")).then().statusCode(200);
+            watching.await("member_updated", f -> member.id().equals(f.getString("member.id")) && f.getString("member.bannedAt") != null);
+            as(watcher.token()).get("/api/v1/accounts/" + member.id()).then().statusCode(200).body("bannedAt", notNullValue());
+            as(watcher.token()).get("/api/v1/bans").then().statusCode(403);
+            try (GatewayTestClient later = GatewayTestClient.identified(watcher.token())) {
+                assertTrue(later.ready().getString("members.find { it.id == '" + member.id() + "' }.bannedAt") != null);
+            }
+
+            as(mod.token()).delete("/api/v1/bans/" + member.id()).then().statusCode(204);
+            watching.await("member_updated", f -> member.id().equals(f.getString("member.id")) && f.getString("member.bannedAt") == null);
+            as(watcher.token()).get("/api/v1/accounts/" + member.id()).then().statusCode(200).body("bannedAt", nullValue());
+        }
+    }
+
+    @Test
     void onlyMembersWithinTheCallersPermissionsCanBeBanned() {
         TestUsers.User mod = moderator();
         TestUsers.User admin = TestUsers.register();

@@ -21,6 +21,8 @@ interface ChannelViewProps {
   channel: Channel;
   /** Undefined until the channel is first opened. */
   log: ChannelLog | undefined;
+  /** Opens a member's profile, from their name or avatar. */
+  onOpenProfile: (accountId: string) => void;
 }
 
 /**
@@ -33,8 +35,11 @@ interface ChannelViewProps {
  * stop reading, the divider is set after what they last saw, so whatever
  * arrives meanwhile shows as new when they come back.
  */
-export function ChannelView({ connection, view, channel, log }: ChannelViewProps) {
+export function ChannelView({ connection, view, channel, log, onOpenProfile }: ChannelViewProps) {
   const me = view.account.id;
+  // The author's profile, for a message whose author is still a member.
+  const opener = (authorId: string | null | undefined) =>
+    authorId != null && view.members[authorId] !== undefined ? () => onOpenProfile(authorId) : undefined;
   const reading = view.reading[channel.id];
   const scroller = useRef<HTMLDivElement>(null);
   const divider = useRef<HTMLDivElement>(null);
@@ -211,6 +216,7 @@ export function ChannelView({ connection, view, channel, log }: ChannelViewProps
                         message={row.message}
                         author={row.message.authorId ? view.members[row.message.authorId] : undefined}
                         isNew={log?.live[row.message.id] === true}
+                        onAuthor={opener(row.message.authorId)}
                       />
                     );
                   case "message":
@@ -223,6 +229,7 @@ export function ChannelView({ connection, view, channel, log }: ChannelViewProps
                         author={row.message.authorId ? view.members[row.message.authorId] : undefined}
                         head={row.head}
                         isNew={log?.live[row.message.id] === true}
+                        onAuthor={opener(row.message.authorId)}
                       />
                     );
                   case "pending":
@@ -233,6 +240,7 @@ export function ChannelView({ connection, view, channel, log }: ChannelViewProps
                         pending={row.pending}
                         author={view.account}
                         head={row.head}
+                        onAuthor={opener(me)}
                         onRetry={() => void connection.retry(channel.id, row.pending.nonce)}
                         onDiscard={() => connection.discard(channel.id, row.pending.nonce)}
                       />

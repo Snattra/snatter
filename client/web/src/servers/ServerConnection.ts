@@ -1,5 +1,16 @@
 import { type Api, ApiRequestError, createApi, unwrap } from "../api/client";
-import type { GatewayCloseReason, GatewayServerFrame, Invite, Message } from "../api/types";
+import type {
+  Ban,
+  Channel,
+  ChannelCreate,
+  ChannelUpdate,
+  GatewayCloseReason,
+  GatewayServerFrame,
+  Invite,
+  Message,
+  ServerSettings,
+  ServerSettingsUpdate,
+} from "../api/types";
 import { solveChallenge } from "../auth/altcha";
 import { Gateway } from "../gateway/Gateway";
 import { platform } from "../platform/platform";
@@ -18,7 +29,8 @@ import {
 } from "../state/channelLog";
 import { isAfter, later } from "../state/ids";
 import { INVITE_LIFETIME_SECONDS, reusableInvite } from "../state/invites";
-import { applyFrame, fromReady } from "../state/serverView";
+import { isTimedOut } from "../state/moderation";
+import { type ServerView, applyFrame, fromReady } from "../state/serverView";
 import { type ServerEntry, blank, useServers } from "../state/store";
 import { describeError } from "../ui/errors";
 
@@ -31,6 +43,9 @@ export interface Registration {
 
 /** The most messages fetched to catch a channel up after reconnecting; beyond that it starts over from the newest. */
 const CATCH_UP_LIMIT = 100;
+
+/** How long to wait for the gateway to bring a change into the view, as when the connection is down meanwhile. */
+const VIEW_WAIT_MS = 5_000;
 
 /**
  * Everything the app does with one server: its session, its REST API and its
@@ -101,6 +116,93 @@ export class ServerConnection {
       }
     }
     return unwrap(await this.api.POST("/api/v1/invites", { body: { expiresInSeconds: INVITE_LIFETIME_SECONDS } }));
+  }
+
+  // --- Channels ---------------------------------------------------------------
+
+  /**
+   * Creates a channel and waits for the gateway to announce it, so it can be
+   * shown as soon as this returns.
+   */
+  async createChannel(create: ChannelCreate): Promise<Channel> {
+    const channel = unwrap(await this.api.POST("/api/v1/channels", { body: create }));
+    await this.untilView((view) => view.channels[channel.id] !== undefined);
+    return channel;
+  }
+
+  /** Changes a channel; the view follows when the gateway sends the result. */
+  async updateChannel(channelId: string, update: ChannelUpdate): Promise<Channel> {
+    return unwrap(
+      await this.api.PATCH("/api/v1/channels/{id}", { params: { path: { id: channelId } }, body: update }),
+    );
+  }
+
+  async deleteChannel(channelId: string): Promise<void> {
+    unwrap(await this.api.DELETE("/api/v1/channels/{id}", { params: { path: { id: channelId } } }));
+  }
+
+  // --- Server settings --------------------------------------------------------
+
+  async serverSettings(): Promise<ServerSettings> {
+    return unwrap(await this.api.GET("/api/v1/server-settings"));
+  }
+
+  /** Changes the settings; what members see of them follows over the gateway. */
+  async updateServerSettings(update: ServerSettingsUpdate): Promise<ServerSettings> {
+    return unwrap(await this.api.PATCH("/api/v1/server-settings", { body: update }));
+  }
+
+  // --- Moderation -------------------------------------------------------------
+  // Each change resolves once the gateway shows it, so the profile that made it shows it at once.
+
+  /** Gives and takes away roles, one at a time; a refusal stops there. */
+  async changeRoles(accountId: string, add: string[], remove: string[]): Promise<void> {
+    for (const roleId of add) {
+      unwrap(
+        await this.api.PUT("/api/v1/accounts/{id}/roles/{roleId}", { params: { path: { id: accountId, roleId } } }),
+      );
+    }
+    for (const roleId of remove) {
+      unwrap(
+        await this.api.DELETE("/api/v1/accounts/{id}/roles/{roleId}", { params: { path: { id: accountId, roleId } } }),
+      );
+    }
+    await this.untilView((view) => {
+      const roleIds = view.members[accountId]?.roleIds ?? [];
+      return add.every((id) => roleIds.includes(id)) && !remove.some((id) => roleIds.includes(id));
+    });
+  }
+
+  async timeOut(accountId: string, durationSeconds: number): Promise<void> {
+    unwrap(
+      await this.api.PUT("/api/v1/timeouts/{accountId}", {
+        params: { path: { accountId } },
+        body: { durationSeconds },
+      }),
+    );
+    await this.untilView((view) => isTimedOut(view.members[accountId] ?? { timedOutUntil: null }, Date.now()));
+  }
+
+  async endTimeout(accountId: string): Promise<void> {
+    unwrap(await this.api.DELETE("/api/v1/timeouts/{accountId}", { params: { path: { accountId } } }));
+    await this.untilView((view) => !isTimedOut(view.members[accountId] ?? { timedOutUntil: null }, Date.now()));
+  }
+
+  /** Bans a member; a blank reason means none. */
+  async ban(accountId: string, reason: string): Promise<void> {
+    const body = reason.trim() === "" ? {} : { reason: reason.trim() };
+    unwrap(await this.api.PUT("/api/v1/bans/{accountId}", { params: { path: { accountId } }, body }));
+    await this.untilView((view) => view.members[accountId]?.bannedAt != null);
+  }
+
+  async liftBan(accountId: string): Promise<void> {
+    unwrap(await this.api.DELETE("/api/v1/bans/{accountId}", { params: { path: { accountId } } }));
+    await this.untilView((view) => view.members[accountId]?.bannedAt == null);
+  }
+
+  /** Every ban with its reason, for members holding `BAN_MEMBERS`. */
+  async bans(): Promise<Ban[]> {
+    return unwrap(await this.api.GET("/api/v1/bans"));
   }
 
   // --- Messages ---------------------------------------------------------------
@@ -341,6 +443,35 @@ export class ServerConnection {
     this.token = null;
     await platform.secrets.delete(this.secretKey);
     this.update({ status: "signed_out", view: null, logs: {}, notice });
+  }
+
+  /**
+   * Resolves once the view passes the test, which it does as soon as the
+   * gateway delivers the change, or the view is gone, or after
+   * {@link VIEW_WAIT_MS} in case the change is held up (the next `ready`
+   * brings it).
+   */
+  private untilView(test: (view: ServerView) => boolean): Promise<void> {
+    const passes = () => {
+      const view = this.entry().view;
+      return view === null || test(view);
+    };
+    if (passes()) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        unsubscribe();
+        resolve();
+      };
+      const timer = setTimeout(done, VIEW_WAIT_MS);
+      const unsubscribe = useServers.subscribe(() => {
+        if (passes()) {
+          done();
+        }
+      });
+    });
   }
 
   private entry(): ServerEntry {

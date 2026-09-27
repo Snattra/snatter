@@ -27,11 +27,14 @@ interface MessageProps {
   state?: "sent" | "pending" | "failed";
   /** Under a failed message: what went wrong and what to do. */
   error?: ReactNode;
+  /** Opens the author's profile from their name, and their avatar for the mouse. */
+  onAuthor?: () => void;
   children: ReactNode;
 }
 
 /** One message in a channel. */
-export function Message({ origin, author, createdAt, head, isNew = false, state = "sent", error, children }: MessageProps) {
+export function Message(props: MessageProps) {
+  const { origin, author, createdAt, head, isNew = false, state = "sent", error, onAuthor, children } = props;
   const at = new Date(createdAt);
   const name = author?.displayName ?? "Deleted account";
   return (
@@ -46,10 +49,30 @@ export function Message({ origin, author, createdAt, head, isNew = false, state 
       role="article"
       aria-label={name}
     >
-      {head && author && <Avatar origin={origin} account={author} size="lg" />}
+      {head &&
+        author &&
+        (onAuthor ? (
+          // Keyboards reach the profile through the name, so the avatar adds no stop of its own.
+          <button type="button" className="sn-message-avatar" tabIndex={-1} aria-hidden="true" onClick={onAuthor}>
+            <Avatar origin={origin} account={author} size="lg" />
+          </button>
+        ) : (
+          <Avatar origin={origin} account={author} size="lg" />
+        ))}
       {head ? (
         <div className="sn-message-meta">
-          <span className="sn-message-author">{name}</span>
+          {onAuthor ? (
+            <button
+              type="button"
+              className="sn-message-author sn-name-button"
+              aria-haspopup="dialog"
+              onClick={onAuthor}
+            >
+              {name}
+            </button>
+          ) : (
+            <span className="sn-message-author">{name}</span>
+          )}
           <time className="sn-message-time" dateTime={createdAt}>
             {longTime(at, new Date())}
           </time>
@@ -65,10 +88,24 @@ export function Message({ origin, author, createdAt, head, isNew = false, state 
   );
 }
 
-export function UserMessageRow(props: { origin: string; message: UserMessage; author: Account | undefined; head: boolean; isNew: boolean }) {
-  const { origin, message, author, head, isNew } = props;
+export function UserMessageRow(props: {
+  origin: string;
+  message: UserMessage;
+  author: Account | undefined;
+  head: boolean;
+  isNew: boolean;
+  onAuthor: (() => void) | undefined;
+}) {
+  const { origin, message, author, head, isNew, onAuthor } = props;
   return (
-    <Message origin={origin} author={author} createdAt={message.createdAt} head={head} isNew={isNew}>
+    <Message
+      origin={origin}
+      author={author}
+      createdAt={message.createdAt}
+      head={head}
+      isNew={isNew}
+      onAuthor={onAuthor}
+    >
       {message.content}
     </Message>
   );
@@ -80,10 +117,11 @@ export function PendingRow(props: {
   pending: Pending;
   author: Account;
   head: boolean;
+  onAuthor: (() => void) | undefined;
   onRetry: () => void;
   onDiscard: () => void;
 }) {
-  const { origin, pending, author, head, onRetry, onDiscard } = props;
+  const { origin, pending, author, head, onAuthor, onRetry, onDiscard } = props;
   const failed = pending.error !== null;
   return (
     <Message
@@ -93,6 +131,7 @@ export function PendingRow(props: {
       head={head}
       isNew
       state={failed ? "failed" : "pending"}
+      onAuthor={onAuthor}
       error={
         <>
           Not sent: {pending.error}
@@ -111,12 +150,25 @@ export function PendingRow(props: {
 }
 
 /** A notice the server wrote, as one muted line behind an accent arrow. */
-export function SystemMessageRow(props: { message: SystemMessageData; author: Account | undefined; isNew: boolean }) {
-  const { message, author, isNew } = props;
+export function SystemMessageRow(props: {
+  message: SystemMessageData;
+  author: Account | undefined;
+  isNew: boolean;
+  onAuthor: (() => void) | undefined;
+}) {
+  const { message, author, isNew, onAuthor } = props;
+  const who =
+    author && onAuthor ? (
+      <button type="button" className="sn-name-button" aria-haspopup="dialog" onClick={onAuthor}>
+        {author.displayName}
+      </button>
+    ) : (
+      <strong>{author?.displayName ?? "Someone"}</strong>
+    );
   return (
     <div className={classes("sn-message sn-message-system", isNew && "sn-message-new")} role="article">
       <Icon name="arrow-right" />
-      <span>{noticeText(message, <strong>{author?.displayName ?? "Someone"}</strong>)}</span>
+      <span>{noticeText(message, who)}</span>
       <time className="sn-message-time" dateTime={message.createdAt}>
         {longTime(new Date(message.createdAt), new Date())}
       </time>

@@ -33,6 +33,7 @@ public class ServerInfoDtos {
             .version(version)
             .apiVersion(API_VERSION)
             .community(new CommunityDto().name(s.name()).description(s.description()))
+            .ownerId(s.ownerId())
             .registration(new RegistrationInfoDto()
                 .mode(RegistrationModeDto.fromValue(s.registrationMode().dbValue()))
                 .challengeRequired(s.challengeRequired())

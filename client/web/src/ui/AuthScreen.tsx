@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { unwrap } from "../api/client";
 import type { InvitePreview, ServerInfo } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
+import { USERNAME_PATTERN, displayNameProblem, tidyDisplayName } from "../state/names";
 import { Button, Field, Tabs } from "./controls";
 import { describeError } from "./errors";
 import { Backdrop, Callout, Card } from "./surfaces";
@@ -70,7 +71,12 @@ export function AuthScreen({ connection, notice, invite }: AuthScreenProps) {
       return;
     }
     const form = new FormData(event.currentTarget);
-    const displayName = text(form, "displayName").trim();
+    const displayName = tidyDisplayName(text(form, "displayName"));
+    const problem = displayNameProblem(displayName);
+    if (problem !== null) {
+      setError(problem);
+      return;
+    }
     const inviteCode = text(form, "inviteCode").trim();
     // The first account on a fresh server needs no challenge.
     const challenge = info.registration.challengeRequired && !info.registration.setupRequired;
@@ -128,9 +134,18 @@ export function AuthScreen({ connection, notice, invite }: AuthScreenProps) {
               required
               minLength={3}
               maxLength={32}
-              pattern="[A-Za-z0-9_.]+"
+              pattern={USERNAME_PATTERN}
+              title="Letters, digits and _ only"
+              hint="3 to 32 letters, digits and _."
             />
-            <Field label="Display name" optional name="displayName" autoComplete="nickname" maxLength={64} />
+            <Field
+              label="Display name"
+              optional
+              name="displayName"
+              autoComplete="nickname"
+              maxLength={64}
+              hint="How others see you. Letters, digits, punctuation and spaces; no emoji."
+            />
             <Field
               label="Password"
               name="password"

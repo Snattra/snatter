@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useContext } from "react";
 import type { Channel } from "../api/types";
 import { classes } from "./classes";
 import { IconButton } from "./controls";
-import { ChannelIcon } from "./icons";
+import { ChannelIcon, Icon, type IconName } from "./icons";
 import { initials } from "./people";
 import { Tooltip } from "./surfaces";
 
@@ -75,6 +75,8 @@ interface SidebarProps {
   name: ReactNode;
   collapsed: boolean;
   onToggle?: () => void;
+  /** IconButtons beside the name, such as Server settings; they fold away with it when collapsed. */
+  actions?: ReactNode;
   /** A ChannelList. */
   children: ReactNode;
   /** A UserPanel. */
@@ -82,12 +84,13 @@ interface SidebarProps {
 }
 
 /** The channel pane. Collapsed, its labels fade while icons and avatars stay where they are. */
-export function Sidebar({ name, collapsed, onToggle, children, footer }: SidebarProps) {
+export function Sidebar({ name, collapsed, onToggle, actions, children, footer }: SidebarProps) {
   return (
     <Collapsed.Provider value={collapsed}>
       <aside className={classes("sn-sidebar", collapsed && "sn-collapsed")}>
         <header className="sn-pane-header">
-          <span className="sn-truncate sn-collapse-fade">{name}</span>
+          <span className="sn-pane-header-name sn-truncate sn-collapse-fade">{name}</span>
+          {actions && <span className="sn-pane-header-actions sn-collapse-fade">{actions}</span>}
           {onToggle && (
             <IconButton
               icon={collapsed ? "chevron-right" : "chevron-left"}
@@ -132,6 +135,30 @@ export function ChannelItem({ channel, selected, unread, onClick }: ChannelItemP
       <ChannelIcon channel={channel} />
       <span className="sn-channel-name sn-truncate sn-collapse-fade">{channel.name}</span>
       {unread && <span className="sn-visually-hidden">, unread</span>}
+    </button>
+  );
+}
+
+interface ChannelActionProps {
+  icon: IconName;
+  /** Also the tooltip while the sidebar is collapsed. */
+  label: string;
+  onClick: () => void;
+}
+
+/** An action at the end of the channel list, such as Create channel: a row that opens a modal. */
+export function ChannelAction({ icon, label, onClick }: ChannelActionProps) {
+  const collapsed = useContext(Collapsed);
+  return (
+    <button
+      type="button"
+      className="sn-channel sn-channel-action"
+      aria-haspopup="dialog"
+      title={collapsed ? label : undefined}
+      onClick={onClick}
+    >
+      <Icon name={icon} />
+      <span className="sn-channel-name sn-truncate sn-collapse-fade">{label}</span>
     </button>
   );
 }

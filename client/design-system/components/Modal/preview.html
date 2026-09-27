@@ -1,0 +1,78 @@
+<!-- @dsCard group="Surfaces" height=620 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Modal</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { display: flex; align-items: flex-start; gap: var(--space-8); min-height: 100vh; padding: var(--space-24); background: var(--panel-raised); }
+  .demo .sn-button { flex: none; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  var types = [
+    { id: "text", icon: "hash", label: "Text", description: "Messages, for everyone who can see it." },
+    { id: "voice", icon: "speaker", label: "Voice", description: "Talk together, without messages." },
+    { id: "voice_text", icon: "speaker", label: "Voice and text", description: "Talk together, with messages alongside." }
+  ];
+
+  // Creating a channel: the form, its check on submit, and the busy primary button.
+  function CreateChannel(props) {
+    var type = useState("text"), name = useState(""), priv = useState(false), error = useState(null), busy = useState(false);
+    return h(S.Modal, {
+      title: "Create channel",
+      onClose: props.onClose,
+      onSubmit: function () {
+        if (!name[0].trim()) { error[1]("Give the channel a name."); return; }
+        error[1](null); busy[1](true);
+        setTimeout(props.onClose, 1200);
+      },
+      footer: h(React.Fragment, null,
+        h(S.Button, { onClick: props.onClose }, "Cancel"),
+        h(S.Button, { variant: "primary", type: "submit", busy: busy[0] }, busy[0] ? "Creating…" : "Create channel"))
+    },
+      h(S.ChoiceGroup, { legend: "Type" }, types.map(function (t) {
+        return h(S.Choice, { key: t.id, type: "radio", name: "type", icon: t.icon, label: t.label, description: t.description,
+          checked: type[0] === t.id, onChange: function () { type[1](t.id); } });
+      })),
+      h(S.Field, { label: "Name", placeholder: "new-channel", "data-autofocus": true, value: name[0], error: error[0],
+        onChange: function (e) { name[1](e.target.value); } }),
+      h(S.Choice, { type: "checkbox", label: "Private channel", description: "Only members with the roles you choose, and the owner, can see it.",
+        checked: priv[0], onChange: function (e) { priv[1](e.target.checked); } }));
+  }
+
+  // Asking before a deletion: the same modal, turned into the question.
+  function DeleteChannel(props) {
+    return h(S.Modal, {
+      title: "Delete channel",
+      description: h(React.Fragment, null, h(S.Icon, { name: "hash" }), "patch-notes"),
+      onClose: props.onClose,
+      onSubmit: props.onClose,
+      footer: h(React.Fragment, null,
+        h(S.Button, { onClick: props.onClose, "data-autofocus": true }, "Cancel"),
+        h(S.Button, { variant: "danger", type: "submit" }, "Delete channel"))
+    }, h("p", { className: "sn-modal-text" }, "The channel and all of its messages are deleted for everyone. This can't be undone."));
+  }
+
+  function Demo() {
+    var open = useState("create");
+    function close() { open[1](null); }
+    return h("div", { className: "demo" },
+      h(S.Button, { onClick: function () { open[1]("create"); } }, "Create channel"),
+      h(S.Button, { variant: "danger", onClick: function () { open[1]("delete"); } }, "Delete channel"),
+      open[0] === "create" && h(CreateChannel, { onClose: close }),
+      open[0] === "delete" && h(DeleteChannel, { onClose: close }));
+  }
+  ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
+
+</script>
+</body>
+</html>

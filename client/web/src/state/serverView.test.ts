@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Account, Channel, GatewayServerFrame, Message } from "../api/types";
-import { TYPING_SHOWN_MS, applyFrame, canInvite, fromReady, hasUnread, sortedChannels, typingIn } from "./serverView";
+import {
+  TYPING_SHOWN_MS,
+  applyFrame,
+  canInvite,
+  fromReady,
+  hasUnread,
+  sortedChannels,
+  sortedRoles,
+  typingIn,
+} from "./serverView";
 
 type Ready = Extract<GatewayServerFrame, { type: "ready" }>;
 type Event = Exclude<GatewayServerFrame, Ready>;
@@ -71,6 +80,22 @@ describe("serverView", () => {
     );
     expect(sortedChannels(view).map((c) => c.name)).toEqual(["renamed", "b"]);
     expect(view.reading["a"]).toBeUndefined();
+  });
+
+  it("lists roles highest first", () => {
+    const role = (id: string, position: number) => ({
+      id,
+      name: id,
+      position,
+      permissions: [],
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const view = apply(
+      { type: "role_created", seq: 2, role: role("user", 0) },
+      { type: "role_created", seq: 3, role: role("admin", 2) },
+      { type: "role_created", seq: 4, role: role("moderator", 1) },
+    );
+    expect(sortedRoles(view).map((r) => r.id)).toEqual(["admin", "moderator", "user"]);
   });
 
   it("follows presence", () => {

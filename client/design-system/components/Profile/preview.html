@@ -1,0 +1,59 @@
+<!-- @dsCard group="People" height=560 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Profile</title>
+<style>
+  html, body { height: 100%; }
+  #root { min-height: 100%; }
+
+  .demo { min-height: 100vh; background: var(--panel-raised); }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var S = window.Snatter, h = React.createElement, useState = React.useState;
+
+  var roles = [{ name: "Moderator", color: "#5ed4c4" }, { name: "User", color: null }];
+
+  // A moderator looking at a timed-out member; Ban opens the step that asks first.
+  function Profile() {
+    var step = useState("profile");
+    var who = h(React.Fragment, null, "@mallard");
+    var leading = h(S.Avatar, { name: "Mallard", seed: "mallard", status: "online", size: "lg" });
+    if (step[0] === "ban") {
+      return h(S.Modal, {
+        title: "Ban Mallard", description: who, leading: leading, step: "ban",
+        onClose: function () { step[1]("profile"); }, onSubmit: function () { step[1]("profile"); },
+        footer: h(React.Fragment, null,
+          h(S.Button, { onClick: function () { step[1]("profile"); } }, "Cancel"),
+          h(S.Button, { variant: "danger", type: "submit" }, "Ban"))
+      },
+        h("p", { className: "sn-modal-text" }, "They are signed out everywhere and can't sign in again until the ban is lifted. Their messages stay."),
+        h(S.Field, { label: "Reason", optional: true, "data-autofocus": true, hint: "Shown to them when they try to sign in, and to members who can ban." }));
+    }
+    return h(S.Modal, {
+      title: "Mallard", description: who, leading: leading, step: "profile",
+      onClose: function () {},
+      footerStart: h(S.Button, { variant: "danger", onClick: function () { step[1]("ban"); } }, "Ban"),
+      footer: h(React.Fragment, null,
+        h(S.Button, null, "Edit roles"),
+        h(S.Button, null, "End timeout"),
+        h(S.Button, null, "Close"))
+    },
+      h(S.Callout, { tone: "warning", title: "Timed out" }, "Until today at 18:30. They can read, but not write or do anything else."),
+      h("dl", { className: "sn-profile-facts" },
+        h("div", null, h("dt", null, "Member since"), h("dd", null, "14 March 2026")),
+        h("div", null, h("dt", null, "Roles"), h("dd", null, h("ul", { className: "sn-tags" }, roles.map(function (r) {
+          return h("li", { key: r.name }, h(S.Tag, { color: r.color }, r.name));
+        }))))));
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(h("div", { className: "demo" }, h(Profile)));
+
+</script>
+</body>
+</html>

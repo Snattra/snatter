@@ -51,6 +51,24 @@ class AuthResourceTest {
     }
 
     @Test
+    void displayNamesAreTrimmedAndCheckedBeforeAnythingElse() {
+        TestUsers.registerRaw(TestUsers.registration(uniqueUsername(), TestUsers.DEFAULT_PASSWORD, "  Robin    J\u00f6nsson "))
+            .then()
+            .statusCode(201)
+            .body("account.displayName", equalTo("Robin J\u00f6nsson"));
+        String username = uniqueUsername();
+        TestUsers.registerRaw(TestUsers.registration(username, TestUsers.DEFAULT_PASSWORD, "Mallard \ud83e\udd86"))
+            .then()
+            .statusCode(400)
+            .body("error", equalTo("invalid_display_name"));
+        // Nothing was created, so the username is still free; a blank name falls back to it.
+        TestUsers.registerRaw(TestUsers.registration(username, TestUsers.DEFAULT_PASSWORD, "   "))
+            .then()
+            .statusCode(201)
+            .body("account.displayName", equalTo(username));
+    }
+
+    @Test
     void usernameIsUniqueIgnoringCase() {
         TestUsers.User u = TestUsers.register();
         TestUsers.registerRaw(TestUsers.registration(u.username().toUpperCase(), TestUsers.DEFAULT_PASSWORD, null))
@@ -67,6 +85,14 @@ class AuthResourceTest {
             .body("error", equalTo("validation_failed"))
             .body("fields", hasKey("username"))
             .body("fields", hasKey("password"));
+        String suffix = UUID.randomUUID().toString().substring(0, 4);
+        for (String username : new String[] {"dotted.name" + suffix, "dashed-name" + suffix, "\u00e5sa_" + suffix}) {
+            TestUsers.registerRaw(TestUsers.registration(username, TestUsers.DEFAULT_PASSWORD, null))
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("validation_failed"))
+                .body("fields", hasKey("username"));
+        }
     }
 
     @Test

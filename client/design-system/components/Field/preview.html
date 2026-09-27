@@ -1,4 +1,4 @@
-<!-- @dsCard group="Forms" height=290 -->
+<!-- @dsCard group="Forms" height=520 -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -23,7 +23,12 @@
     return h("div", { className: "demo" }, h("div", { className: "stack" },
       h(S.Field, { label: "Display name", optional: true, placeholder: "How others see you", hint: "Up to 64 characters." }),
       h(S.Field, { label: "Username", defaultValue: "mallard", error: err[0] }),
-      h(S.Button, { variant: "primary", onClick: function () { err[1](err[0] === "That username is taken." ? "Usernames use letters, digits, _ and ." : "That username is taken."); } }, "Try again (shakes)")));
+      h(S.TextArea, { label: "Description", optional: true, defaultValue: "A small server for the Thursday crew.", hint: "Shown to people signing in." }),
+      h(S.Select, { label: "Notices channel", defaultValue: "general", hint: "Where joins and server changes are announced." },
+        h("option", { value: "" }, "Don't post notices"),
+        h("option", { value: "general" }, "general"),
+        h("option", { value: "patch-notes" }, "patch-notes")),
+      h(S.Button, { variant: "primary", onClick: function () { err[1](err[0] === "That username is taken." ? "Usernames use letters, digits and _." : "That username is taken."); } }, "Try again (shakes)")));
   }
   ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
 

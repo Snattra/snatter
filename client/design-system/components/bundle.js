@@ -1,10 +1,11 @@
-/* @ds-bundle: {"format":4,"namespace":"Snatter","components":[{"name":"AppShell"},{"name":"ServerRail"},{"name":"Sidebar"},{"name":"ChannelHeader"},{"name":"Message"},{"name":"NewMessages"},{"name":"Composer"},{"name":"TypingIndicator"},{"name":"MemberList"},{"name":"UserPanel"},{"name":"Avatar"},{"name":"Button"},{"name":"IconButton"},{"name":"Tabs"},{"name":"Field"},{"name":"Card"},{"name":"Callout"},{"name":"Banner"},{"name":"Tooltip"},{"name":"Popover"},{"name":"Invite"},{"name":"Skeleton"},{"name":"Icon"}]} */
+/* @ds-bundle: {"format":4,"namespace":"Snatter","components":[{"name":"AppShell"},{"name":"ServerRail"},{"name":"Sidebar"},{"name":"ChannelHeader"},{"name":"Message"},{"name":"NewMessages"},{"name":"Composer"},{"name":"TypingIndicator"},{"name":"MemberList"},{"name":"UserPanel"},{"name":"Avatar"},{"name":"Button"},{"name":"IconButton"},{"name":"Tabs"},{"name":"Field"},{"name":"Choice"},{"name":"Card"},{"name":"Callout"},{"name":"Tag"},{"name":"Banner"},{"name":"Tooltip"},{"name":"Popover"},{"name":"Modal"},{"name":"Invite"},{"name":"Profile"},{"name":"Skeleton"},{"name":"Icon"}]} */
 (function () {
   "use strict";
   var React = window.React;
   var h = React.createElement;
   var useState = React.useState;
   var useEffect = React.useEffect;
+  var useLayoutEffect = React.useLayoutEffect;
   var useRef = React.useRef;
   var useContext = React.useContext;
 
@@ -46,7 +47,12 @@
     "arrow-right": "M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z",
     "arrow-up": "M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20z",
     "person-add":
-      "M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+      "M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+    settings:
+      "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z",
+    "chevron-down": "M18 9l-6 6-6-6 1.4-1.4 4.6 4.6 4.6-4.6z",
+    check: "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+    ban: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9A7.9 7.9 0 0 1 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1A7.9 7.9 0 0 1 20 12c0 4.42-3.58 8-8 8z"
   };
 
   function Icon(props) {
@@ -163,24 +169,24 @@
 
   /* ---------- Forms ---------- */
 
-  function Field(props) {
-    var id = useStableId(props.id);
-    var inputRef = useRef(null);
-    var rest = omit(props, ["label", "hint", "error", "optional", "className", "id"]);
-    var describedBy = props.error ? id + "-error" : props.hint ? id + "-hint" : undefined;
-
-    // A new error shakes the field again, even when it was already invalid.
+  // A new error shakes the control again, even when it was already invalid.
+  function useShake(error) {
+    var ref = useRef(null);
     useEffect(
       function () {
-        var el = inputRef.current;
-        if (!props.error || !el) return;
+        var el = ref.current;
+        if (!error || !el) return;
         el.style.animation = "none";
         void el.offsetWidth;
         el.style.animation = "";
       },
-      [props.error]
+      [error]
     );
+    return ref;
+  }
 
+  /** Label, control, and a hint or error under it, for Field, TextArea and Select. */
+  function fieldFrame(props, id, control) {
     return h(
       "div",
       { className: cx("sn-field", props.error && "sn-field-invalid", props.className) },
@@ -190,16 +196,85 @@
         props.label,
         props.optional && h("span", { className: "sn-field-optional" }, " (optional)")
       ),
+      control,
+      props.error
+        ? h("span", { className: "sn-field-error", id: id + "-error", role: "alert" }, props.error)
+        : props.hint && h("span", { className: "sn-field-hint", id: id + "-hint" }, props.hint)
+    );
+  }
+
+  function controlProps(props, id, ref) {
+    return Object.assign(omit(props, ["label", "hint", "error", "optional", "className", "id", "children"]), {
+      ref: ref,
+      id: id,
+      className: "sn-input",
+      "aria-invalid": props.error ? true : undefined,
+      "aria-describedby": props.error ? id + "-error" : props.hint ? id + "-hint" : undefined
+    });
+  }
+
+  function Field(props) {
+    var id = useStableId(props.id);
+    var ref = useShake(props.error);
+    return fieldFrame(props, id, h("input", controlProps(props, id, ref)));
+  }
+
+  function TextArea(props) {
+    var id = useStableId(props.id);
+    var ref = useShake(props.error);
+    return fieldFrame(props, id, h("textarea", Object.assign({ rows: 3 }, controlProps(props, id, ref))));
+  }
+
+  function Select(props) {
+    var id = useStableId(props.id);
+    var ref = useShake(props.error);
+    return fieldFrame(
+      props,
+      id,
+      h("span", { className: "sn-select" }, h("select", controlProps(props, id, ref), props.children), h(Icon, { name: "chevron-down" }))
+    );
+  }
+
+  /* ---------- Choice ---------- */
+
+  function Choice(props) {
+    var id = useStableId(props.id);
+    var radio = props.type === "radio";
+    var rest = omit(props, ["type", "label", "description", "icon", "className", "id"]);
+    return h(
+      "label",
+      { className: cx("sn-choice", radio && "sn-choice-radio", props.className) },
       h(
         "input",
-        Object.assign({}, rest, {
-          ref: inputRef,
+        Object.assign(rest, {
+          type: radio ? "radio" : "checkbox",
           id: id,
-          className: "sn-input",
-          "aria-invalid": props.error ? true : undefined,
-          "aria-describedby": describedBy
+          className: "sn-choice-input",
+          "aria-labelledby": id + "-label",
+          "aria-describedby": props.description ? id + "-description" : undefined
         })
       ),
+      h("span", { className: "sn-choice-mark", "aria-hidden": "true" }, !radio && h(Icon, { name: "check" })),
+      props.icon && h(Icon, { name: props.icon }),
+      h(
+        "span",
+        { className: "sn-choice-text" },
+        h("span", { className: "sn-choice-label", id: id + "-label" }, props.label),
+        props.description && h("span", { className: "sn-choice-description", id: id + "-description" }, props.description)
+      )
+    );
+  }
+
+  function ChoiceGroup(props) {
+    var id = useStableId();
+    return h(
+      "fieldset",
+      {
+        className: cx("sn-choices", props.error && "sn-choices-invalid", props.className),
+        "aria-describedby": props.error ? id + "-error" : props.hint ? id + "-hint" : undefined
+      },
+      h("legend", { className: "sn-choices-legend" }, props.legend),
+      h("div", { className: "sn-choices-list" }, props.children),
       props.error
         ? h("span", { className: "sn-field-error", id: id + "-error", role: "alert" }, props.error)
         : props.hint && h("span", { className: "sn-field-hint", id: id + "-hint" }, props.hint)
@@ -277,6 +352,16 @@
     );
   }
 
+  function Tag(props) {
+    return h(
+      "span",
+      { className: cx("sn-tag", props.accent && "sn-tag-accent", props.className) },
+      props.color !== undefined &&
+        h("span", { className: "sn-tag-dot", "aria-hidden": "true", style: props.color ? { background: props.color } : undefined }),
+      props.children
+    );
+  }
+
   function Tooltip(props) {
     var id = useStableId();
     var child = React.Children.only(props.children);
@@ -284,7 +369,8 @@
       "span",
       { className: "sn-tooltip-anchor" },
       React.cloneElement(child, { "aria-describedby": id, title: undefined }),
-      h("span", { id: id, role: "tooltip", className: "sn-tooltip sn-tooltip-" + (props.side || "top") }, props.label)
+      // Hidden from names, so a tooltip inside a button is not read as part of it; aria-describedby still reads it.
+      h("span", { id: id, role: "tooltip", "aria-hidden": "true", className: "sn-tooltip sn-tooltip-" + (props.side || "top") }, props.label)
     );
   }
 
@@ -353,6 +439,92 @@
       h("h2", { id: id + "-title", className: "sn-popover-title" }, props.title),
       props.description && h("p", { className: "sn-popover-description" }, props.description),
       props.children
+    );
+  }
+
+  /* ---------- Modal ---------- */
+
+  function Modal(props) {
+    var id = useStableId(props.id);
+    var ref = useRef(null);
+    var shownStep = useRef(props.step);
+    var onClose = props.onClose;
+
+    // A new step takes focus to its own data-autofocus control, as the one that had it is gone.
+    useEffect(
+      function () {
+        if (shownStep.current === props.step) return;
+        shownStep.current = props.step;
+        var target = ref.current && ref.current.querySelector("[data-autofocus]");
+        if (target) target.focus();
+      },
+      [props.step]
+    );
+
+    // Open while mounted, as a modal: the top layer, the focus trap and Escape
+    // come with <dialog>. Closing it hands focus back to what opened it.
+    useLayoutEffect(function () {
+      var el = ref.current;
+      if (!el.open) el.showModal();
+      var first = el.querySelector("[data-autofocus]");
+      if (first) first.focus();
+      return function () {
+        if (el.open) el.close();
+      };
+    }, []);
+
+    var content = [
+      h("div", { key: "body", className: "sn-modal-body" }, props.children),
+      props.error && h("p", { key: "error", className: "sn-modal-error", role: "alert" }, props.error),
+      (props.footer || props.footerStart) &&
+        h(
+          "footer",
+          { key: "footer", className: "sn-modal-footer" },
+          props.footerStart && h("div", { className: "sn-modal-footer-start" }, props.footerStart),
+          props.footer
+        )
+    ];
+
+    return h(
+      "dialog",
+      {
+        ref: ref,
+        className: cx("sn-modal", props.wide && "sn-modal-wide", props.className),
+        "aria-labelledby": id + "-title",
+        "aria-describedby": props.description ? id + "-description" : undefined,
+        // Escape: the owner closes it by no longer rendering it.
+        onCancel: function (e) {
+          e.preventDefault();
+          if (onClose) onClose();
+        }
+      },
+      h(
+        "header",
+        { className: "sn-modal-header" },
+        props.leading && h("div", { className: "sn-modal-leading" }, props.leading),
+        h(
+          "div",
+          { className: "sn-modal-heading" },
+          h("h2", { id: id + "-title", className: "sn-modal-title" }, props.title),
+          props.description && h("p", { id: id + "-description", className: "sn-modal-description" }, props.description)
+        ),
+        onClose && h(IconButton, { icon: "close", label: "Close", onClick: onClose })
+      ),
+      props.tabs && h("div", { className: "sn-modal-tabs" }, props.tabs),
+      props.onSubmit
+        ? h(
+            "form",
+            {
+              className: "sn-modal-form",
+              noValidate: true,
+              onSubmit: function (e) {
+                e.preventDefault();
+                props.onSubmit(e);
+              }
+            },
+            content
+          )
+        : content
     );
   }
 
@@ -585,12 +757,37 @@
   }
 
   function Member(props) {
+    var banned = !!props.banned;
     return h(
       "li",
-      { className: cx("sn-member", !props.online && "sn-member-offline") },
-      h(Avatar, { name: props.name, src: props.src, seed: props.seed || props.id, status: props.online ? "online" : "offline" }),
-      h("span", { className: "sn-member-name sn-truncate", style: props.color && props.online ? { color: props.color } : undefined }, props.name),
-      props.typing && h(TypingIndicator, { compact: true })
+      null,
+      h(
+        "button",
+        {
+          type: "button",
+          className: cx("sn-member", !props.online && "sn-member-offline", banned && "sn-member-banned"),
+          "aria-haspopup": "dialog",
+          onClick: props.onClick
+        },
+        h(Avatar, {
+          name: props.name,
+          src: props.src,
+          seed: props.seed || props.id,
+          status: banned ? undefined : props.online ? "online" : "offline"
+        }),
+        h(
+          "span",
+          { className: "sn-member-name sn-truncate", style: props.color && props.online && !banned ? { color: props.color } : undefined },
+          props.name
+        ),
+        props.typing && h(TypingIndicator, { compact: true }),
+        banned &&
+          h(
+            Tooltip,
+            { label: props.bannedText || "Banned", side: "left" },
+            h("span", { className: "sn-member-mark", role: "img", "aria-label": "Banned" }, h(Icon, { name: "ban" }))
+          )
+      )
     );
   }
 
@@ -608,7 +805,14 @@
             "ul",
             null,
             group.members.map(function (m) {
-              return h(Member, Object.assign({ key: m.id }, m, { online: m.online !== undefined ? m.online : group.online }));
+              return h(
+                Member,
+                Object.assign({ key: m.id }, m, {
+                  online: m.online !== undefined ? m.online : group.online,
+                  banned: m.banned !== undefined ? m.banned : group.banned,
+                  onClick: props.onOpen && function () { props.onOpen(m.id); }
+                })
+              );
             })
           )
         );
@@ -668,7 +872,8 @@
         h(
           "header",
           { className: "sn-pane-header" },
-          h("span", { className: "sn-truncate sn-collapse-fade", "aria-hidden": collapsed ? "true" : undefined }, props.name),
+          h("span", { className: "sn-pane-header-name sn-truncate sn-collapse-fade", "aria-hidden": collapsed ? "true" : undefined }, props.name),
+          props.actions && h("span", { className: "sn-pane-header-actions sn-collapse-fade" }, props.actions),
           props.onToggle &&
             h(IconButton, {
               icon: collapsed ? "chevron-right" : "chevron-left",
@@ -699,6 +904,21 @@
       },
       h(ChannelIcon, { type: props.type }),
       h("span", { className: "sn-channel-name sn-truncate sn-collapse-fade" }, props.name)
+    );
+  }
+
+  function ChannelAction(props) {
+    var collapsed = useContext(CollapsedContext);
+    return h(
+      "button",
+      {
+        type: "button",
+        className: "sn-channel sn-channel-action",
+        title: collapsed ? props.label : undefined,
+        onClick: props.onClick
+      },
+      h(Icon, { name: props.icon || "plus" }),
+      h("span", { className: "sn-channel-name sn-truncate sn-collapse-fade" }, props.label)
     );
   }
 
@@ -744,12 +964,29 @@
         role: "article",
         "aria-label": props.author
       },
-      head && h(Avatar, { name: props.author, src: props.src, seed: props.seed || props.author, size: "lg" }),
+      head &&
+        (props.onAuthor
+          ? h(
+              "button",
+              { type: "button", className: "sn-message-avatar", tabIndex: -1, "aria-hidden": "true", onClick: props.onAuthor },
+              h(Avatar, { name: props.author, src: props.src, seed: props.seed || props.author, size: "lg" })
+            )
+          : h(Avatar, { name: props.author, src: props.src, seed: props.seed || props.author, size: "lg" })),
       head
         ? h(
             "div",
             { className: "sn-message-meta" },
-            h("span", { className: "sn-message-author", style: props.color ? { color: props.color } : undefined }, props.author),
+            h(
+              props.onAuthor ? "button" : "span",
+              {
+                type: props.onAuthor ? "button" : undefined,
+                className: cx("sn-message-author", props.onAuthor && "sn-name-button"),
+                "aria-haspopup": props.onAuthor ? "dialog" : undefined,
+                style: props.color ? { color: props.color } : undefined,
+                onClick: props.onAuthor
+              },
+              props.author
+            ),
             props.time && h("time", { className: "sn-message-time", dateTime: props.dateTime }, props.time)
           )
         : props.shortTime && h("time", { className: "sn-message-gutter-time", dateTime: props.dateTime }, props.shortTime),
@@ -827,6 +1064,7 @@
     Sidebar: Sidebar,
     ChannelList: ChannelList,
     ChannelItem: ChannelItem,
+    ChannelAction: ChannelAction,
     ChannelIcon: ChannelIcon,
     ChannelHeader: ChannelHeader,
     MessageList: MessageList,
@@ -844,12 +1082,18 @@
     IconButton: IconButton,
     Tabs: Tabs,
     Field: Field,
+    TextArea: TextArea,
+    Select: Select,
+    Choice: Choice,
+    ChoiceGroup: ChoiceGroup,
     Card: Card,
     Backdrop: Backdrop,
     Callout: Callout,
+    Tag: Tag,
     Banner: Banner,
     Tooltip: Tooltip,
     Popover: Popover,
+    Modal: Modal,
     InviteButton: InviteButton,
     InviteLink: InviteLink,
     Skeleton: Skeleton,
