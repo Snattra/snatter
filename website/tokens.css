@@ -1,8 +1,6 @@
 /*
- * Snatter design tokens, the Harbor palette: navy panes and an azure sheen
- * that turns cyan on whatever is chosen. Every colour, size and motion in
- * styles.css comes from here. website/tokens.css is a copy for the public
- * site: change the two together.
+ * A copy of client/web/src/tokens.css, so the website deploys on its own.
+ * Change the two together, with client/design-system/tokens.json.
  */
 
 :root {

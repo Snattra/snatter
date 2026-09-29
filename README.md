@@ -33,6 +33,7 @@ Windows first, then macOS, then Linux.
 | `server/`   | The Snatter server (Java, Quarkus)                | AGPL-3.0    |
 | `client/`   | The web client and, later, the desktop app        | AGPL-3.0    |
 | `protocol/` | Protocol definitions shared by server and clients | Apache-2.0  |
+| `website/`  | The public website at snatter.app, static HTML    | AGPL-3.0    |
 
 
 ## Running with Docker Compose

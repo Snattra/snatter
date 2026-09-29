@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- A selected server icon: the sheen, rounded to radius-lg, with the initial in on-accent. -->
+  <defs>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#65bdfd"/>
+      <stop offset="1" stop-color="#58d1e5"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="16" fill="url(#sheen)"/>
+  <text x="24" y="33" text-anchor="middle" fill="#051729" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="700">S</text>
+</svg>

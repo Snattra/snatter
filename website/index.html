@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snatter: the voice and text server you run yourself</title>
+  <meta name="description" content="Snatter is a free, open source voice and text server for gamers and hobby communities. Host it yourself, keep your conversations private, and choose your own audio quality. Coming soon.">
+  <meta name="theme-color" content="#0c141e">
+  <meta name="color-scheme" content="dark">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://snatter.app/">
+  <meta property="og:title" content="Snatter: the voice and text server you run yourself">
+  <meta property="og:description" content="Free, self-hosted and private voice and text chat for gamers and hobby communities. Coming soon.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <!-- The glows behind the page: harbour lights on the water at night. -->
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="wordmark" href="./">Snatter</a>
+      <nav class="top-nav" aria-label="Site">
+        <a class="top-link" href="#features">Features</a>
+        <a class="top-link" href="https://github.com/Snattra">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <p class="tag tag-accent arrive"><span class="tag-dot" aria-hidden="true"></span>In development</p>
+      <h1 id="hero-title" class="hero-title arrive">Coming soon<span class="hero-mark" aria-hidden="true"></span></h1>
+      <p class="hero-lead arrive">
+        Snatter is the voice and text server you run yourself. Free, private and
+        yours, for gamers, clans and hobby communities.
+      </p>
+      <div class="hero-actions arrive">
+        <a class="button button-primary" href="https://github.com/Snattra">
+          Follow on GitHub
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+        </a>
+        <a class="button" href="#features">See what's planned</a>
+      </div>
+    </section>
+
+    <!--
+      A render of the app, built from the same tokens and shapes as client/web.
+      script.js plays a short evening on the server once it scrolls into view.
+    -->
+    <figure class="showcase wrap-wide" role="img" aria-label="The Snatter app: a server rail, the channels of a server called Pondside, a conversation in general and the list of members.">
+      <div class="showcase-glow" aria-hidden="true"></div>
+      <div class="window" aria-hidden="true">
+        <div class="app">
+          <nav class="app-rail">
+            <span class="app-rail-item is-selected"><span class="app-pill"></span><span class="app-server">P</span></span>
+            <span class="app-rail-item is-unread"><span class="app-pill"></span><span class="app-server">RN</span></span>
+            <span class="app-rail-item"><span class="app-pill"></span><span class="app-server">LP</span></span>
+            <span class="app-rail-divider"></span>
+            <span class="app-rail-item"><span class="app-server app-server-action">
+              <svg class="icon" viewBox="0 0 24 24"><use href="#i-plus"/></svg>
+            </span></span>
+          </nav>
+
+          <div class="app-sidebar">
+            <div class="app-pane-header">
+              <span>Pondside</span>
+              <svg class="icon" viewBox="0 0 24 24"><use href="#i-settings"/></svg>
+            </div>
+            <ul class="app-channels">
+              <li class="app-channel is-current"><svg class="icon" viewBox="0 0 24 24"><use href="#i-hash"/></svg>general</li>
+              <li class="app-channel is-unread"><svg class="icon" viewBox="0 0 24 24"><use href="#i-hash"/></svg>screenshots</li>
+              <li class="app-channel"><svg class="icon" viewBox="0 0 24 24"><use href="#i-hash"/></svg>patch-notes</li>
+              <li class="app-channel"><svg class="icon" viewBox="0 0 24 24"><use href="#i-speaker"/></svg>Lounge</li>
+              <li class="app-channel"><svg class="icon" viewBox="0 0 24 24"><use href="#i-speaker"/></svg>Squad up</li>
+            </ul>
+            <div class="app-user">
+              <span class="avatar av-mallard">M<span class="status status-online"></span></span>
+              <span class="app-user-text"><strong>Mallard</strong><span>Online</span></span>
+            </div>
+          </div>
+
+          <div class="app-channel-view">
+            <div class="app-channel-header">
+              <svg class="icon" viewBox="0 0 24 24"><use href="#i-hash"/></svg>
+              <strong>general</strong>
+              <span class="app-topic">Say hi. Keep it friendly.</span>
+              <svg class="icon app-header-action" viewBox="0 0 24 24"><use href="#i-members"/></svg>
+            </div>
+            <div class="app-messages" data-demo="messages">
+              <div class="msg msg-head">
+                <span class="avatar av-pintail">P</span>
+                <div class="msg-meta"><strong class="msg-author">Pintail</strong><span class="msg-time">Today at 17:12</span></div>
+                <p>Screenshots from last night are up in screenshots.</p>
+              </div>
+              <div class="msg msg-head">
+                <span class="avatar av-eider">E</span>
+                <div class="msg-meta"><strong class="msg-author">Eider</strong><span class="msg-time">Today at 17:40</span></div>
+                <p>Good games yesterday, everyone.</p>
+              </div>
+              <div class="msg msg-system">
+                <svg class="icon" viewBox="0 0 24 24"><use href="#i-arrow-right"/></svg>
+                <span><strong>Wigeon</strong> joined the server.</span>
+                <span class="msg-time">Today at 18:30</span>
+              </div>
+              <div class="msg msg-head">
+                <span class="avatar av-teal">T</span>
+                <div class="msg-meta"><strong class="msg-author">Teal</strong><span class="msg-time">Today at 18:31</span></div>
+                <p>Anyone up for a round after dinner?</p>
+              </div>
+              <div class="msg"><p>Same server as last week.</p></div>
+              <div class="msg msg-head">
+                <span class="avatar av-mallard">M</span>
+                <div class="msg-meta"><strong class="msg-author msg-author-role">Mallard</strong><span class="msg-time">Today at 18:33</span></div>
+                <p>Count me in, ten minutes.</p>
+              </div>
+              <div class="msg msg-head">
+                <span class="avatar av-wigeon">W</span>
+                <div class="msg-meta"><strong class="msg-author">Wigeon</strong><span class="msg-time">Today at 18:34</span></div>
+                <p>Squad up is on studio quality now. Tell me if you hear the difference.</p>
+              </div>
+            </div>
+            <div class="app-composer-area">
+              <div class="app-composer">Message #general</div>
+              <div class="app-composer-foot"><span class="typing" data-demo="typing"></span></div>
+            </div>
+          </div>
+
+          <div class="app-members">
+            <p class="eyebrow" data-demo="online-title">Online — 3</p>
+            <ul class="app-member-list" data-demo="online">
+              <li class="app-member"><span class="avatar av-mallard">M<span class="status status-online"></span></span><span class="app-member-name msg-author-role">Mallard</span></li>
+              <li class="app-member"><span class="avatar av-teal">T<span class="status status-online"></span></span><span class="app-member-name">Teal</span></li>
+              <li class="app-member"><span class="avatar av-wigeon">W<span class="status status-online"></span></span><span class="app-member-name">Wigeon</span></li>
+            </ul>
+            <p class="eyebrow" data-demo="offline-title">Offline — 2</p>
+            <ul class="app-member-list" data-demo="offline">
+              <li class="app-member is-offline" data-member="eider"><span class="avatar av-eider">E<span class="status"></span></span><span class="app-member-name">Eider</span></li>
+              <li class="app-member is-offline"><span class="avatar av-pintail">P<span class="status"></span></span><span class="app-member-name">Pintail</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </figure>
+
+    <section id="features" class="features wrap" aria-labelledby="features-title">
+      <div class="section-intro reveal">
+        <p class="eyebrow eyebrow-accent">What's planned</p>
+        <h2 id="features-title" class="section-title">Made for communities that run their own</h2>
+        <p class="section-lead">
+          Voice and chat for your group, on a server you control. No landlord,
+          no small print.
+        </p>
+      </div>
+
+      <div class="bento">
+        <article class="card card-wide card-voice reveal">
+          <div class="card-text">
+            <p class="card-kicker"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-speaker"/></svg>Voice and video</p>
+            <h3 class="card-title">Voice that sounds like you</h3>
+            <p class="card-body">
+              Choose the audio quality for each voice channel, bitrate included,
+              so music nights and raid calls both sound right. Video and screen
+              sharing are on the way, on standard WebRTC.
+            </p>
+          </div>
+          <div class="card-visual">
+            <div class="panel-demo">
+              <div class="panel-demo-head">
+                <svg class="icon icon-accent" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-speaker"/></svg>
+                <strong>Squad up</strong>
+                <span class="tag tag-small">Voice and text</span>
+              </div>
+              <fieldset class="choices">
+                <legend class="field-label">Audio quality</legend>
+                <label class="choice">
+                  <input class="choice-input" type="radio" name="quality" value="64">
+                  <span class="choice-mark" aria-hidden="true"></span>
+                  <span class="choice-text">Standard<span class="choice-hint">64 kbps, easy on slow connections</span></span>
+                </label>
+                <label class="choice">
+                  <input class="choice-input" type="radio" name="quality" value="128">
+                  <span class="choice-mark" aria-hidden="true"></span>
+                  <span class="choice-text">High<span class="choice-hint">128 kbps, clear voices</span></span>
+                </label>
+                <label class="choice">
+                  <input class="choice-input" type="radio" name="quality" value="256" checked>
+                  <span class="choice-mark" aria-hidden="true"></span>
+                  <span class="choice-text">Studio<span class="choice-hint">256 kbps, for music and streams</span></span>
+                </label>
+              </fieldset>
+              <div class="meter" aria-hidden="true" data-quality="256">
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card card-free reveal">
+          <div class="card-text">
+            <p class="card-kicker"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>Free</p>
+            <h3 class="card-title">Free, with nothing to unlock</h3>
+            <p class="card-body">
+              No subscriptions, no boosts and no paywalled features. Snatter is
+              open source under the AGPL, so the code stays open too.
+            </p>
+          </div>
+          <div class="price" aria-hidden="true">
+            <span class="price-figure">0</span>
+            <span class="price-label">per month,<br>per member,<br>per server</span>
+          </div>
+        </article>
+
+        <article class="card card-host reveal">
+          <div class="card-text">
+            <p class="card-kicker"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-settings"/></svg>Host yourself</p>
+            <h3 class="card-title">Your server, your rules</h3>
+            <p class="card-body">
+              Run it on a home server or a small VPS. One Docker Compose file
+              brings up the server, the web app and the database.
+            </p>
+          </div>
+          <pre class="terminal"><code><span class="terminal-prompt">$</span> cp .env.example .env
+<span class="terminal-prompt">$</span> docker compose up
+<span class="terminal-note"># open http://localhost:8080</span></code></pre>
+        </article>
+
+        <article class="card card-wide card-private reveal">
+          <div class="card-text">
+            <p class="card-kicker"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-lock"/></svg>Privacy focused</p>
+            <h3 class="card-title">Private by design</h3>
+            <p class="card-body">
+              No ads, no tracking and no data sold on. Your messages, files and
+              calls go through your own server and nowhere else, and even the bot
+              check at sign-up runs there.
+            </p>
+          </div>
+          <div class="card-visual">
+            <div class="panel-demo">
+              <div class="bot-check" data-demo="bot-check">
+                <span class="bot-check-mark" aria-hidden="true">
+                  <span class="spinner"></span>
+                  <svg class="icon" viewBox="0 0 24 24"><use href="#i-check"/></svg>
+                </span>
+                <span class="bot-check-text">
+                  <span class="bot-check-busy">Checking you are not a bot…</span>
+                  <span class="bot-check-done">Verified on your server</span>
+                </span>
+              </div>
+              <ul class="checklist">
+                <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>Messages and files stay on your server</li>
+                <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>Voice runs through your own server</li>
+                <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>Bot protection without a third party</li>
+                <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>Open or invite-only sign-up, your choice</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="closing wrap" aria-labelledby="closing-title">
+      <div class="closing-card reveal">
+        <h2 id="closing-title" class="section-title">Built in the open</h2>
+        <p class="section-lead">
+          Snatter is in early development. Follow along, open an issue or send
+          a patch. The first release is on its way.
+        </p>
+        <a class="button button-primary" href="https://github.com/Snattra">
+          Follow on GitHub
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-inner">
+      <span class="wordmark wordmark-small">Snatter</span>
+      <p>A project by <a href="https://github.com/Snattra">Snattra</a>. Licensed under the AGPL-3.0.</p>
+    </div>
+  </footer>
+
+  <!-- Icons from client/design-system/assets/Icons, filled on a 24px grid. -->
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-hash" viewBox="0 0 24 24"><path fill="currentColor" d="M10 3 8.5 9H4v2h4l-1 4H3v2h3.5L5 21h2l1.5-4h4L11 21h2l1.5-4H19v-2h-4l1-4h4V9h-3.5L18 3h-2l-1.5 6h-4L12 3h-2zm0 8h4l-1 4H9l1-4z"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12z"/></symbol>
+    <symbol id="i-members" viewBox="0 0 24 24"><path fill="currentColor" d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm-8 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4 10.59 5.41 16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></symbol>
+    <!-- Not in the design system's set yet: a padlock drawn to match it. -->
+    <symbol id="i-lock" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6A5 5 0 0 0 7 6v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-6 9a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm3.1-9H8.9V6a3.1 3.1 0 0 1 6.2 0v2z"/></symbol>
+  </svg>
+</body>
+</html>
