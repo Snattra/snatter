@@ -32,4 +32,4 @@ that applies to the directory it lands in.
 
 - Server: JDK 25 or newer and Maven. [SDKMAN](https://sdkman.io) is the easiest way to
   get both.
-- Client: Node.js LTS.
+- Client: Node.js 24 or newer.

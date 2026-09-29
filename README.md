@@ -4,7 +4,7 @@ Snatter is an open source, self-hosted voice and text communication server for
 gamers and hobbyist communities. Think of it as the server you run yourself
 instead of relying on a hosted chat platform.
 
-**Status: early development. Nothing is usable yet.**
+**Status: early development, not yet ready for production use.**
 
 ## Goals for v1
 
@@ -15,7 +15,7 @@ instead of relying on a hosted chat platform.
 - Channels of three kinds: voice, text, or voice and text.
 - Configurable audio quality per voice channel, including bitrate.
 - Role-based access control with kick and ban by account or IP address.
-- Video and screen sharing if time permits, otherwise in v1.5.
+- Video and screen sharing, in v1 or shortly after.
 
 ## Architecture in one paragraph
 
@@ -34,7 +34,6 @@ Windows first, then macOS, then Linux.
 | `client/`   | The web client and, later, the desktop app        | AGPL-3.0    |
 | `protocol/` | Protocol definitions shared by server and clients | Apache-2.0  |
 | `website/`  | The public website at snatter.app, static HTML    | AGPL-3.0    |
-
 
 ## Running with Docker Compose
 

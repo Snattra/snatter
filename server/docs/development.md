@@ -405,7 +405,8 @@ the client reconnects and gets a fresh `ready`.
    salt, and single use via the `used_challenge` table. The HMAC key is random
    per server start, so a restart invalidates outstanding challenges without
    any stored state.
-4. Username uniqueness, hashing and session creation as before.
+4. The username must be free; then the password is hashed and a session
+   created.
 
 ## Invites
 
@@ -427,8 +428,8 @@ expired or used-up ones.
 
 Invite links are `<publicUrl>/invite/<code>`. `publicUrl` is an owner
 setting; when it is not set the link is built from the address the request
-arrived on. The `/invite/<code>` path is reserved for a landing page and is
-not served yet. Accounts remember the invite and inviter they came in with
+arrived on. The web app serves `/invite/<code>` and opens registration with
+the code filled in. Accounts remember the invite and inviter they came in with
 (`account.invite_code`, `account.invited_by`) for later moderation features.
 
 ## Rate limiting
@@ -504,10 +505,10 @@ that produces it.
 | GET    | `/accounts/{id}`    | yes  | Any member's profile                      |
 | PUT    | `/accounts/me/avatar` | yes | Replace the profile picture; body is the raw image |
 | DELETE | `/accounts/me/avatar` | yes | Remove the profile picture              |
-| GET    | `/invites`           | yes  | List invites: all for the owner, own for members |
+| GET    | `/invites`           | yes  | List invites: all with MANAGE_INVITES, otherwise own |
 | POST   | `/invites`           | yes  | Create an invite                          |
 | GET    | `/invites/{code}`    | no   | Preview an invite: community and inviter  |
-| DELETE | `/invites/{code}`    | yes  | Revoke, by creator or owner               |
+| DELETE | `/invites/{code}`    | yes  | Revoke, by creator or MANAGE_INVITES      |
 | GET    | `/roles`             | yes  | List roles, highest first                 |
 | POST   | `/roles`             | MANAGE_ROLES | Create a role at the bottom       |
 | PATCH  | `/roles/{id}`        | MANAGE_ROLES | Change name, colour, position or permissions |
@@ -532,7 +533,7 @@ that produces it.
 | DELETE | `/timeouts/{accountId}` | TIMEOUT_MEMBERS | End a timeout early           |
 | GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
-Error codes so far: `validation_failed`, `username_taken`, `registration_closed`,
+Error codes: `validation_failed`, `username_taken`, `registration_closed`,
 `challenge_required`, `challenge_invalid`, `forbidden`, `rate_limited`,
 `invite_invalid`, `invite_not_found`, `invite_unusable`, `role_not_found`,
 `role_in_use`, `permission_escalation`,
@@ -564,7 +565,6 @@ rules are about readable names that are hard to fake rather than injection.
   `mvn verify -Dnative -Dquarkus.native.container-build=true` also tests the
   native executable end to end. Run it before merging changes that add
   dependencies or touch serialisation.
-
 - All tests that need an account register it through `testing.TestUsers`. Its
   first use bootstraps the server: the well-known `owner` account is created
   as the first account, opens registration and disables rate limiting for the

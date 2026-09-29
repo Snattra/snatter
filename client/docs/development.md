@@ -179,7 +179,7 @@ implementation does what a browser can and nothing more.
 
 ## UI
 
-Close to Discord's layout, dark by default: a server rail on the far left,
+A familiar four-pane layout, dark by default: a server rail on the far left,
 the server's channels (collapsible to icons), the channel in the middle, and
 a member list on the right (can be closed) showing presence and who is typing
 in the current channel. Layout choices are remembered per browser with
@@ -193,7 +193,9 @@ as CSS custom properties, `styles.css` the `sn-` component classes, and
 `ui/controls.tsx`, `ui/surfaces.tsx`, `ui/people.tsx`, `ui/layout.tsx`, `ui/invites.tsx` and
 `ui/messages.tsx` the components built on them. `ui/channelSettings.tsx`,
 `ui/serverSettings.tsx` and `ui/profile.tsx` put the modals together from
-those.
+those. `design-system/adoption.md` maps one onto the other. Change a token in
+`tokens.json` and `tokens.css` together, and design a new component there
+before building it here.
 
 `ui/ChannelView.tsx` is the channel body. It scrolls from the end
 (`flex-direction: column-reverse`), so the newest message stays in place and
@@ -203,6 +205,4 @@ marker follows after a short delay. The new-messages divider is placed from
 the marker when the channel opens and stays while it is shown; when the
 member stops reading with no divider showing, one is placed after what they
 last saw. The unread bar offers to jump back to the divider, loading older
-pages until it is held. `design-system/adoption.md` maps one onto the
-other. Change a token in `tokens.json` and `tokens.css` together, and design
-a new component there before building it here.
+pages until it is held.
