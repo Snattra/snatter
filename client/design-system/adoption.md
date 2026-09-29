@@ -11,6 +11,7 @@ The web client (`client/web` in the Snatter repository) is built on this system.
 | Avatar, MemberList, UserPanel, TypingIndicator | `ui/people.tsx`; the member list's typing mark is `TypingDots` |
 | AppShell, ServerRail, Sidebar, ChannelHeader | `ui/layout.tsx`, with `RailServer`, `ChannelList`, `ChannelItem` and `ChannelAction` |
 | Message, SystemMessage, Composer, NewMessages | `ui/messages.tsx`: `Message` with `UserMessageRow` and `PendingRow`, `SystemMessageRow`, `NewMessagesDivider`, `UnreadBar`; `ui/ChannelView.tsx` puts them together |
+| Message formatting and the link Modal | `ui/messageText.tsx`: `MessageText` renders what `ui/markdown.ts` parses; `LinkModal` |
 | Invite | `ui/invites.tsx`: `InviteButton` holds the Popover and `InviteLink` |
 | Modal, as Create channel, Channel settings and Server settings | `ui/channelSettings.tsx` and `ui/serverSettings.tsx` |
 | Profile | `ui/profile.tsx`: `ProfileModal`, its moderation steps worked out by `state/moderation.ts` |

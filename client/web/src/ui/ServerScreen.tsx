@@ -1,5 +1,6 @@
 import { type ReactNode, useRef, useState } from "react";
 import type { Account, Channel } from "../api/types";
+import { platform } from "../platform/platform";
 import type { ServerConnection } from "../servers/ServerConnection";
 import { isBanned, isTimedOut } from "../state/moderation";
 import { can, canInvite, canSend, hasUnread, sortedChannels, typingIn } from "../state/serverView";
@@ -20,6 +21,7 @@ import {
   Sidebar,
 } from "./layout";
 import { Composer } from "./messages";
+import { LinkModal } from "./messageText";
 import { MemberList, TypingIndicator, UserPanel } from "./people";
 import { ProfileModal } from "./profile";
 import { ServerSettingsModal } from "./serverSettings";
@@ -34,7 +36,8 @@ type Dialog =
   | { kind: "server-settings" }
   | { kind: "create-channel" }
   | { kind: "channel-settings"; channelId: string }
-  | { kind: "profile"; accountId: string };
+  | { kind: "profile"; accountId: string }
+  | { kind: "link"; url: string };
 
 /**
  * The main screen, laid out left to right: the server rail, the channels of
@@ -184,6 +187,7 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
               channel={selected}
               log={entry.logs[selected.id]}
               onOpenProfile={openProfile}
+              onOpenLink={(url) => setDialog({ kind: "link", url })}
             />
           ) : (
             <p className="sn-channel-note">This is a voice channel. It has no messages, and voice is not built yet.</p>
@@ -205,6 +209,16 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
       )}
       {profile !== undefined && (
         <ProfileModal key={profile.id} connection={connection} view={view} member={profile} onClose={closeDialog} />
+      )}
+      {dialog?.kind === "link" && (
+        <LinkModal
+          url={dialog.url}
+          onOpen={() => {
+            void platform.openLink(dialog.url);
+            closeDialog();
+          }}
+          onClose={closeDialog}
+        />
       )}
       {editing !== undefined && manageChannels && (
         <ChannelSettingsModal

@@ -8,6 +8,8 @@ export interface Platform {
   readonly kind: "web" | "desktop";
   /** Small secrets such as session tokens, kept across restarts. */
   readonly secrets: SecretStore;
+  /** Opens a web address outside the app: a new tab, or the desktop browser. */
+  openLink(url: string): Promise<void>;
 }
 
 export interface SecretStore {
@@ -35,6 +37,10 @@ export const webPlatform: Platform = {
     async delete(key) {
       localStorage.removeItem(PREFIX + key);
     },
+  },
+  async openLink(url) {
+    // Without an opener or a referrer, the page learns nothing of the app.
+    window.open(url, "_blank", "noopener,noreferrer");
   },
 };
 

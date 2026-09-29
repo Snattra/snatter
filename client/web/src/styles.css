@@ -1677,6 +1677,101 @@ textarea.sn-input {
   text-decoration: underline;
 }
 
+/* Formatting in message text. The author's line breaks stay; blocks sit 4px apart. */
+.sn-message-content {
+  white-space: pre-wrap;
+}
+
+.sn-message-content :where(p, ul, ol, blockquote, pre) {
+  margin: 0;
+}
+
+.sn-message-content > * + *,
+.sn-quote > * + * {
+  margin-top: var(--space-4);
+}
+
+.sn-message-content strong {
+  font-weight: 700;
+}
+
+.sn-underline {
+  text-decoration: underline;
+}
+
+.sn-message-content :where(ul, ol) {
+  padding-left: var(--space-24);
+}
+
+.sn-message-content li::marker {
+  color: var(--muted);
+}
+
+.sn-quote {
+  padding-left: var(--space-12);
+  border-left: 4px solid var(--panel-active);
+}
+
+.sn-code-block {
+  max-width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: pre;
+  tab-size: 4;
+  overflow-x: auto;
+}
+
+.sn-code-block code {
+  padding: 0;
+  background: none;
+}
+
+/* Hidden on a `bg` fill, one step darker on hover; shown, it keeps a `panel-active` fill so it still reads as a spoiler. */
+.sn-spoiler {
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+  transition: background-color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-spoiler:hover {
+  background: var(--floating);
+}
+
+.sn-spoiler > [inert] {
+  visibility: hidden;
+}
+
+.sn-spoiler-shown,
+.sn-spoiler-shown:hover {
+  background: var(--panel-active);
+  cursor: auto;
+  animation: sn-fade-in var(--duration-fast) var(--ease-out);
+}
+
+/* The link modal: where a link goes, then the whole address in a well. */
+.sn-link-host {
+  margin: 0;
+}
+
+.sn-link-address {
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
 .sn-message-actions {
   position: absolute;
   top: calc(-1 * var(--space-16));
@@ -2044,11 +2139,6 @@ textarea.sn-input {
 
 .sn-rate .sn-input {
   width: 7.5em;
-}
-
-/* Message text is plain for now; keep the author's line breaks. */
-.sn-message-content {
-  white-space: pre-wrap;
 }
 
 .sn-message-error .sn-button {

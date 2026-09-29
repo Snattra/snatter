@@ -1,4 +1,4 @@
-<!-- @dsCard group="Messages" height=440 -->
+<!-- @dsCard group="Messages" height=720 -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -17,7 +17,35 @@
 <script>
   var S = window.Snatter, h = React.createElement, useState = React.useState;
 
+  // Hidden until clicked, then it fades in; its content is inert while hidden.
+  function Spoiler(props) {
+    var shown = useState(false);
+    if (shown[0]) return h("span", { className: "sn-spoiler sn-spoiler-shown" }, props.children);
+    return h("span", { className: "sn-spoiler", role: "button", tabIndex: 0, "aria-label": "Spoiler, select to show",
+      onClick: function () { shown[1](true); },
+      onKeyDown: function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); shown[1](true); } } },
+      h("span", { inert: "" }, props.children));
+  }
+
+  // A link shows its whole address and asks before it opens.
+  function Link(props) {
+    return h("a", { href: props.url, onClick: function (e) { e.preventDefault(); props.onOpen(props.url); } }, props.url);
+  }
+
+  function LinkModal(props) {
+    return h(S.Modal, {
+      title: "Open this link?",
+      onClose: props.onClose,
+      footer: h(React.Fragment, null,
+        h(S.Button, { onClick: props.onClose, "data-autofocus": true }, "Cancel"),
+        h(S.Button, { variant: "primary", onClick: props.onClose }, "Open link"))
+    },
+      h("p", { className: "sn-link-host" }, "It goes to ", h("strong", null, new URL(props.url).host), ", outside Snatter. Open it only if you trust where it leads."),
+      h("p", { className: "sn-link-address" }, props.url));
+  }
+
   function Demo() {
+    var link = useState(null);
     var extra = useState([]);
     var pending = useState(true);
     React.useEffect(function () { var t = setTimeout(function () { pending[1](false); }, 1800); return function () { clearTimeout(t); }; }, []);
@@ -30,8 +58,15 @@
         h(S.Message, { author: "Mallard", color: "#c4a7ff", time: "Today at 18:33", mentioned: true, actions: actions }, h("a", { href: "#" }, "@Teal"), " count me in, give me ten minutes."),
         h(S.Message, { author: "Wigeon", time: "Today at 18:34", state: pending[0] ? "pending" : "sent" }, "Bringing snacks, back in five."),
         h(S.Message, { author: "Wigeon", head: false, shortTime: "18:34", state: "failed" }, "Does anyone still have the map pack?"),
+        h(S.Message, { author: "Gadwall", time: "Today at 18:36", actions: actions },
+          h("p", null, h("strong", null, "Tonight:"), " the ", h("em", null, "new"), " map, ", h("span", { className: "sn-underline" }, "ranked"), ", and ", h("s", null, "no"), " snacks. Ending: ", h(Spoiler, null, "the bridge falls"), "."),
+          h("blockquote", { className: "sn-quote" }, h("p", null, "Bring the map pack\nand a headset that works")),
+          h("ul", null, h("li", null, "Warm-up at 19:00"), h("li", null, "Scrims at 19:30", h("ol", null, h("li", null, "Pondside"), h("li", null, "Reedbed")))),
+          h("pre", { className: "sn-code-block" }, h("code", null, "connect play.pondside.gg:27015\npassword \"quack\"")),
+          h("p", null, "Patch notes: ", h(Link, { url: "https://pondside.gg/patch/2.4", onOpen: link[1] }))),
         extra[0].map(function (id) { return h(S.Message, { key: id, author: "Gadwall", time: "Today at 18:35", isNew: true }, "A new message rises in."); })),
-      h("div", { style: { padding: "0 16px 16px 72px" } }, h(S.Button, { size: "sm", onClick: function () { extra[1](extra[0].concat([Date.now()])); } }, "Receive a message")));
+      h("div", { style: { padding: "0 16px 16px 72px" } }, h(S.Button, { size: "sm", onClick: function () { extra[1](extra[0].concat([Date.now()])); } }, "Receive a message")),
+      link[0] && h(LinkModal, { url: link[0], onClose: function () { link[1](null); } }));
   }
   ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
 

@@ -170,12 +170,33 @@ which moves focus to the new step), and like creating a channel it resolves
 once the gateway has brought the change into the view, so the profile shows
 it straight away.
 
+## Message text
+
+Message content is Markdown in a chat dialect, the one the contract
+describes: the author's line breaks stay, and on top come bold, italic,
+underline, strikethrough, spoilers, code, quotes, lists and bare web
+addresses. `ui/markdown.ts` parses it into plain data and
+`ui/messageText.tsx` renders that as React elements, so no message ever
+becomes HTML, and the Content-Security-Policy stays as strict as it is.
+Anything that is not formatting shows as typed, including headings, HTML
+and `[text](address)` links. Inline formatting is paired the way CommonMark
+pairs emphasis, in time proportional to the text, so a message written to be
+slow cannot stall the channel; nesting stops at eight levels.
+
+A link always shows its whole address. Clicking it, with any button, opens
+`LinkModal` first, which names the host the address really goes to (so
+lookalike letters show in their encoded form) and has focus on Cancel; only
+`Open link` hands the address to `platform.openLink`. A spoiler's content
+is `inert` until it is shown, so a link in it cannot be clicked unseen.
+
 ## Platform
 
 `platform/platform.ts` is the seam for the desktop shell: everything that
 differs between browser and desktop goes behind the `Platform` interface,
 asynchronous because the desktop side will answer over IPC. The browser
-implementation does what a browser can and nothing more.
+implementation does what a browser can and nothing more. `openLink` opens
+an address outside the app: a new tab without opener or referrer in the
+browser, the system browser on the desktop.
 
 ## UI
 

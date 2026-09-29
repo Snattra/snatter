@@ -23,6 +23,8 @@ interface ChannelViewProps {
   log: ChannelLog | undefined;
   /** Opens a member's profile, from their name or avatar. */
   onOpenProfile: (accountId: string) => void;
+  /** Asks before opening a link in a message. */
+  onOpenLink: (url: string) => void;
 }
 
 /**
@@ -35,7 +37,7 @@ interface ChannelViewProps {
  * stop reading, the divider is set after what they last saw, so whatever
  * arrives meanwhile shows as new when they come back.
  */
-export function ChannelView({ connection, view, channel, log, onOpenProfile }: ChannelViewProps) {
+export function ChannelView({ connection, view, channel, log, onOpenProfile, onOpenLink }: ChannelViewProps) {
   const me = view.account.id;
   // The author's profile, for a message whose author is still a member.
   const opener = (authorId: string | null | undefined) =>
@@ -230,6 +232,7 @@ export function ChannelView({ connection, view, channel, log, onOpenProfile }: C
                         head={row.head}
                         isNew={log?.live[row.message.id] === true}
                         onAuthor={opener(row.message.authorId)}
+                        onOpenLink={onOpenLink}
                       />
                     );
                   case "pending":
@@ -241,6 +244,7 @@ export function ChannelView({ connection, view, channel, log, onOpenProfile }: C
                         author={view.account}
                         head={row.head}
                         onAuthor={opener(me)}
+                        onOpenLink={onOpenLink}
                         onRetry={() => void connection.retry(channel.id, row.pending.nonce)}
                         onDiscard={() => connection.discard(channel.id, row.pending.nonce)}
                       />

@@ -13,6 +13,15 @@ One message in a channel. It is a *head* (avatar, author, time) when it starts a
 - `mentioned` lays `gradient-mention` across the row: warm at the gutter, fading along the line.
 - Hover shows a `panel-hover` fill, the follow-up's time in the gutter, and the `actions` toolbar, which rises into place on `floating` with `shadow-float`.
 
+**Formatting** The content is the author's Markdown, rendered as elements, never as HTML. Their line breaks and blank lines stay (`pre-wrap`), and blocks sit `space-4` apart.
+- **Bold** is weight 700 in the same ink, *italic* is `em`, underline and ~~strikethrough~~ are text decorations.
+- Inline `code` is `text-code` on a `bg` fill with `radius-sm`. A code block (`sn-code-block`) is the same well padded `space-8` `space-12`; long lines scroll inside it instead of wrapping.
+- A quote (`sn-quote`) has a 4px `panel-active` bar and `space-12` of indent. Lists indent `space-24` with `muted` markers.
+- A spoiler (`sn-spoiler`) is a `bg` fill hiding its text, `floating` on hover. Clicking it or pressing Enter shows it: it fades in on `duration-fast` and keeps a `panel-active` fill, so it still reads as a spoiler. While hidden, its content is `inert`, so a link inside can't be clicked or reached unseen.
+- There are no headings, images or tables, and no links with their own text.
+
+**Links** A link always shows its whole address, in `accent-text`, underlined on hover. Opening one never happens straight away: a Modal, "Open this link?", names the host it really goes to and shows the whole address in a `bg` well (`sn-link-address`, mono). Cancel has focus, so opening is always its own choice.
+
 `SystemMessage` renders server notices (someone joined, a channel or the server renamed, the topic changed) as one `muted` line behind an accent arrow. Names in it go in `<strong>`, or in an `sn-name-button` when they open a profile.
 
 - Do start a new head when the author changes, after a long pause, and under the NewMessagesDivider.

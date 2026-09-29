@@ -1385,8 +1385,14 @@ components:
             content:
               type: string
               description: |
-                Plain text with Markdown formatting rendered by clients.
-                Mentions are tokens in the text: `<@accountId>` for a member,
+                Plain text with chat Markdown, rendered by clients:
+                `**bold**`, `*italic*` or `_italic_`, `__underline__`,
+                `~~strikethrough~~`, `||spoiler||`, `` `code` ``, fenced code
+                blocks, `> ` quotes, lists (`-`, `*` or `1.`, nested by
+                indentation) and bare http(s) addresses, which clients show in
+                full. There is no HTML, no image, no heading and no link with
+                its own text; everything else shows as typed, line breaks
+                included. Mentions are tokens in the text: `<@accountId>` for a member,
                 `<@&roleId>` for a role and `<#channelId>` for a channel.
             replyToId:
               allOf:

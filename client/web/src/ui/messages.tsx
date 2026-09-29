@@ -4,6 +4,7 @@ import type { Pending } from "../state/channelLog";
 import { classes } from "./classes";
 import { Button, IconButton } from "./controls";
 import { Icon } from "./icons";
+import { MessageText } from "./messageText";
 import { Avatar } from "./people";
 import { longTime, shortTime } from "./time";
 
@@ -95,8 +96,9 @@ export function UserMessageRow(props: {
   head: boolean;
   isNew: boolean;
   onAuthor: (() => void) | undefined;
+  onOpenLink: (url: string) => void;
 }) {
-  const { origin, message, author, head, isNew, onAuthor } = props;
+  const { origin, message, author, head, isNew, onAuthor, onOpenLink } = props;
   return (
     <Message
       origin={origin}
@@ -106,7 +108,7 @@ export function UserMessageRow(props: {
       isNew={isNew}
       onAuthor={onAuthor}
     >
-      {message.content}
+      <MessageText content={message.content} onOpenLink={onOpenLink} />
     </Message>
   );
 }
@@ -118,10 +120,11 @@ export function PendingRow(props: {
   author: Account;
   head: boolean;
   onAuthor: (() => void) | undefined;
+  onOpenLink: (url: string) => void;
   onRetry: () => void;
   onDiscard: () => void;
 }) {
-  const { origin, pending, author, head, onAuthor, onRetry, onDiscard } = props;
+  const { origin, pending, author, head, onAuthor, onOpenLink, onRetry, onDiscard } = props;
   const failed = pending.error !== null;
   return (
     <Message
@@ -144,7 +147,7 @@ export function PendingRow(props: {
         </>
       }
     >
-      {pending.content}
+      <MessageText content={pending.content} onOpenLink={onOpenLink} />
     </Message>
   );
 }

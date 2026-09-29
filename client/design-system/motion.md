@@ -33,6 +33,7 @@ These live in `bundle.css` as keyframes and transitions. Each one has one meanin
 | `sn-pop-in`: 4px out of its control, scale 96% to 100% (`duration-fast`, `ease-out`) | Popover | It opened from what you clicked |
 | `sn-rise-in` (`duration-slow`) while the scrim fades in (`duration-fast`); leaves at once | Modal | A task is in front of you now |
 | Mark fills with the sheen, its dot or tick springs in (`ease-spring`) | Choice | That one is chosen |
+| `sn-fade-in` (`duration-fast`, `ease-out`) | A spoiler shown | What was hidden is here now |
 | `sn-shake`: 4px each way, once | Invalid field on submit | That didn't work; look here |
 | `sn-typing`: three sheen dots, 160ms apart | Typing indicator | Someone is writing |
 | `sn-ping`: two rings from the dot | Presence turning online | They just arrived |
