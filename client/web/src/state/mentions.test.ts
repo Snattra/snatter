@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Account, Channel } from "../api/types";
-import { insertMention, matchingChannels, matchingMembers, queryAt, withTokens } from "./mentions";
+import { insertMention, matchingChannels, matchingMembers, queryAt, withNames, withTokens } from "./mentions";
 
 function account(id: string, username: string, displayName: string): Account {
   return { id, username, displayName, roleIds: [], createdAt: "2026-01-01T00:00:00Z" };
@@ -109,8 +109,21 @@ describe("withTokens", () => {
   });
 
   it("leaves code alone", () => {
+    expect(withNames("`<@a1>` <@a1>", members, channels)).toBe("`<@a1>` @wigeon");
     expect(withTokens("`@wigeon` @wigeon\n```\n#general\n``` #general", members, channels)).toBe(
       "`@wigeon` <@a1>\n```\n#general\n``` <#c1>",
     );
+  });
+});
+
+describe("withNames", () => {
+  it("turns tokens back into what the member typed", () => {
+    const text = "hey <@a1>, see <#c2> and <#c1>";
+    expect(withNames(text, members, channels)).toBe("hey @wigeon, see #General chat and #General");
+    expect(withTokens(withNames(text, members, channels), members, channels)).toBe(text);
+  });
+
+  it("keeps tokens for anyone or anything unknown", () => {
+    expect(withNames("<@a9> <#c9> <@&a1>", members, channels)).toBe("<@a9> <#c9> <@&a1>");
   });
 });

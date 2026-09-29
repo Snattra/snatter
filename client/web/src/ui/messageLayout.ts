@@ -1,4 +1,4 @@
-import type { SystemMessage, UserMessage } from "../api/types";
+import type { DeletedMessage, SystemMessage, UserMessage } from "../api/types";
 import type { ChannelLog, Pending } from "../state/channelLog";
 import { isAfter } from "../state/ids";
 import { sameDay } from "./time";
@@ -9,6 +9,12 @@ const GROUP_GAP_MS = 7 * 60_000;
 export type Row =
   | { kind: "divider" }
   | { kind: "message"; message: UserMessage; head: boolean }
+  /**
+   * Where one or more of a member's messages in a row were deleted, the same
+   * way (all by them, or all by a moderator), oldest first. It groups with
+   * its author's messages like any other.
+   */
+  | { kind: "deleted"; messages: [DeletedMessage, ...DeletedMessage[]]; head: boolean }
   | { kind: "system"; message: SystemMessage }
   | { kind: "pending"; pending: Pending; head: boolean };
 
@@ -17,6 +23,9 @@ export type Row =
  * divider above {@code firstUnreadId}, then the member's messages still on
  * their way. A message starts a new group, with avatar and name, unless it
  * follows one from the same author on the same day within a few minutes.
+ * Deleted messages that follow each other, from one author and deleted the
+ * same way, share one row however far apart they were sent, so a purge
+ * leaves one line instead of a column of them.
  */
 export function layoutRows(log: ChannelLog, me: string, firstUnreadId: string | null): Row[] {
   const rows: Row[] = [];
@@ -39,7 +48,21 @@ export function layoutRows(log: ChannelLog, me: string, firstUnreadId: string | 
       continue;
     }
     const at = new Date(message.createdAt);
-    rows.push({ kind: "message", message, head: !follows(message.authorId, at) });
+    const last = rows.at(-1);
+    if (
+      message.kind === "deleted" &&
+      last?.kind === "deleted" &&
+      last.messages[0].authorId === message.authorId &&
+      last.messages[0].removedByModerator === message.removedByModerator
+    ) {
+      last.messages.push(message);
+      previous = message.authorId == null ? null : { authorId: message.authorId, at };
+      continue;
+    }
+    const head = !follows(message.authorId, at);
+    rows.push(
+      message.kind === "deleted" ? { kind: "deleted", messages: [message], head } : { kind: "message", message, head },
+    );
     previous = message.authorId == null ? null : { authorId: message.authorId, at };
   }
   for (const pending of log.pending) {

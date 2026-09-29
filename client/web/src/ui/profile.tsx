@@ -3,6 +3,7 @@ import type { Account, Ban } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
 import { toggledRole } from "../state/channelForm";
 import {
+  PURGE_LENGTHS,
   TIMEOUT_LENGTHS,
   canAssign,
   isBanned,
@@ -19,7 +20,7 @@ import { Avatar } from "./people";
 import { Callout, Modal, Tag } from "./surfaces";
 import { aheadTime, dateText, dayText } from "./time";
 
-type Step = "profile" | "roles" | "timeout" | "ban";
+type Step = "profile" | "roles" | "timeout" | "ban" | "messages";
 
 /** An hour, the timeout offered first. */
 const DEFAULT_TIMEOUT_SECONDS = 60 * 60;
@@ -46,6 +47,9 @@ export function ProfileModal({ connection, view, member, onClose }: ProfileProps
   const [chosen, setChosen] = useState<string[]>([]);
   const [seconds, setSeconds] = useState(DEFAULT_TIMEOUT_SECONDS);
   const [reason, setReason] = useState("");
+  const [purgeSeconds, setPurgeSeconds] = useState(PURGE_LENGTHS[0]?.seconds ?? 3600);
+  // What the last purge did, said on the profile it returns to.
+  const [purged, setPurged] = useState<number | null>(null);
   // Ticks while there is a timeout, so its end shows without reopening.
   const now = useNow(member.timedOutUntil != null ? 1_000 : null);
   const allowed = moderationOf(view, member, now);
@@ -55,6 +59,9 @@ export function ProfileModal({ connection, view, member, onClose }: ProfileProps
 
   function go(next: Step) {
     setFailure(null);
+    if (next !== "profile") {
+      setPurged(null);
+    }
     if (next === "profile") {
       setFrom(step);
     } else if (next === "roles") {
@@ -87,7 +94,18 @@ export function ProfileModal({ connection, view, member, onClose }: ProfileProps
     case "profile":
       content = {
         title: name,
-        body: <Details view={view} member={member} ban={ban} now={now} />,
+        body: (
+          <>
+            {purged !== null && (
+              <p className="sn-modal-text" role="status">
+                {purged === 0
+                  ? "They had no messages to delete from then."
+                  : `Deleted ${purged} ${purged === 1 ? "message" : "messages"}. ${purged === 1 ? "It reads" : "They read"} “Removed by a moderator.”`}
+              </p>
+            )}
+            <Details view={view} member={member} ban={ban} now={now} />
+          </>
+        ),
         footerStart: allowed.ban && (
           <Button variant="danger" data-autofocus={from === "ban" || undefined} onClick={() => go("ban")}>
             Ban
@@ -98,6 +116,11 @@ export function ProfileModal({ connection, view, member, onClose }: ProfileProps
             {allowed.editRoles && (
               <Button data-autofocus={from === "roles" || undefined} onClick={() => go("roles")}>
                 Edit roles
+              </Button>
+            )}
+            {allowed.deleteMessages && (
+              <Button data-autofocus={from === "messages" || undefined} onClick={() => go("messages")}>
+                Delete messages
               </Button>
             )}
             {allowed.timeOut && (
@@ -196,6 +219,43 @@ export function ProfileModal({ connection, view, member, onClose }: ProfileProps
             {cancel}
             <Button variant="danger" type="submit" busy={busy === "timeout"}>
               {busy === "timeout" ? "Timing out…" : "Time out"}
+            </Button>
+          </>
+        ),
+      };
+      break;
+    case "messages":
+      content = {
+        title: `Delete messages from ${name}`,
+        onSubmit: () =>
+          void act("messages", async () => {
+            setPurged(await connection.purge(member.id, new Date(Date.now() - purgeSeconds * 1000)));
+          }),
+        body: (
+          <>
+            <p className="sn-modal-text">
+              Everything they sent in that time, in every channel you can see, will read “Removed by a moderator.”
+              What it said is gone for good.
+            </p>
+            <Select
+              label="From"
+              data-autofocus
+              value={String(purgeSeconds)}
+              onChange={(event) => setPurgeSeconds(Number(event.target.value))}
+            >
+              {PURGE_LENGTHS.map((length) => (
+                <option key={length.seconds} value={length.seconds}>
+                  {length.label}
+                </option>
+              ))}
+            </Select>
+          </>
+        ),
+        footer: (
+          <>
+            {cancel}
+            <Button variant="danger" type="submit" busy={busy === "messages"}>
+              {busy === "messages" ? "Deleting…" : "Delete messages"}
             </Button>
           </>
         ),

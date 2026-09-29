@@ -207,6 +207,27 @@ fits wins. The channel form checks a new name against the channels the
 member can see; the server, which knows them all, has the last word
 (`channel_name_taken`).
 
+## Editing and deleting messages
+
+Each message offers what the member may do to it in a toolbar shown on
+hover and focus: editing their own, and deleting their own or, with
+`MANAGE_MESSAGES`, anyone's, notices included. Editing puts the composer in
+`edit` mode in place of the text, with the mentions turned back into names
+(`withNames`) and saved as tokens again; Up in the empty composer edits the
+member's last message in the channel. Which message is being edited lives in
+`ServerScreen`, as both the composer and the channel start it.
+
+Deleting asks first (`DeleteMessageModal`), unless Shift is held. A deleted
+member's message comes back from the server as a `DeletedMessage` in its
+place and shows as "This message was deleted." or "Removed by a moderator."; deleted
+messages that follow each other, from one author and deleted the same way,
+share one row ("12 messages removed by a moderator.", `layoutRows`);
+the client puts it in place as soon as the server has said yes, before the
+gateway confirms. A deleted notice disappears. From a member's profile,
+`MANAGE_MESSAGES` deletes everything they sent in the last hour, day or
+week; the gateway then sends one `messages_purged` frame per channel, and
+`withPurged` turns the author's held messages in its range into deleted ones.
+
 ## Platform
 
 `platform/platform.ts` is the seam for the desktop shell: everything that

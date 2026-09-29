@@ -1,5 +1,5 @@
 import { type ReactNode, type Ref, useId, useLayoutEffect, useRef, useState } from "react";
-import type { Account, SystemMessage as SystemMessageData, UserMessage } from "../api/types";
+import type { Account, DeletedMessage, SystemMessage as SystemMessageData, UserMessage } from "../api/types";
 import type { Pending } from "../state/channelLog";
 import { insertMention, type MentionQuery, queryAt } from "../state/mentions";
 import { classes } from "./classes";
@@ -33,12 +33,15 @@ interface MessageProps {
   error?: ReactNode;
   /** Opens the author's profile from their name, and their avatar for the mouse. */
   onAuthor?: () => void;
+  /** Icon buttons for what the member may do to it, shown on hover and focus. */
+  actions?: ReactNode;
   children: ReactNode;
 }
 
 /** One message in a channel. */
 export function Message(props: MessageProps) {
-  const { origin, author, createdAt, head, isNew = false, mentioned = false, state = "sent", error, onAuthor, children } = props;
+  const { origin, author, createdAt, head, isNew = false, mentioned = false, state = "sent", error, onAuthor, actions, children } =
+    props;
   const at = new Date(createdAt);
   const name = author?.displayName ?? "Deleted account";
   return (
@@ -89,6 +92,11 @@ export function Message(props: MessageProps) {
       )}
       <div className="sn-message-content">{children}</div>
       {state === "failed" && <span className="sn-message-error">{error}</span>}
+      {actions && (
+        <div className="sn-message-actions" role="toolbar" aria-label="Message actions">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
@@ -102,8 +110,11 @@ export function UserMessageRow(props: {
   mentioned: boolean;
   onAuthor: (() => void) | undefined;
   text: TextContext;
+  actions?: ReactNode;
+  /** Takes the place of the text while the member edits it. */
+  editor?: ReactNode;
 }) {
-  const { origin, message, author, head, isNew, mentioned, onAuthor, text } = props;
+  const { origin, message, author, head, isNew, mentioned, onAuthor, text, actions, editor } = props;
   return (
     <Message
       origin={origin}
@@ -111,12 +122,55 @@ export function UserMessageRow(props: {
       createdAt={message.createdAt}
       head={head}
       isNew={isNew}
-      mentioned={mentioned}
+      mentioned={mentioned && !editor}
       onAuthor={onAuthor}
+      actions={editor ? undefined : actions}
     >
-      <MessageText content={message.content} context={text} />
+      {editor ?? (
+        <MessageText
+          content={message.content}
+          context={text}
+          suffix={
+            message.editedAt && (
+              <time className="sn-message-edited" dateTime={message.editedAt} title={longTime(new Date(message.editedAt), new Date())}>
+                (edited)
+              </time>
+            )
+          }
+        />
+      )}
     </Message>
   );
+}
+
+/**
+ * Where a member's messages were deleted, one or several in a row: the
+ * author and the time of the first stay, and a muted line says what happened.
+ */
+export function DeletedMessageRow(props: {
+  origin: string;
+  messages: [DeletedMessage, ...DeletedMessage[]];
+  author: Account | undefined;
+  head: boolean;
+  onAuthor: (() => void) | undefined;
+}) {
+  const { origin, messages, author, head, onAuthor } = props;
+  const [first] = messages;
+  return (
+    <Message origin={origin} author={author} createdAt={first.createdAt} head={head} onAuthor={onAuthor}>
+      <span className="sn-message-deleted">
+        <Icon name="delete" />
+        {deletedText(messages.length, first.removedByModerator)}
+      </span>
+    </Message>
+  );
+}
+
+function deletedText(count: number, byModerator: boolean): string {
+  if (count === 1) {
+    return byModerator ? "Removed by a moderator." : "This message was deleted.";
+  }
+  return byModerator ? `${count} messages removed by a moderator.` : `${count} messages deleted.`;
 }
 
 /** A message on its way, or one that failed with the choice to send it again or let it go. */
@@ -164,8 +218,9 @@ export function SystemMessageRow(props: {
   author: Account | undefined;
   isNew: boolean;
   onAuthor: (() => void) | undefined;
+  actions?: ReactNode;
 }) {
-  const { message, author, isNew, onAuthor } = props;
+  const { message, author, isNew, onAuthor, actions } = props;
   const who =
     author && onAuthor ? (
       <button type="button" className="sn-name-button" aria-haspopup="dialog" onClick={onAuthor}>
@@ -181,6 +236,11 @@ export function SystemMessageRow(props: {
       <time className="sn-message-time" dateTime={message.createdAt}>
         {longTime(new Date(message.createdAt), new Date())}
       </time>
+      {actions && (
+        <div className="sn-message-actions" role="toolbar" aria-label="Message actions">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
@@ -277,7 +337,17 @@ export interface Suggestion {
 interface ComposerProps {
   placeholder: string;
   disabled?: boolean;
-  /** Called with the trimmed text; the composer then clears. */
+  /**
+   * `send` at the foot of a channel. `edit` in place of a message's text:
+   * it starts with `initialText` and focus, keeps its text after
+   * `onSend` (so a failed save loses nothing), and Escape calls `onCancel`.
+   */
+  mode?: "send" | "edit";
+  initialText?: string;
+  onCancel?: () => void;
+  /** Up in the empty field, to edit the member's last message; `send` mode only. */
+  onEditLast?: () => void;
+  /** Called with the trimmed text; in `send` mode the composer then clears. */
   onSend: (text: string) => void;
   /** Called as the member types, with the current text. */
   onChange?: (text: string) => void;
@@ -296,9 +366,12 @@ interface ComposerProps {
  * above the field. The arrow keys move through it, Enter or Tab puts the
  * choice in the text, and Escape closes it until the next mention.
  */
-export function Composer({ placeholder, disabled = false, onSend, onChange, suggest, footer }: ComposerProps) {
-  const [text, setText] = useState("");
-  const [caret, setCaret] = useState(0);
+export function Composer(props: ComposerProps) {
+  const { placeholder, disabled = false, mode = "send", initialText = "", onCancel, onEditLast, onSend, onChange, suggest, footer } =
+    props;
+  const editing = mode === "edit";
+  const [text, setText] = useState(initialText);
+  const [caret, setCaret] = useState(initialText.length);
   const [focused, setFocused] = useState(false);
   const [active, setActive] = useState(0);
   // Where the mention closed with Escape starts; a new one opens the list again.
@@ -312,6 +385,14 @@ export function Composer({ placeholder, disabled = false, onSend, onChange, sugg
   const options = query && suggest ? suggest(query) : [];
   const open = query !== null && options.length > 0 && dismissed !== query.start;
   const current = Math.min(active, options.length - 1);
+
+  // An editor opens ready to type at the end of the text.
+  useLayoutEffect(() => {
+    if (editing && field.current !== null) {
+      field.current.focus();
+      field.current.setSelectionRange(field.current.value.length, field.current.value.length);
+    }
+  }, [editing]);
 
   // Put the caret after a mention just chosen, once the text holds it.
   useLayoutEffect(() => {
@@ -344,14 +425,16 @@ export function Composer({ placeholder, disabled = false, onSend, onChange, sugg
       return;
     }
     onSend(content);
-    setText("");
-    setCaret(0);
-    setDismissed(null);
+    if (!editing) {
+      setText("");
+      setCaret(0);
+      setDismissed(null);
+    }
     field.current?.focus();
   }
 
   return (
-    <div className="sn-composer-area">
+    <div className={classes("sn-composer-area", editing && "sn-composer-area-edit")}>
       {open && (
         <div className="sn-suggestions" role="listbox" id={listId} aria-label={query.sigil === "@" ? "Members" : "Channels"}>
           <div className="sn-suggestions-title" aria-hidden="true">
@@ -419,13 +502,25 @@ export function Composer({ placeholder, disabled = false, onSend, onChange, sugg
                 return;
               }
             }
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (event.key === "Escape" && editing) {
+              event.preventDefault();
+              onCancel?.();
+            } else if (event.key === "ArrowUp" && text === "" && onEditLast && !editing) {
+              event.preventDefault();
+              onEditLast();
+            } else if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               send();
             }
           }}
         />
-        <IconButton icon="send" label="Send" className="sn-composer-send" tabIndex={ready ? 0 : -1} onClick={send} />
+        <IconButton
+          icon={editing ? "check" : "send"}
+          label={editing ? "Save" : "Send"}
+          className="sn-composer-send"
+          tabIndex={ready ? 0 : -1}
+          onClick={send}
+        />
       </div>
       <div className="sn-composer-foot">{footer}</div>
     </div>

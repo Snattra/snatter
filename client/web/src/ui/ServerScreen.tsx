@@ -7,6 +7,7 @@ import {
   matchingChannels,
   matchingMembers,
   type MentionQuery,
+  type Mentionables,
   memberMention,
   withTokens,
 } from "../state/mentions";
@@ -56,6 +57,8 @@ type Dialog =
 export function ServerScreen({ connection, entry }: { connection: ServerConnection; entry: ServerEntry }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  // The member's own message being edited, in the channel it is in.
+  const [editingMessage, setEditingMessage] = useState<{ channelId: string; messageId: string } | null>(null);
   const [channelsCollapsed, setChannelsCollapsed] = usePreference("channelsCollapsed", false);
   const [membersOpen, setMembersOpen] = usePreference("membersOpen", true);
   const view = entry.view;
@@ -89,6 +92,10 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
   const manageChannels = can(view, "MANAGE_CHANNELS");
   const editing = dialog?.kind === "channel-settings" ? view.channels[dialog.channelId] : undefined;
   const profile = dialog?.kind === "profile" ? view.members[dialog.accountId] : undefined;
+  const mentionables = { members: present, channels };
+  const suggest = suggester(connection.origin, mentionables);
+  const editingId =
+    editingMessage !== null && editingMessage.channelId === selected?.id ? editingMessage.messageId : null;
   const closeDialog = () => setDialog(null);
   const openProfile = (accountId: string) => setDialog({ kind: "profile", accountId });
 
@@ -169,8 +176,17 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
               key={selected.id}
               connection={connection}
               channel={selected}
-              members={present}
-              channels={channels}
+              mentionables={mentionables}
+              suggest={suggest}
+              onEditLast={() => {
+                // The member's newest message here that can still be edited.
+                const last = entry.logs[selected.id]?.messages.findLast(
+                  (m) => m.kind === "user" && m.authorId === view.account.id,
+                );
+                if (last !== undefined) {
+                  setEditingMessage({ channelId: selected.id, messageId: last.id });
+                }
+              }}
               allowed={canSend(view)}
               timedOut={isTimedOut(view.account, Date.now())}
               typists={typists}
@@ -200,6 +216,10 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
               onOpenProfile={openProfile}
               onOpenLink={(url) => setDialog({ kind: "link", url })}
               onOpenChannel={setSelectedId}
+              mentionables={mentionables}
+              suggest={suggest}
+              editingId={editingId}
+              onEdit={(messageId) => setEditingMessage(messageId === null ? null : { channelId: selected.id, messageId })}
             />
           ) : (
             <p className="sn-channel-note">This is a voice channel. It has no messages, and voice is not built yet.</p>
@@ -252,29 +272,15 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
 function ChannelComposer(props: {
   connection: ServerConnection;
   channel: Channel;
-  /** Who can be mentioned: the members who are not banned. */
-  members: Account[];
-  channels: Channel[];
+  mentionables: Mentionables;
+  suggest: (query: MentionQuery) => Suggestion[];
+  /** Up in the empty field: edit the member's last message here. */
+  onEditLast: () => void;
   allowed: boolean;
   timedOut: boolean;
   typists: Account[];
 }) {
-  const { connection, channel, members, channels, allowed, timedOut, typists } = props;
-  const suggest = (at: MentionQuery): Suggestion[] =>
-    at.sigil === "@"
-      ? matchingMembers(members, at.query).map((member) => ({
-          id: member.id,
-          leading: <Avatar origin={connection.origin} account={member} size="sm" />,
-          label: member.displayName,
-          detail: member.username,
-          insert: memberMention(member),
-        }))
-      : matchingChannels(channels, at.query).map((c) => ({
-          id: c.id,
-          leading: <ChannelIcon channel={c} />,
-          label: c.name,
-          insert: channelMention(c),
-        }));
+  const { connection, channel, mentionables, suggest, onEditLast, allowed, timedOut, typists } = props;
   const lastAnnounced = useRef(0);
   return (
     <Composer
@@ -294,13 +300,33 @@ function ChannelComposer(props: {
         }
       }}
       suggest={suggest}
+      onEditLast={onEditLast}
       onSend={(text) => {
         lastAnnounced.current = 0;
-        void connection.send(channel.id, withTokens(text, members, channels));
+        void connection.send(channel.id, withTokens(text, mentionables.members, mentionables.channels));
       }}
       footer={<TypingIndicator names={typists.map((m) => m.displayName)} />}
     />
   );
+}
+
+/** Members and channels to offer while a mention is typed, in the composer and while editing. */
+function suggester(origin: string, { members, channels }: Mentionables) {
+  return (at: MentionQuery): Suggestion[] =>
+    at.sigil === "@"
+      ? matchingMembers(members, at.query).map((member) => ({
+          id: member.id,
+          leading: <Avatar origin={origin} account={member} size="sm" />,
+          label: member.displayName,
+          detail: member.username,
+          insert: memberMention(member),
+        }))
+      : matchingChannels(channels, at.query).map((c) => ({
+          id: c.id,
+          leading: <ChannelIcon channel={c} />,
+          label: c.name,
+          insert: channelMention(c),
+        }));
 }
 
 /**

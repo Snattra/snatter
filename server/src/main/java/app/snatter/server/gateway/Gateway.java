@@ -10,6 +10,7 @@ import app.snatter.api.model.GatewayMemberUpdatedDto;
 import app.snatter.api.model.GatewayMessageCreatedDto;
 import app.snatter.api.model.GatewayMessageDeletedDto;
 import app.snatter.api.model.GatewayMessageUpdatedDto;
+import app.snatter.api.model.GatewayMessagesPurgedDto;
 import app.snatter.api.model.GatewayPermissionsChangedDto;
 import app.snatter.api.model.GatewayPresenceUpdatedDto;
 import app.snatter.api.model.GatewayReadStateUpdatedDto;
@@ -418,7 +419,7 @@ public class Gateway {
         MessageDto shared = switch (event) {
             case MessageEvent.Created created -> MessageResource.toDto(created.message());
             case MessageEvent.Updated updated -> MessageResource.toDto(updated.message());
-            case MessageEvent.Deleted _ -> null;
+            case MessageEvent.Deleted _, MessageEvent.Purged _ -> null;
         };
         for (Client client : liveClients()) {
             if (!channel.isVisibleTo(client.principal)) {
@@ -439,6 +440,14 @@ public class Gateway {
                 case MessageEvent.Updated _ -> send(client, seq -> new GatewayMessageUpdatedDto().seq(seq).message(shared));
                 case MessageEvent.Deleted deleted -> send(client, seq -> new GatewayMessageDeletedDto()
                     .seq(seq).channelId(deleted.channelId()).messageId(deleted.messageId()));
+                case MessageEvent.Purged purged -> send(client, seq -> new GatewayMessagesPurgedDto()
+                    .seq(seq)
+                    .channelId(purged.channelId())
+                    .authorId(purged.authorId())
+                    .fromMessageId(purged.fromId())
+                    .toMessageId(purged.toId())
+                    .deletedAt(purged.deletedAt())
+                    .removedByModerator(purged.removedByModerator()));
             }
         }
     }

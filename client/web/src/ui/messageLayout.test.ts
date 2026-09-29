@@ -46,6 +46,54 @@ describe("layoutRows", () => {
   });
 });
 
+describe("layoutRows with deleted messages", () => {
+  it("keeps a deleted message in its author's group", () => {
+    const ghost: Message = {
+      kind: "deleted",
+      id: messageId(2),
+      channelId: "c",
+      authorId: "ann",
+      createdAt: new Date(2026, 8, 27, 18, 1).toISOString(),
+      deletedAt: new Date(2026, 8, 27, 18, 5).toISOString(),
+      removedByModerator: false,
+    };
+    const rows = layoutRows(log([user(1, "ann", 0), ghost, user(3, "ann", 2)]), "me", null);
+    expect(rows.map((row) => row.kind)).toEqual(["message", "deleted", "message"]);
+    expect(shape(rows)).toEqual(["head", "follow", "follow"]);
+  });
+});
+
+describe("layoutRows folding deleted messages", () => {
+  function ghost(n: number, authorId: string, minute: number, removedByModerator = true): Message {
+    const createdAt = new Date(2026, 8, 27, 18, minute).toISOString();
+    return { kind: "deleted", id: messageId(n), channelId: "c", authorId, createdAt, deletedAt: createdAt, removedByModerator };
+  }
+  const folded = (rows: ReturnType<typeof layoutRows>) =>
+    rows.map((row) => (row.kind === "deleted" ? row.messages.length : row.kind));
+
+  it("puts one author's deleted messages in a row together, however far apart", () => {
+    const rows = layoutRows(log([ghost(1, "ann", 0), ghost(2, "ann", 30), ghost(3, "ann", 59)]), "me", null);
+    expect(folded(rows)).toEqual([3]);
+  });
+
+  it("keeps apart different authors, different ways of deleting, and anything in between", () => {
+    const rows = layoutRows(
+      log([
+        ghost(1, "ann", 0),
+        ghost(2, "ann", 1, false),
+        ghost(3, "bob", 2),
+        ghost(4, "bob", 3),
+        user(5, "bob", 4),
+        ghost(6, "bob", 5),
+        ghost(7, "bob", 6),
+      ]),
+      "me",
+      messageId(7),
+    );
+    expect(folded(rows)).toEqual([1, 1, 2, "message", 1, "divider", 1]);
+  });
+});
+
 describe("unreadAfter", () => {
   it("counts others' messages after the anchor", () => {
     const channel = log([user(1, "bob", 0), user(2, "me", 1), user(3, "bob", 2), user(4, "bob", 3)]);

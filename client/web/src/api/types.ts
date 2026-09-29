@@ -13,6 +13,7 @@ export type ChannelType = Schemas["ChannelType"];
 export type ChannelUpdate = Schemas["ChannelUpdate"];
 export type Invite = Schemas["Invite"];
 export type InvitePreview = Schemas["InvitePreview"];
+export type DeletedMessage = Schemas["DeletedMessage"];
 export type Message = Schemas["Message"];
 export type Permission = Schemas["Permission"];
 export type PermissionSet = Schemas["PermissionSet"];

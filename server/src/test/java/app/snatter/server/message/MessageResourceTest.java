@@ -91,7 +91,18 @@ class MessageResourceTest {
             as(bob.token()).delete("/api/v1/channels/" + channel + "/messages/" + id)
                 .then().statusCode(403).body("error", equalTo("forbidden"));
             as(alice.token()).delete("/api/v1/channels/" + channel + "/messages/" + id).then().statusCode(204);
-            message(alice.token(), channel, id).then().statusCode(404).body("error", equalTo("message_not_found"));
+            // What is left keeps its place, without anything alice wrote.
+            message(bob.token(), channel, id).then().statusCode(200)
+                .body("kind", equalTo("deleted"))
+                .body("authorId", equalTo(alice.id()))
+                .body("removedByModerator", equalTo(false))
+                .body("deletedAt", notNullValue())
+                .body("$", not(hasKey("content")))
+                .body("$", not(hasKey("mentions")));
+            // Deleting it again changes nothing; it can no longer be edited.
+            as(bob.token()).delete("/api/v1/channels/" + channel + "/messages/" + id).then().statusCode(204);
+            as(alice.token()).body(Map.of("content", "back")).patch("/api/v1/channels/" + channel + "/messages/" + id)
+                .then().statusCode(403);
             // A message is only reachable through its own channel.
             String elsewhere = send(alice.token(), GENERAL_TEXT, "hi general");
             message(alice.token(), channel, elsewhere).then().statusCode(404);
@@ -156,6 +167,48 @@ class MessageResourceTest {
             .then().statusCode(201).body("mentions", equalTo(List.of(alice.id()))).extract().path("id");
         as(alice.token()).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + allowed).then().statusCode(204);
         as(alice.token()).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + id).then().statusCode(204);
+    }
+
+    @Test
+    void moderatorsPurgeAMembersRecentMessages() {
+        String channel = createChannel("text", "purged");
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User bob = TestUsers.register();
+        String owner = TestUsers.ownerToken();
+        try {
+            String older = send(alice.token(), channel, "before");
+            String first = send(alice.token(), channel, "spam 1");
+            String since = message(alice.token(), channel, first).then().extract().path("createdAt");
+            String second = send(alice.token(), GENERAL_TEXT, "spam 2");
+            String reply = send(alice.token(), channel, Map.of("content", "spam 3", "replyToId", first))
+                .then().statusCode(201).extract().path("id");
+            String bobs = send(bob.token(), channel, "not spam");
+
+            // Only with MANAGE_MESSAGES, for an existing account, and from a time that has passed.
+            as(bob.token()).queryParam("since", since).delete("/api/v1/accounts/" + alice.id() + "/messages")
+                .then().statusCode(403);
+            as(owner).queryParam("since", since).delete("/api/v1/accounts/" + UUID.randomUUID() + "/messages")
+                .then().statusCode(404).body("error", equalTo("account_not_found"));
+            as(owner).queryParam("since", "2999-01-01T00:00:00Z").delete("/api/v1/accounts/" + alice.id() + "/messages")
+                .then().statusCode(400).body("error", equalTo("invalid_since"));
+
+            as(owner).queryParam("since", since).delete("/api/v1/accounts/" + alice.id() + "/messages")
+                .then().statusCode(200).body("removed", equalTo(3));
+            for (String id : List.of(first, reply)) {
+                message(bob.token(), channel, id).then()
+                    .body("kind", equalTo("deleted"))
+                    .body("removedByModerator", equalTo(true))
+                    .body("$", not(hasKey("replyToId")));
+            }
+            message(bob.token(), GENERAL_TEXT, second).then().body("kind", equalTo("deleted"));
+            message(bob.token(), channel, older).then().body("kind", equalTo("user"));
+            message(bob.token(), channel, bobs).then().body("kind", equalTo("user"));
+            // Nothing left to purge.
+            as(owner).queryParam("since", since).delete("/api/v1/accounts/" + alice.id() + "/messages")
+                .then().statusCode(200).body("removed", equalTo(0));
+        } finally {
+            deleteChannel(channel);
+        }
     }
 
     @Test
@@ -283,7 +336,12 @@ class MessageResourceTest {
             as(member.token()).delete("/api/v1/channels/" + channel + "/messages/" + announcement).then().statusCode(403);
             as(mod.token()).delete("/api/v1/channels/" + channel + "/messages/" + announcement).then().statusCode(204);
             as(mod.token()).delete("/api/v1/channels/" + channel + "/messages/" + notice).then().statusCode(204);
-            list(member.token(), channel, "").then().body("size()", equalTo(0));
+            // The notice is gone; the announcement is marked as removed by a moderator.
+            list(member.token(), channel, "").then()
+                .body("size()", equalTo(1))
+                .body("[0].id", equalTo(announcement))
+                .body("[0].kind", equalTo("deleted"))
+                .body("[0].removedByModerator", equalTo(true));
         } finally {
             deleteChannel(channel);
             deleteChannel(voice);

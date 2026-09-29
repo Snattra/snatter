@@ -22,9 +22,34 @@ export interface TextContext {
  * wrote ever becomes HTML. Mentions show the current name of whom or what they
  * name, and links open only through `context.openLink`, which asks first.
  */
-export function MessageText({ content, context }: { content: string; context: TextContext }) {
+export function MessageText(props: {
+  content: string;
+  context: TextContext;
+  /** After the text, on its last line when that is a paragraph: the edited mark. */
+  suffix?: ReactNode;
+}) {
+  const { content, context, suffix } = props;
   const blocks = useMemo(() => parseMarkdown(content), [content]);
-  return <>{renderBlocks(blocks, context)}</>;
+  const last = blocks.at(-1);
+  if (!suffix) {
+    return <>{renderBlocks(blocks, context)}</>;
+  }
+  if (last?.type !== "paragraph") {
+    return (
+      <>
+        {renderBlocks(blocks, context)}
+        <p>{suffix}</p>
+      </>
+    );
+  }
+  return (
+    <>
+      {renderBlocks(blocks.slice(0, -1), context)}
+      <p>
+        {renderInlines(last.content, context)} {suffix}
+      </p>
+    </>
+  );
 }
 
 function renderBlocks(blocks: Block[], context: TextContext): ReactNode[] {

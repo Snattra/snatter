@@ -4,8 +4,12 @@ import app.snatter.server.account.AccountId;
 import app.snatter.server.channel.ChannelId;
 import java.time.Instant;
 
-/** A message in a channel: a member's {@link UserMessage} or the server's {@link SystemMessage}. */
-public sealed interface Message permits UserMessage, SystemMessage {
+/**
+ * A message in a channel: a member's {@link UserMessage}, the server's
+ * {@link SystemMessage}, or the {@link DeletedMessage} left where a member's
+ * message was deleted.
+ */
+public sealed interface Message permits UserMessage, SystemMessage, DeletedMessage {
 
     MessageId id();
 

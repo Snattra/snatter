@@ -271,6 +271,47 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/v1/accounts/{id}/messages:
+    delete:
+      tags: [messages]
+      operationId: purgeMessages
+      summary: Delete a member's recent messages
+      description: |
+        Requires `MANAGE_MESSAGES`. Deletes every message the member sent
+        since `since`, in the channels the caller can see, as
+        `deleteMessage` would; notices and messages already deleted are left
+        alone. Each channel concerned gets one `messages_purged` frame.
+        `since` must not be in the future (`invalid_since`).
+      security:
+        - session: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+        - name: since
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: How many messages were deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagePurgeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/accounts/{id}:
     get:
       tags: [accounts]
@@ -1167,8 +1208,13 @@ paths:
       description: |
         The author may delete their own user messages; `MANAGE_MESSAGES` in
         the channel allows deleting any message, system notices included.
-        Deletion is permanent. Replies to it keep `replyToId` but get a null
-        `replyTo`.
+
+        A user message becomes a `DeletedMessage` in its place, announced as
+        `message_updated`: its content, mentions and reply are removed for
+        good, and `removedByModerator` says whether someone other than the
+        author deleted it. A system notice is removed entirely, announced as
+        `message_deleted`. Deleting a message that is already deleted
+        changes nothing. Replies keep `replyToId` but get a null `replyTo`.
       security:
         - session: []
       parameters:
@@ -1365,15 +1411,17 @@ components:
       description: |
         A message in a channel, told apart by `kind`: `user` for a member's
         message, `system` for a notice the server wrote about something that
-        happened.
+        happened, `deleted` for what is left of a deleted member's message.
       oneOf:
         - $ref: "#/components/schemas/UserMessage"
         - $ref: "#/components/schemas/SystemMessage"
+        - $ref: "#/components/schemas/DeletedMessage"
       discriminator:
         propertyName: kind
         mapping:
           user: "#/components/schemas/UserMessage"
           system: "#/components/schemas/SystemMessage"
+          deleted: "#/components/schemas/DeletedMessage"
 
     MessageBase:
       type: object
@@ -1382,7 +1430,7 @@ components:
       properties:
         kind:
           type: string
-          description: "`user` or `system`"
+          description: "`user`, `system` or `deleted`"
         id:
           $ref: "#/components/schemas/MessageId"
         channelId:
@@ -1455,6 +1503,31 @@ components:
           properties:
             notice:
               $ref: "#/components/schemas/SystemNotice"
+
+    DeletedMessage:
+      description: |
+        A member's message that was deleted. It keeps its place in the
+        channel, but its content, mentions and reply are gone for good.
+      allOf:
+        - $ref: "#/components/schemas/MessageBase"
+        - type: object
+          required: [deletedAt, removedByModerator]
+          properties:
+            deletedAt:
+              type: string
+              format: date-time
+            removedByModerator:
+              type: boolean
+              description: Deleted by someone other than its author, using `MANAGE_MESSAGES`
+
+    MessagePurgeResult:
+      type: object
+      required: [removed]
+      properties:
+        removed:
+          type: integer
+          minimum: 0
+          description: How many messages were deleted
 
     SystemNotice:
       description: |
@@ -2385,6 +2458,7 @@ components:
         - $ref: "#/components/schemas/GatewayMessageCreated"
         - $ref: "#/components/schemas/GatewayMessageUpdated"
         - $ref: "#/components/schemas/GatewayMessageDeleted"
+        - $ref: "#/components/schemas/GatewayMessagesPurged"
         - $ref: "#/components/schemas/GatewayPresenceUpdated"
         - $ref: "#/components/schemas/GatewayTypingStarted"
         - $ref: "#/components/schemas/GatewayReadStateUpdated"
@@ -2405,6 +2479,7 @@ components:
           message_created: "#/components/schemas/GatewayMessageCreated"
           message_updated: "#/components/schemas/GatewayMessageUpdated"
           message_deleted: "#/components/schemas/GatewayMessageDeleted"
+          messages_purged: "#/components/schemas/GatewayMessagesPurged"
           presence_updated: "#/components/schemas/GatewayPresenceUpdated"
           typing_started: "#/components/schemas/GatewayTypingStarted"
           read_state_updated: "#/components/schemas/GatewayReadStateUpdated"
@@ -2569,6 +2644,8 @@ components:
               $ref: "#/components/schemas/Message"
 
     GatewayMessageUpdated:
+      description: |
+        A message changed: edited, or deleted and now a `DeletedMessage`.
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object
@@ -2578,6 +2655,7 @@ components:
               $ref: "#/components/schemas/Message"
 
     GatewayMessageDeleted:
+      description: A system notice was removed; it is gone from the channel.
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object
@@ -2587,6 +2665,31 @@ components:
               $ref: "#/components/schemas/ChannelId"
             messageId:
               $ref: "#/components/schemas/MessageId"
+
+    GatewayMessagesPurged:
+      description: |
+        A member's messages in a channel were deleted at once, all of them
+        from `fromMessageId` to `toMessageId`. Each user message by
+        `authorId` in that range is now a `DeletedMessage` with these
+        `deletedAt` and `removedByModerator`.
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [channelId, authorId, fromMessageId, toMessageId, deletedAt, removedByModerator]
+          properties:
+            channelId:
+              $ref: "#/components/schemas/ChannelId"
+            authorId:
+              $ref: "#/components/schemas/AccountId"
+            fromMessageId:
+              $ref: "#/components/schemas/MessageId"
+            toMessageId:
+              $ref: "#/components/schemas/MessageId"
+            deletedAt:
+              type: string
+              format: date-time
+            removedByModerator:
+              type: boolean
 
     GatewayPresenceUpdated:
       description: A member came online or went offline

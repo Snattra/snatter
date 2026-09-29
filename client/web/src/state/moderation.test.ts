@@ -78,6 +78,16 @@ describe("canAssign", () => {
 });
 
 describe("moderationOf", () => {
+  it("lets MANAGE_MESSAGES delete anyone's recent messages, rank aside", () => {
+    const cleaner: ServerView = {
+      ...viewOf(account("cleaner", [])),
+      permissions: { owner: false, permissions: ["MANAGE_MESSAGES"] },
+    };
+    expect(moderationOf(cleaner, account("above", ["admin"]), now).deleteMessages).toBe(true);
+    expect(moderationOf(boss, boss.account, now).deleteMessages).toBe(true);
+    expect(moderationOf(mod, account("member", ["user"]), now).deleteMessages).toBe(false);
+  });
+
   it("offers what the viewer may do", () => {
     expect(moderationOf(mod, account("member", ["user"]), now)).toEqual({
       editRoles: false,
@@ -85,6 +95,7 @@ describe("moderationOf", () => {
       endTimeout: false,
       ban: true,
       liftBan: false,
+      deleteMessages: false,
     });
     expect(moderationOf(viewOf(account("plain", ["user"])), account("member", ["user"]), now)).toEqual({
       editRoles: false,
@@ -92,6 +103,7 @@ describe("moderationOf", () => {
       endTimeout: false,
       ban: false,
       liftBan: false,
+      deleteMessages: false,
     });
   });
 

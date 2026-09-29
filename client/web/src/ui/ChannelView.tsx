@@ -1,12 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Channel } from "../api/types";
+import type { Channel, SystemMessage, UserMessage } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
 import type { ChannelLog } from "../state/channelLog";
 import { isAfter, timeOfId } from "../state/ids";
-import type { ServerView } from "../state/serverView";
+import type { MentionQuery, Mentionables } from "../state/mentions";
+import { type ServerView, can } from "../state/serverView";
+import { IconButton } from "./controls";
 import { useAttention } from "./hooks";
 import { layoutRows, unreadAfter } from "./messageLayout";
-import { MessageList, NewMessagesDivider, PendingRow, SystemMessageRow, UnreadBar, UserMessageRow } from "./messages";
+import { DeleteMessageModal, MessageEditor } from "./messageActions";
+import {
+  DeletedMessageRow,
+  MessageList,
+  NewMessagesDivider,
+  PendingRow,
+  type Suggestion,
+  SystemMessageRow,
+  UnreadBar,
+  UserMessageRow,
+} from "./messages";
 import type { TextContext } from "./messageText";
 import { Skeleton } from "./surfaces";
 import { sinceTime } from "./time";
@@ -28,6 +40,12 @@ interface ChannelViewProps {
   onOpenLink: (url: string) => void;
   /** Switches to a channel a message mentions. */
   onOpenChannel: (channelId: string) => void;
+  mentionables: Mentionables;
+  suggest: (query: MentionQuery) => Suggestion[];
+  /** The member's own message being edited here, if any. */
+  editingId: string | null;
+  /** Starts editing a message, or with null stops. */
+  onEdit: (messageId: string | null) => void;
 }
 
 /**
@@ -41,8 +59,10 @@ interface ChannelViewProps {
  * arrives meanwhile shows as new when they come back.
  */
 export function ChannelView(props: ChannelViewProps) {
-  const { connection, view, channel, log, onOpenProfile, onOpenLink, onOpenChannel } = props;
+  const { connection, view, channel, log, onOpenProfile, onOpenLink, onOpenChannel, mentionables, suggest, editingId, onEdit } =
+    props;
   const me = view.account.id;
+  const [deleting, setDeleting] = useState<UserMessage | SystemMessage | null>(null);
   // The author's profile, for a message whose author is still a member.
   const opener = (authorId: string | null | undefined) =>
     authorId != null && view.members[authorId] !== undefined ? () => onOpenProfile(authorId) : undefined;
@@ -53,6 +73,32 @@ export function ChannelView(props: ChannelViewProps) {
     openProfile: onOpenProfile,
     openChannel: onOpenChannel,
     openLink: onOpenLink,
+  };
+  // Authors edit and delete their own messages; MANAGE_MESSAGES deletes any, notices included.
+  const manage = can(view, "MANAGE_MESSAGES");
+  const actionsFor = (message: UserMessage | SystemMessage) => {
+    const own = message.kind === "user" && message.authorId === me;
+    if (!own && !manage) {
+      return undefined;
+    }
+    return (
+      <>
+        {own && <IconButton icon="edit" label="Edit" onClick={() => onEdit(message.id)} />}
+        <IconButton
+          icon="delete"
+          label="Delete"
+          className="sn-message-action-danger"
+          onClick={(event) => {
+            if (!event.shiftKey) {
+              setDeleting(message);
+              return;
+            }
+            // Shift skips the question; if it fails, the question comes up to say why.
+            connection.delete(message).catch(() => setDeleting(message));
+          }}
+        />
+      </>
+    );
   };
   const reading = view.reading[channel.id];
   const scroller = useRef<HTMLDivElement>(null);
@@ -231,6 +277,18 @@ export function ChannelView(props: ChannelViewProps) {
                         author={row.message.authorId ? view.members[row.message.authorId] : undefined}
                         isNew={log?.live[row.message.id] === true}
                         onAuthor={opener(row.message.authorId)}
+                        actions={manage ? actionsFor(row.message) : undefined}
+                      />
+                    );
+                  case "deleted":
+                    return (
+                      <DeletedMessageRow
+                        key={row.messages[0].id}
+                        origin={connection.origin}
+                        messages={row.messages}
+                        author={row.messages[0].authorId ? view.members[row.messages[0].authorId] : undefined}
+                        head={row.head}
+                        onAuthor={opener(row.messages[0].authorId)}
                       />
                     );
                   case "message":
@@ -246,6 +304,18 @@ export function ChannelView(props: ChannelViewProps) {
                         mentioned={row.message.mentions.includes(me)}
                         onAuthor={opener(row.message.authorId)}
                         text={text}
+                        actions={actionsFor(row.message)}
+                        editor={
+                          editingId === row.message.id && row.message.authorId === me ? (
+                            <MessageEditor
+                              connection={connection}
+                              message={row.message}
+                              mentionables={mentionables}
+                              suggest={suggest}
+                              onDone={() => onEdit(null)}
+                            />
+                          ) : undefined
+                        }
                       />
                     );
                   case "pending":
@@ -268,6 +338,16 @@ export function ChannelView(props: ChannelViewProps) {
           )}
         </div>
       </div>
+      {deleting !== null && (
+        <DeleteMessageModal
+          connection={connection}
+          message={deleting}
+          author={deleting.authorId ? view.members[deleting.authorId] : undefined}
+          own={deleting.authorId === me}
+          text={text}
+          onClose={() => setDeleting(null)}
+        />
+      )}
     </>
   );
 }

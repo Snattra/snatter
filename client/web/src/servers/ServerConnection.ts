@@ -24,6 +24,7 @@ import {
   withMessage,
   withOlder,
   withPending,
+  withPurged,
   withoutPending,
   withUpdated,
 } from "../state/channelLog";
@@ -252,6 +253,53 @@ export class ServerConnection {
     this.updateLog(channelId, (log) => withoutPending(log, nonce));
   }
 
+  /** Replaces the text of one of the member's messages; the log shows it once the server has it. */
+  async edit(channelId: string, messageId: string, content: string): Promise<void> {
+    const message = unwrap(
+      await this.api.PATCH("/api/v1/channels/{id}/messages/{messageId}", {
+        params: { path: { id: channelId, messageId } },
+        body: { content },
+      }),
+    );
+    this.updateHeldLog(channelId, (log) => withUpdated(log, message));
+  }
+
+  /**
+   * Deletes a message. It turns into what the server will announce straight
+   * away: a deleted member's message, or nothing for a notice.
+   */
+  async delete(message: Message): Promise<void> {
+    unwrap(
+      await this.api.DELETE("/api/v1/channels/{id}/messages/{messageId}", {
+        params: { path: { id: message.channelId, messageId: message.id } },
+      }),
+    );
+    const me = this.entry().view?.account.id;
+    this.updateHeldLog(message.channelId, (log) =>
+      message.kind === "system"
+        ? withDeleted(log, message.id)
+        : withUpdated(log, {
+            kind: "deleted",
+            id: message.id,
+            channelId: message.channelId,
+            authorId: message.authorId,
+            createdAt: message.createdAt,
+            deletedAt: new Date().toISOString(),
+            removedByModerator: message.authorId !== me,
+          }),
+    );
+  }
+
+  /** Deletes everything a member sent since a time, in the channels the member can see; resolves with how many. */
+  async purge(accountId: string, since: Date): Promise<number> {
+    const result = unwrap(
+      await this.api.DELETE("/api/v1/accounts/{id}/messages", {
+        params: { path: { id: accountId }, query: { since: since.toISOString() } },
+      }),
+    );
+    return result.removed;
+  }
+
   /**
    * Moves the read marker forward to a message. The view follows at once, so
    * the channel stops showing as unread; the server confirms over the gateway.
@@ -370,6 +418,9 @@ export class ServerConnection {
         break;
       case "message_deleted":
         this.updateHeldLog(frame.channelId, (log) => withDeleted(log, frame.messageId));
+        break;
+      case "messages_purged":
+        this.updateHeldLog(frame.channelId, (log) => withPurged(log, frame));
         break;
       case "channel_deleted":
         this.dropLog(frame.channelId);

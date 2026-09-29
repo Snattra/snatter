@@ -18,7 +18,16 @@ export interface Moderation {
   endTimeout: boolean;
   ban: boolean;
   liftBan: boolean;
+  /** Delete what they sent recently, in the channels the viewer sees. Anyone's, as deleting a single message is. */
+  deleteMessages: boolean;
 }
+
+/** How far back deleting a member's messages can reach, offered in the profile. */
+export const PURGE_LENGTHS: { seconds: number; label: string }[] = [
+  { seconds: 60 * 60, label: "The last hour" },
+  { seconds: 24 * 60 * 60, label: "The last day" },
+  { seconds: 7 * 24 * 60 * 60, label: "The last week" },
+];
 
 export function isOwner(view: ServerView, member: Account): boolean {
   return view.info.ownerId != null && view.info.ownerId === member.id;
@@ -71,6 +80,7 @@ export function moderationOf(view: ServerView, member: Account, now: number): Mo
     endTimeout: timeouts && timedOut,
     ban: rank && can(view, "BAN_MEMBERS") && !banned,
     liftBan: can(view, "BAN_MEMBERS") && banned,
+    deleteMessages: can(view, "MANAGE_MESSAGES"),
   };
 }
 

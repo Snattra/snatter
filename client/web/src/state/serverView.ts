@@ -131,6 +131,7 @@ export function applyFrame(view: ServerView, frame: Event, now: number): ServerV
     }
     case "message_updated":
     case "message_deleted":
+    case "messages_purged":
       return view;
   }
 }

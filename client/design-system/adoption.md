@@ -12,6 +12,7 @@ The web client (`client/web` in the Snatter repository) is built on this system.
 | AppShell, ServerRail, Sidebar, ChannelHeader | `ui/layout.tsx`, with `RailServer`, `ChannelList`, `ChannelItem` and `ChannelAction` |
 | Message, SystemMessage, Composer, NewMessages | `ui/messages.tsx`: `Message` with `UserMessageRow` and `PendingRow`, `SystemMessageRow`, `NewMessagesDivider`, `UnreadBar`; `ui/ChannelView.tsx` puts them together |
 | Message formatting, mentions and the link Modal | `ui/messageText.tsx`: `MessageText` renders what `ui/markdown.ts` parses, mentions included; `LinkModal` |
+| Message actions, editing and deleting | `ui/messageActions.tsx`: `MessageEditor` (the Composer in `edit` mode) and `DeleteMessageModal`; `DeletedMessageRow` in `ui/messages.tsx`; `ui/ChannelView.tsx` gives each message its actions |
 | The Composer's suggestions | `Composer` in `ui/messages.tsx`, fed by `state/mentions.ts` from `ChannelComposer` in `ui/ServerScreen.tsx` |
 | Invite | `ui/invites.tsx`: `InviteButton` holds the Popover and `InviteLink` |
 | Modal, as Create channel, Channel settings and Server settings | `ui/channelSettings.tsx` and `ui/serverSettings.tsx` |
@@ -20,7 +21,7 @@ The web client (`client/web` in the Snatter repository) is built on this system.
 
 The app's components take the app's own data (an `Account`, a `Channel`, the connection's origin) instead of the display props in `components/index.d.ts`. They render the same markup and classes, so the app and these previews look and move the same.
 
-Not in the app yet, because the features behind them are not built: the message actions toolbar, role colours on names, the Composer's attach button, the add-server action and the server rail's unread pill, and the danger and accent Banners. Their styles are in `components/bundle.css`. Bring each block into `styles.css` together with the component that uses it.
+Not in the app yet, because the features behind them are not built: role colours on names, the Composer's attach button, the add-server action and the server rail's unread pill, and the danger and accent Banners. Their styles are in `components/bundle.css`. Bring each block into `styles.css` together with the component that uses it.
 
 Rules for keeping the two in step:
 - A token changes in `tokens.json` and `client/web/src/tokens.css` in the same commit.

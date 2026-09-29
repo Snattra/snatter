@@ -191,8 +191,21 @@ class GatewayTest {
             assertEquals("edited", bobGateway.await("message_updated", f -> id.equals(f.getString("message.id"))).getString("message.content"));
 
             as(alice.token()).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + id).then().statusCode(204);
-            JsonPath deleted = bobGateway.await("message_deleted", f -> id.equals(f.getString("messageId")));
-            assertEquals(GENERAL_TEXT, deleted.getString("channelId"));
+            JsonPath deleted = bobGateway.await("message_updated",
+                f -> id.equals(f.getString("message.id")) && "deleted".equals(f.getString("message.kind")));
+            assertEquals(false, deleted.getBoolean("message.removedByModerator"));
+            assertNull(deleted.getString("message.content"));
+
+            String spam = as(alice.token()).body(Map.of("content", "spam")).post("/api/v1/channels/" + GENERAL_TEXT + "/messages")
+                .then().statusCode(201).extract().path("id");
+            String since = as(alice.token()).get("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + spam).path("createdAt");
+            as(TestUsers.ownerToken()).queryParam("since", since).delete("/api/v1/accounts/" + alice.id() + "/messages")
+                .then().statusCode(200);
+            JsonPath purged = bobGateway.await("messages_purged", f -> spam.equals(f.getString("fromMessageId")));
+            assertEquals(GENERAL_TEXT, purged.getString("channelId"));
+            assertEquals(alice.id(), purged.getString("authorId"));
+            assertEquals(spam, purged.getString("toMessageId"));
+            assertEquals(true, purged.getBoolean("removedByModerator"));
         }
     }
 

@@ -283,10 +283,27 @@ pointing at a deleted message; the response then has `replyToId` and a null
 (`invalid_reply`).
 
 **Editing and deleting.** Authors edit their own user messages; only the new
-text is kept, with `edited_at` set. Deletion is permanent. Authors delete
-their own user messages, and `MANAGE_MESSAGES` in the channel deletes any
-message there, notices included. When an account is deleted its messages stay
-with a null author.
+text is kept, with `edited_at` set. Authors delete their own user messages,
+and `MANAGE_MESSAGES` in the channel deletes any message there, notices
+included. When an account is deleted its messages stay with a null author.
+
+A deleted user message becomes a `DeletedMessage` (kind `deleted`) in its
+place, so the conversation around it still reads in order: its content,
+mentions and reply are removed from the row for good, and it records when it
+was deleted, by whom (`deleted_by`, kept for moderation records and not
+exposed) and whether that was someone other than the author
+(`removed_by_moderator`, which clients show as "Removed by a moderator").
+The gateway announces it as `message_updated`. A deleted notice has nothing
+worth keeping, so it is removed and announced as `message_deleted`.
+Deleting a `DeletedMessage` changes nothing, and it cannot be edited or
+replied to.
+
+**Purging.** `DELETE /accounts/{id}/messages?since=` lets `MANAGE_MESSAGES`
+delete everything a member sent since a time, in the channels the moderator
+can see, for cleaning up after a spammer. It is one `UPDATE` over the
+`(author_id, created_at)` index, and each channel gets a single
+`messages_purged` frame naming the author and the first and last message
+deleted, instead of one frame per message.
 
 **System notices** are written by `message.SystemNotices`, which observes
 `ChannelEvent`, `AccountEvent` and `ServerSettingsService.Changed` inside the

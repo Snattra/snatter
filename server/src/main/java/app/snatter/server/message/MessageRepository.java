@@ -9,6 +9,8 @@ import app.snatter.server.account.AccountId;
 import app.snatter.server.channel.ChannelId;
 import app.snatter.server.settings.RegistrationMode;
 import jakarta.enterprise.context.ApplicationScoped;
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,6 +46,8 @@ public class MessageRepository {
                     instant(rs, "created_at"),
                     instant(rs, "edited_at"));
             }
+            case "deleted" -> new DeletedMessage(id, channelId, authorId,
+                instant(rs, "created_at"), instant(rs, "deleted_at"), rs.getBoolean("removed_by_moderator"));
             case "system" -> new SystemMessage(id, channelId, authorId,
                 load(new StoredNotice(rs.getString("system_type"), rs.getString("system_from"), rs.getString("system_to"))),
                 instant(rs, "created_at"));
@@ -51,14 +55,14 @@ public class MessageRepository {
         };
     };
 
-    /** A message with a preview of the message it replies to, if that still exists. */
+    /** A message with a preview of the message it replies to, while that is there and not deleted. */
     private static final String SELECT = """
         SELECT m.id, m.channel_id, m.kind, m.author_id, m.content, m.mentioned_account_ids,
                m.system_type, m.system_data ->> 'from' AS system_from, m.system_data ->> 'to' AS system_to,
-               m.reply_to_id, m.created_at, m.edited_at,
+               m.reply_to_id, m.created_at, m.edited_at, m.deleted_at, m.removed_by_moderator,
                r.id AS reply_id, r.author_id AS reply_author_id, r.content AS reply_content
         FROM message m
-        LEFT JOIN message r ON r.id = m.reply_to_id AND r.channel_id = m.channel_id
+        LEFT JOIN message r ON r.id = m.reply_to_id AND r.channel_id = m.channel_id AND r.kind = 'user'
         """;
 
     private final Jdbi jdbi;
@@ -122,6 +126,7 @@ public class MessageRepository {
                 .bind("replyToId", m.replyToId())
                 .bind("createdAt", m.createdAt())
                 .execute());
+            case DeletedMessage m -> throw new IllegalArgumentException("A message is only deleted where it is: " + m.id());
             case SystemMessage m -> {
                 StoredNotice notice = store(m.notice());
                 jdbi.useHandle(h -> h
@@ -157,6 +162,55 @@ public class MessageRepository {
             .execute());
     }
 
+    /** What a user message becomes when deleted; everything its author wrote goes. */
+    private static final String DELETE_CONTENT = """
+        UPDATE message
+        SET kind = 'deleted', content = NULL, mentioned_account_ids = '{}', reply_to_id = NULL, edited_at = NULL,
+            deleted_at = :at, deleted_by = :by, removed_by_moderator = :byModerator
+        """;
+
+    /** Turns a user message into a {@link DeletedMessage}. */
+    public DeletedMessage markDeleted(UserMessage message, AccountId by, Instant at) {
+        boolean byModerator = !message.isBy(by);
+        jdbi.useHandle(h -> h
+            .createUpdate(DELETE_CONTENT + "WHERE id = :id AND kind = 'user'")
+            .bind("id", message.id())
+            .bind("at", at)
+            .bind("by", by)
+            .bind("byModerator", byModerator)
+            .execute());
+        return new DeletedMessage(message.id(), message.channelId(), message.authorId(), message.createdAt(), at, byModerator);
+    }
+
+    /** A message a purge deleted. */
+    public record Purged(ChannelId channelId, MessageId id) {
+    }
+
+    /**
+     * Deletes the author's user messages since {@code since} in these
+     * channels, as {@link #markDeleted} would; oldest first.
+     */
+    public List<Purged> purge(AccountId authorId, Instant since, Collection<ChannelId> channelIds, AccountId by, Instant at) {
+        if (channelIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbi.withHandle(h -> h
+            .createQuery("WITH purged AS (" + DELETE_CONTENT + """
+                WHERE author_id = :authorId AND kind = 'user' AND created_at >= :since AND channel_id = ANY(:channelIds)
+                RETURNING id, channel_id
+                ) SELECT id, channel_id FROM purged ORDER BY id
+                """)
+            .bind("authorId", authorId)
+            .bind("since", since)
+            .bindArray("channelIds", UUID.class, channelIds.stream().map(ChannelId::value).toArray(UUID[]::new))
+            .bind("at", at)
+            .bind("by", by)
+            .bind("byModerator", !authorId.equals(by))
+            .map((rs, ctx) -> new Purged(new ChannelId(uuid(rs, "channel_id")), new MessageId(uuid(rs, "id"))))
+            .list());
+    }
+
+    /** Removes a message entirely; for notices. */
     public void delete(MessageId id) {
         jdbi.useHandle(h -> h
             .createUpdate("DELETE FROM message WHERE id = :id")

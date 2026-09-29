@@ -11,13 +11,19 @@ import app.snatter.server.role.Permission;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Messages in channels and how far members have read them. Reading needs
  * the channel to be visible, sending needs {@code SEND_MESSAGES}. Authors
- * edit and delete their own messages; {@code MANAGE_MESSAGES} deletes any.
+ * edit and delete their own messages; {@code MANAGE_MESSAGES} deletes any,
+ * one at a time or all of a member's recent ones. A deleted user message
+ * stays as a {@link DeletedMessage}; a deleted notice is removed.
  */
 @ApplicationScoped
 public class MessageService {
@@ -109,12 +115,59 @@ public class MessageService {
     public void delete(AccountPrincipal member, ChannelId channelId, MessageId id) {
         requireReadable(member, channelId);
         Message message = require(channelId, id);
+        if (message instanceof DeletedMessage) {
+            return;
+        }
         boolean own = message instanceof UserMessage && message.isBy(member.accountId());
         if (!own && !member.has(Permission.MANAGE_MESSAGES)) {
             throw new ApiException(403, "forbidden", "You need MANAGE_MESSAGES to delete this message");
         }
-        messages.delete(id);
-        events.fire(new MessageEvent.Deleted(channelId, id));
+        switch (message) {
+            case UserMessage user -> events.fire(new MessageEvent.Updated(messages.markDeleted(user, member.accountId(), now())));
+            case SystemMessage notice -> {
+                messages.delete(notice.id());
+                events.fire(new MessageEvent.Deleted(channelId, id));
+            }
+            case DeletedMessage _ -> throw new IllegalStateException("handled above");
+        }
+    }
+
+    /**
+     * Deletes the member's user messages sent since {@code since}, in the
+     * channels the moderator can see.
+     *
+     * @return how many were deleted
+     */
+    @Transactional
+    public int purge(AccountPrincipal moderator, AccountId authorId, Instant since) {
+        if (!moderator.has(Permission.MANAGE_MESSAGES)) {
+            throw new ApiException(403, "forbidden", "You need MANAGE_MESSAGES to delete a member's messages");
+        }
+        if (accounts.findById(authorId).isEmpty()) {
+            throw ApiException.notFound("account_not_found", "No such account");
+        }
+        Instant at = now();
+        if (since.isAfter(at)) {
+            throw ApiException.badRequest("invalid_since", "Choose a time that has passed");
+        }
+        List<ChannelId> readable = channels.list(moderator).stream()
+            .filter(c -> c.type().hasMessages())
+            .map(Channel::id)
+            .toList();
+        List<MessageRepository.Purged> purged = messages.purge(authorId, since, readable, moderator.accountId(), at);
+        boolean byModerator = !authorId.equals(moderator.accountId());
+        // Oldest first, so each channel's first and last are its range.
+        purged.stream()
+            .collect(Collectors.groupingBy(MessageRepository.Purged::channelId, LinkedHashMap::new,
+                Collectors.mapping(MessageRepository.Purged::id, Collectors.toList())))
+            .forEach((channelId, ids) -> events.fire(
+                new MessageEvent.Purged(channelId, authorId, ids.getFirst(), ids.getLast(), at, byModerator)));
+        return purged.size();
+    }
+
+    /** Now, at the database's microsecond precision. */
+    private static Instant now() {
+        return Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 
     /**

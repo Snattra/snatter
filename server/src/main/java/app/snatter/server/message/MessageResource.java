@@ -4,7 +4,9 @@ import app.snatter.api.MessagesApi;
 import app.snatter.api.model.ChannelCreatedNoticeDto;
 import app.snatter.api.model.ChannelRenamedNoticeDto;
 import app.snatter.api.model.ChannelTopicChangedNoticeDto;
+import app.snatter.api.model.DeletedMessageDto;
 import app.snatter.api.model.MemberJoinedNoticeDto;
+import app.snatter.api.model.MessagePurgeResultDto;
 import app.snatter.api.model.MessageCreateDto;
 import app.snatter.api.model.MessageDto;
 import app.snatter.api.model.MessageReferenceDto;
@@ -17,6 +19,7 @@ import app.snatter.api.model.ServerRenamedNoticeDto;
 import app.snatter.api.model.SystemMessageDto;
 import app.snatter.api.model.SystemNoticeDto;
 import app.snatter.api.model.UserMessageDto;
+import app.snatter.server.account.AccountId;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.ChannelId;
 import app.snatter.server.ratelimit.RateLimited;
@@ -24,6 +27,7 @@ import app.snatter.server.settings.RegistrationMode;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.ws.rs.core.Response;
+import java.time.Instant;
 import java.util.List;
 import org.jboss.resteasy.reactive.RestResponse;
 
@@ -73,6 +77,11 @@ public class MessageResource implements MessagesApi {
     }
 
     @Override
+    public RestResponse<MessagePurgeResultDto> purgeMessages(AccountId id, Instant since) {
+        return RestResponse.ok(new MessagePurgeResultDto().removed(messages.purge(actor(), id, since)));
+    }
+
+    @Override
     public RestResponse<ReadStateDto> markRead(ChannelId id, ReadStateUpdateDto body) {
         return RestResponse.ok(toDto(messages.markRead(actor(), id, body.getLastReadMessageId())));
     }
@@ -84,6 +93,13 @@ public class MessageResource implements MessagesApi {
     public static MessageDto toDto(Message message) {
         return switch (message) {
             case UserMessage m -> toUserDto(m);
+            case DeletedMessage m -> new DeletedMessageDto()
+                .id(m.id())
+                .channelId(m.channelId())
+                .authorId(m.authorId())
+                .createdAt(m.createdAt())
+                .deletedAt(m.deletedAt())
+                .removedByModerator(m.removedByModerator());
             case SystemMessage m -> new SystemMessageDto()
                 .id(m.id())
                 .channelId(m.channelId())

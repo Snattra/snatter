@@ -22,6 +22,12 @@ One message in a channel. It is a *head* (avatar, author, time) when it starts a
 
 **Mentions** A member mention is a pill (`sn-mention`): `@` and their display name as it is now, in `accent-text` at 500 on `accent-soft`, turning to an `accent` fill with `on-accent` ink on hover; it opens their Profile. A channel mention is the same pill with the channel's type icon and name, and switches to that channel. Someone no longer a member ("@Unknown member") and a channel the reader can't see ("Unknown channel", with `hash`) are `muted` on `panel-active` and do nothing, so a private channel's name never shows outside it. A message that mentions you is `mentioned`.
 
+**Actions** The `actions` toolbar holds what the reader may do to the message: `edit` on their own, `delete` on their own or, with `MANAGE_MESSAGES`, on anyone's, notices included. The delete icon turns `danger` on hover. The toolbar shows on hover and on focus, so a keyboard reaches it too.
+
+**Editing** Edit puts the Composer, in its `edit` mode, in place of the text: the same well, starting with the text and focus, with "Escape to cancel, Enter to save" under it. An edited message ends with "(edited)" in `muted` `text-caption`, its time in the tooltip.
+
+**Deleting** Delete asks first in a Modal that shows the message on `panel-raised` (`sn-message-preview`) and says what it will read; Shift-click skips the question. A deleted member's message keeps its place, author and time, and reads "This message was deleted." or, when someone else deleted it, "Removed by a moderator.", in `muted` italics after the `delete` icon (`sn-message-deleted`). Deleted messages that follow each other, from one author and deleted the same way, share one line however far apart they were sent: "12 messages removed by a moderator.", "3 messages deleted.", at the time of the first. A deleted notice disappears.
+
 **Links** A link always shows its whole address, in `accent-text`, underlined on hover. Opening one never happens straight away: a Modal, "Open this link?", names the host it really goes to and shows the whole address in a `bg` well (`sn-link-address`, mono). Cancel has focus, so opening is always its own choice.
 
 `SystemMessage` renders server notices (someone joined, a channel or the server renamed, the topic changed) as one `muted` line behind an accent arrow. Names in it go in `<strong>`, or in an `sn-name-button` when they open a profile.

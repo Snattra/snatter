@@ -8,6 +8,7 @@ import {
   withMessage,
   withOlder,
   withPending,
+  withPurged,
   withUpdated,
 } from "./channelLog";
 
@@ -83,5 +84,36 @@ describe("channelLog", () => {
     expect(edited.messages[1]?.kind === "user" && edited.messages[1].content).toBe("edited");
     expect(withUpdated(log, message(9))).toBe(log);
     expect(ids(withDeleted(log, messageId(1)))).toEqual([2]);
+  });
+});
+
+describe("withPurged", () => {
+  const purge = {
+    authorId: "bob",
+    fromMessageId: messageId(2),
+    toMessageId: messageId(4),
+    deletedAt: "2026-01-02T00:00:00Z",
+    removedByModerator: true,
+  };
+
+  it("turns the author's messages in the range into deleted ones, and nothing else", () => {
+    const alices: Message = { ...message(3), id: messageId(3), authorId: "alice" };
+    const log = withLatest(emptyLog, [message(1), message(2), alices, message(4), message(5)], 10);
+    const purged = withPurged(log, purge);
+    expect(purged.messages.map((m) => m.kind)).toEqual(["user", "deleted", "user", "deleted", "user"]);
+    expect(purged.messages[1]).toEqual({
+      kind: "deleted",
+      id: messageId(2),
+      channelId: "c",
+      authorId: "bob",
+      createdAt: "2026-01-01T00:00:00Z",
+      deletedAt: "2026-01-02T00:00:00Z",
+      removedByModerator: true,
+    });
+  });
+
+  it("leaves a log without any of them as it is", () => {
+    const log = withLatest(emptyLog, [message(7)], 10);
+    expect(withPurged(log, purge)).toBe(log);
   });
 });

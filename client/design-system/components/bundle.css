@@ -1882,6 +1882,71 @@ textarea.sn-input {
   pointer-events: auto;
 }
 
+/* Deleting reads as destructive only once you reach for it. */
+.sn-message-action-danger:hover {
+  color: var(--danger);
+}
+
+/* "(edited)" after the last line of the text. */
+.sn-message-edited {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* What is left where a member's message was deleted: one muted line. */
+.sn-message-deleted {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  color: var(--muted);
+  font-style: italic;
+}
+
+.sn-message-deleted .sn-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* A message being edited: the composer's well in place of the text. */
+.sn-composer-area-edit {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.sn-composer-area-edit .sn-composer-foot {
+  height: auto;
+  padding-top: var(--space-4);
+}
+
+.sn-editor-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.sn-editor-hint .sn-button {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* The message a deletion asks about, as it reads in the channel. */
+.sn-message-preview {
+  max-height: 200px;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  overflow-y: auto;
+}
+
+.sn-modal-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
 .sn-message-system {
   display: flex;
   align-items: center;

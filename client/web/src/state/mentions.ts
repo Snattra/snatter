@@ -8,6 +8,12 @@ import type { Account, Channel } from "../api/types";
  * regardless of case, so each one names exactly one member or channel.
  */
 
+/** Who and what can be mentioned: the members who are not banned, and the channels the member sees. */
+export interface Mentionables {
+  members: Account[];
+  channels: Channel[];
+}
+
 /** What the member is typing at the caret after `@` or `#`, and where it is in the text. */
 export interface MentionQuery {
   sigil: "@" | "#";
@@ -133,6 +139,32 @@ export function withTokens(text: string, members: Account[], channels: Channel[]
     last = code.index + code[0].length;
   }
   return out + tokensIn(text.slice(last), byUsername, longestFirst);
+}
+
+const TOKEN = /<([@#])([0-9A-Za-z-]+)>/g;
+
+/**
+ * The text as the member edits it: the other way from {@link withTokens}.
+ * A token for someone or a channel the member does not know stays as it is,
+ * so saving puts it back unchanged.
+ */
+export function withNames(text: string, members: Account[], channels: Channel[]): string {
+  const byId = new Map<string, string>([
+    ...members.map((m): [string, string] => [m.id, memberMention(m)]),
+    ...channels.map((c): [string, string] => [c.id, channelMention(c)]),
+  ]);
+  const names = (part: string) =>
+    part.replace(TOKEN, (token, sigil: string, id: string) => {
+      const name = byId.get(id.toLowerCase());
+      return name?.startsWith(sigil) ? name : token;
+    });
+  let out = "";
+  let last = 0;
+  for (const code of text.matchAll(CODE)) {
+    out += names(text.slice(last, code.index)) + code[0];
+    last = code.index + code[0].length;
+  }
+  return out + names(text.slice(last));
 }
 
 function tokensIn(text: string, byUsername: Map<string, string>, channels: Channel[]): string {

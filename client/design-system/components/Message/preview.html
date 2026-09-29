@@ -49,7 +49,7 @@
     var extra = useState([]);
     var pending = useState(true);
     React.useEffect(function () { var t = setTimeout(function () { pending[1](false); }, 1800); return function () { clearTimeout(t); }; }, []);
-    var actions = h(React.Fragment, null, h(S.IconButton, { icon: "plus", label: "Add reaction" }), h(S.IconButton, { icon: "close", label: "Delete" }));
+    var actions = h(React.Fragment, null, h(S.IconButton, { icon: "edit", label: "Edit" }), h(S.IconButton, { icon: "delete", label: "Delete", className: "sn-message-action-danger" }));
     return h("div", { className: "demo" },
       h(S.MessageList, null,
         h(S.SystemMessage, { time: "Today at 18:30" }, h("strong", null, "Teal"), " joined the server."),
@@ -59,6 +59,9 @@
           h("button", { type: "button", className: "sn-mention" }, h(S.Icon, { name: "hash" }), "patch-notes"), ", not in ",
           h("span", { className: "sn-mention sn-mention-unknown" }, h(S.Icon, { name: "hash" }), "Unknown channel"), "."),
         h(S.Message, { author: "Wigeon", time: "Today at 18:34", state: pending[0] ? "pending" : "sent" }, "Bringing snacks, back in five."),
+        h(S.Message, { author: "Wigeon", head: false, shortTime: "18:34", actions: actions }, h("p", null, "Make that ten. ", h("time", { className: "sn-message-edited", title: "Today at 18:35" }, "(edited)"))),
+        h(S.Message, { author: "Wigeon", head: false, shortTime: "18:34" }, h("span", { className: "sn-message-deleted" }, h(S.Icon, { name: "delete" }), "This message was deleted.")),
+        h(S.Message, { author: "Gadwall", time: "Today at 18:35" }, h("span", { className: "sn-message-deleted" }, h(S.Icon, { name: "delete" }), "12 messages removed by a moderator.")),
         h(S.Message, { author: "Wigeon", head: false, shortTime: "18:34", state: "failed" }, "Does anyone still have the map pack?"),
         h(S.Message, { author: "Gadwall", time: "Today at 18:36", actions: actions },
           h("p", null, h("strong", null, "Tonight:"), " the ", h("em", null, "new"), " map, ", h("span", { className: "sn-underline" }, "ranked"), ", and ", h("s", null, "no"), " snacks. Ending: ", h(Spoiler, null, "the bridge falls"), "."),

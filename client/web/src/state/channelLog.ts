@@ -70,6 +70,44 @@ export function withUpdated(log: ChannelLog, message: Message): ChannelLog {
   return { ...log, messages: log.messages.map((m) => (m.id === message.id ? message : m)) };
 }
 
+/** What a purge frame says happened to one channel. */
+export interface Purge {
+  authorId: string;
+  fromMessageId: string;
+  toMessageId: string;
+  deletedAt: string;
+  removedByModerator: boolean;
+}
+
+/** The author's held user messages in the purged range, now deleted. */
+export function withPurged(log: ChannelLog, purge: Purge): ChannelLog {
+  const purged = (m: Message) =>
+    m.kind === "user" &&
+    m.authorId === purge.authorId &&
+    !isAfter(purge.fromMessageId, m.id) &&
+    !isAfter(m.id, purge.toMessageId);
+  if (!log.messages.some(purged)) {
+    return log;
+  }
+  return {
+    ...log,
+    messages: log.messages.map((m) =>
+      purged(m)
+        ? {
+            kind: "deleted",
+            id: m.id,
+            channelId: m.channelId,
+            authorId: m.authorId,
+            createdAt: m.createdAt,
+            deletedAt: purge.deletedAt,
+            removedByModerator: purge.removedByModerator,
+          }
+        : m,
+    ),
+  };
+}
+
+/** A held notice was removed. */
 export function withDeleted(log: ChannelLog, messageId: string): ChannelLog {
   if (!log.messages.some((m) => m.id === messageId)) {
     return log;
