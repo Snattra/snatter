@@ -41,7 +41,8 @@ class ServerSettingsRepositoryTest {
                     new RateLimitPolicy(1, Duration.ofSeconds(2)),
                     new RateLimitPolicy(3, Duration.ofSeconds(4)),
                     new RateLimitPolicy(5, Duration.ofSeconds(6)),
-                    new RateLimitPolicy(7, Duration.ofSeconds(8))));
+                    new RateLimitPolicy(7, Duration.ofSeconds(8)),
+                    new RateLimitPolicy(9, Duration.ofSeconds(10))));
             repository.update(changed);
 
             ServerSettings after = repository.get();

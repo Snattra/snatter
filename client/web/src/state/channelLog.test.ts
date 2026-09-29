@@ -22,6 +22,7 @@ function message(n: number, extra: { nonce?: string; content?: string } = {}): M
     channelId: "c",
     authorId: "bob",
     content: extra.content ?? `message ${n}`,
+    mentions: [],
     nonce: extra.nonce,
     createdAt: "2026-01-01T00:00:00Z",
   };

@@ -87,7 +87,8 @@ public class ServerSettingsResource implements ServerApi {
                 .login(toDto(s.rateLimits().login()))
                 .register(toDto(s.rateLimits().register()))
                 .challenge(toDto(s.rateLimits().challenge()))
-                .invite(toDto(s.rateLimits().invite())))
+                .invite(toDto(s.rateLimits().invite()))
+                .message(toDto(s.rateLimits().message())))
             .systemChannelId(s.systemChannelId())
             .newMemberRoleId(s.newMemberRoleId());
     }
@@ -105,7 +106,8 @@ public class ServerSettingsResource implements ServerApi {
     }
 
     private static RateLimits fromDto(RateLimitsDto d) {
-        return new RateLimits(d.getEnabled(), fromDto(d.getLogin()), fromDto(d.getRegister()), fromDto(d.getChallenge()), fromDto(d.getInvite()));
+        return new RateLimits(d.getEnabled(), fromDto(d.getLogin()), fromDto(d.getRegister()), fromDto(d.getChallenge()),
+            fromDto(d.getInvite()), fromDto(d.getMessage()));
     }
 
     private static RateLimitPolicy fromDto(RateLimitPolicyDto d) {

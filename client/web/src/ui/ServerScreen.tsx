@@ -2,6 +2,14 @@ import { type ReactNode, useRef, useState } from "react";
 import type { Account, Channel } from "../api/types";
 import { platform } from "../platform/platform";
 import type { ServerConnection } from "../servers/ServerConnection";
+import {
+  channelMention,
+  matchingChannels,
+  matchingMembers,
+  type MentionQuery,
+  memberMention,
+  withTokens,
+} from "../state/mentions";
 import { isBanned, isTimedOut } from "../state/moderation";
 import { can, canInvite, canSend, hasUnread, sortedChannels, typingIn } from "../state/serverView";
 import type { ServerEntry } from "../state/store";
@@ -20,9 +28,10 @@ import {
   ServerRail,
   Sidebar,
 } from "./layout";
-import { Composer } from "./messages";
+import { ChannelIcon } from "./icons";
+import { Composer, type Suggestion } from "./messages";
 import { LinkModal } from "./messageText";
-import { MemberList, TypingIndicator, UserPanel } from "./people";
+import { Avatar, MemberList, TypingIndicator, UserPanel } from "./people";
 import { ProfileModal } from "./profile";
 import { ServerSettingsModal } from "./serverSettings";
 import { Banner, Skeleton } from "./surfaces";
@@ -160,6 +169,8 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
               key={selected.id}
               connection={connection}
               channel={selected}
+              members={present}
+              channels={channels}
               allowed={canSend(view)}
               timedOut={isTimedOut(view.account, Date.now())}
               typists={typists}
@@ -188,6 +199,7 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
               log={entry.logs[selected.id]}
               onOpenProfile={openProfile}
               onOpenLink={(url) => setDialog({ kind: "link", url })}
+              onOpenChannel={setSelectedId}
             />
           ) : (
             <p className="sn-channel-note">This is a voice channel. It has no messages, and voice is not built yet.</p>
@@ -233,15 +245,36 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
   );
 }
 
-/** The composer for one channel, announcing typing while the member writes. */
+/**
+ * The composer for one channel, announcing typing while the member writes. It
+ * suggests members and channels to mention, and sends their names as tokens.
+ */
 function ChannelComposer(props: {
   connection: ServerConnection;
   channel: Channel;
+  /** Who can be mentioned: the members who are not banned. */
+  members: Account[];
+  channels: Channel[];
   allowed: boolean;
   timedOut: boolean;
   typists: Account[];
 }) {
-  const { connection, channel, allowed, timedOut, typists } = props;
+  const { connection, channel, members, channels, allowed, timedOut, typists } = props;
+  const suggest = (at: MentionQuery): Suggestion[] =>
+    at.sigil === "@"
+      ? matchingMembers(members, at.query).map((member) => ({
+          id: member.id,
+          leading: <Avatar origin={connection.origin} account={member} size="sm" />,
+          label: member.displayName,
+          detail: member.username,
+          insert: memberMention(member),
+        }))
+      : matchingChannels(channels, at.query).map((c) => ({
+          id: c.id,
+          leading: <ChannelIcon channel={c} />,
+          label: c.name,
+          insert: channelMention(c),
+        }));
   const lastAnnounced = useRef(0);
   return (
     <Composer
@@ -260,9 +293,10 @@ function ChannelComposer(props: {
           connection.typing(channel.id);
         }
       }}
+      suggest={suggest}
       onSend={(text) => {
         lastAnnounced.current = 0;
-        void connection.send(channel.id, text);
+        void connection.send(channel.id, withTokens(text, members, channels));
       }}
       footer={<TypingIndicator names={typists.map((m) => m.displayName)} />}
     />

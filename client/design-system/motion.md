@@ -30,7 +30,7 @@ These live in `bundle.css` as keyframes and transitions. Each one has one meanin
 | Content fades from `muted` to `text` | A pending message confirming | It was delivered |
 | `sn-slide-down` from the header edge | Banner | The connection changed |
 | `sn-drop-in`: 4px down and fade (`ease-out`) | Unread bar | There is more to read above |
-| `sn-pop-in`: 4px out of its control, scale 96% to 100% (`duration-fast`, `ease-out`) | Popover | It opened from what you clicked |
+| `sn-pop-in`: 4px out of its control, scale 96% to 100% (`duration-fast`, `ease-out`) | Popover, and the Composer's suggestions rising from the field | It opened from what you clicked, or typed |
 | `sn-rise-in` (`duration-slow`) while the scrim fades in (`duration-fast`); leaves at once | Modal | A task is in front of you now |
 | Mark fills with the sheen, its dot or tick springs in (`ease-spring`) | Choice | That one is chosen |
 | `sn-fade-in` (`duration-fast`, `ease-out`) | A spoiler shown | What was hidden is here now |

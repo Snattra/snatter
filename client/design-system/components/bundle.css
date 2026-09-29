@@ -1805,6 +1805,42 @@ textarea.sn-input {
   animation: sn-fade-in var(--duration-fast) var(--ease-out);
 }
 
+/* A mention names someone or a channel as it is called now: accent ink on an accent tint, a full accent fill when you reach for it. */
+.sn-mention {
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 500;
+  cursor: pointer;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition:
+    background-color var(--duration-instant) var(--ease-standard),
+    color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-mention:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.sn-mention .sn-icon {
+  width: 1em;
+  height: 1em;
+  margin-right: var(--space-2);
+  vertical-align: -0.125em;
+}
+
+/* Someone who is no longer a member, or a channel the reader cannot see. */
+.sn-mention-unknown,
+.sn-mention-unknown:hover {
+  background: var(--panel-active);
+  color: var(--muted);
+  cursor: default;
+}
+
 /* The link modal: where a link goes, then the whole address in a well. */
 .sn-link-host {
   margin: 0;
@@ -1931,6 +1967,71 @@ textarea.sn-input {
 .sn-composer-area {
   flex: none;
   padding: 0 var(--space-16) var(--space-8);
+}
+
+/* What to mention, floating just above the composer while `@` or `#` is typed. */
+.sn-composer-area {
+  position: relative;
+}
+
+.sn-suggestions {
+  --sn-from: translateY(4px);
+  position: absolute;
+  right: var(--space-16);
+  bottom: calc(100% + var(--space-8));
+  left: var(--space-16);
+  z-index: 2;
+  padding: var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--floating);
+  box-shadow: var(--shadow-float);
+  transform-origin: bottom;
+  animation: sn-pop-in var(--duration-fast) var(--ease-out);
+}
+
+.sn-suggestions-title {
+  margin: var(--space-4) var(--space-8) var(--space-6);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sn-suggestion {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sn-suggestion[aria-selected="true"] {
+  background: var(--panel-active);
+  color: var(--text-strong);
+}
+
+.sn-suggestion > .sn-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.sn-suggestion-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sn-suggestion-detail {
+  margin-left: auto;
+  padding-left: var(--space-8);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .sn-composer {
@@ -2108,6 +2209,7 @@ textarea.sn-input {
   .sn-banner,
   .sn-unread-bar,
   .sn-popover:popover-open,
+  .sn-suggestions,
   .sn-member,
   .sn-channel-unread::before {
     animation-name: sn-fade-in !important;

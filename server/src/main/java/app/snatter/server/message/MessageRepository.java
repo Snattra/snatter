@@ -1,6 +1,7 @@
 package app.snatter.server.message;
 
 import static app.snatter.server.persistence.Rows.id;
+import static app.snatter.server.persistence.Rows.ids;
 import static app.snatter.server.persistence.Rows.instant;
 import static app.snatter.server.persistence.Rows.uuid;
 
@@ -10,6 +11,7 @@ import app.snatter.server.settings.RegistrationMode;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -35,6 +37,7 @@ public class MessageRepository {
                 MessageId replyId = id(rs, "reply_id", MessageId::new);
                 yield new UserMessage(id, channelId, authorId,
                     rs.getString("content"),
+                    ids(rs, "mentioned_account_ids", AccountId::new),
                     id(rs, "reply_to_id", MessageId::new),
                     replyId == null ? null : new UserMessage.Reference(
                         replyId, id(rs, "reply_author_id", AccountId::new), rs.getString("reply_content")),
@@ -50,7 +53,7 @@ public class MessageRepository {
 
     /** A message with a preview of the message it replies to, if that still exists. */
     private static final String SELECT = """
-        SELECT m.id, m.channel_id, m.kind, m.author_id, m.content,
+        SELECT m.id, m.channel_id, m.kind, m.author_id, m.content, m.mentioned_account_ids,
                m.system_type, m.system_data ->> 'from' AS system_from, m.system_data ->> 'to' AS system_to,
                m.reply_to_id, m.created_at, m.edited_at,
                r.id AS reply_id, r.author_id AS reply_author_id, r.content AS reply_content
@@ -108,13 +111,14 @@ public class MessageRepository {
         switch (message) {
             case UserMessage m -> jdbi.useHandle(h -> h
                 .createUpdate("""
-                    INSERT INTO message (id, channel_id, kind, author_id, content, reply_to_id, created_at)
-                    VALUES (:id, :channelId, 'user', :authorId, :content, :replyToId, :createdAt)
+                    INSERT INTO message (id, channel_id, kind, author_id, content, mentioned_account_ids, reply_to_id, created_at)
+                    VALUES (:id, :channelId, 'user', :authorId, :content, :mentions, :replyToId, :createdAt)
                     """)
                 .bind("id", m.id())
                 .bind("channelId", m.channelId())
                 .bind("authorId", m.authorId())
                 .bind("content", m.content())
+                .bindArray("mentions", UUID.class, uuids(m.mentions()))
                 .bind("replyToId", m.replyToId())
                 .bind("createdAt", m.createdAt())
                 .execute());
@@ -139,12 +143,16 @@ public class MessageRepository {
         }
     }
 
-    /** Saves new content and edit time of a user message. */
+    /** Saves new content, its mentions and the edit time of a user message. */
     public void updateContent(UserMessage message) {
         jdbi.useHandle(h -> h
-            .createUpdate("UPDATE message SET content = :content, edited_at = :editedAt WHERE id = :id AND kind = 'user'")
+            .createUpdate("""
+                UPDATE message SET content = :content, mentioned_account_ids = :mentions, edited_at = :editedAt
+                WHERE id = :id AND kind = 'user'
+                """)
             .bind("id", message.id())
             .bind("content", message.content())
+            .bindArray("mentions", UUID.class, uuids(message.mentions()))
             .bind("editedAt", message.editedAt())
             .execute());
     }
@@ -154,6 +162,10 @@ public class MessageRepository {
             .createUpdate("DELETE FROM message WHERE id = :id")
             .bind("id", id)
             .execute());
+    }
+
+    private static UUID[] uuids(List<AccountId> ids) {
+        return ids.stream().map(AccountId::value).toArray(UUID[]::new);
     }
 
     private static StoredNotice store(SystemNotice notice) {

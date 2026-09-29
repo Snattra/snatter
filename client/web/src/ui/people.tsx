@@ -13,12 +13,13 @@ interface AvatarProps {
   /** Pings the presence dot once as it mounts, for someone who has just come online. */
   arrived?: boolean;
   /** `lg` heads a message group. */
-  size?: "md" | "lg";
+  /** `sm` is 24px, for suggestions. */
+  size?: "sm" | "md" | "lg";
 }
 
 export function Avatar({ origin, account, online, arrived = false, size = "md" }: AvatarProps) {
   return (
-    <span className={classes("sn-avatar", size === "lg" && "sn-avatar-lg", online === false && "sn-avatar-offline")}>
+    <span className={classes("sn-avatar", size === "lg" && "sn-avatar-lg", size === "sm" && "sn-avatar-sm", online === false && "sn-avatar-offline")}>
       <span className="sn-avatar-face" style={account.avatarId ? undefined : { background: colourFor(account.id) }}>
         {account.avatarId ? <img src={`${origin}/api/v1/blobs/${account.avatarId}`} alt="" /> : initials(account.displayName)}
       </span>

@@ -32,10 +32,17 @@ export interface ChannelRules {
   /** The owner sees every channel, so may make one private to roles they do not hold. */
   owner: boolean;
   heldRoleIds: string[];
+  /** The channels the member can see; names are unique regardless of case, so a mention names one channel. */
+  channels: Pick<Channel, "id" | "name">[];
 }
 
 export function rulesFor(view: ServerView): ChannelRules {
-  return { maxBitrate: view.info.voice.maxBitrate, owner: view.permissions.owner, heldRoleIds: view.account.roleIds };
+  return {
+    maxBitrate: view.info.voice.maxBitrate,
+    owner: view.permissions.owner,
+    heldRoleIds: view.account.roleIds,
+    channels: Object.values(view.channels),
+  };
 }
 
 export const blankChannelForm: ChannelForm = {
@@ -69,7 +76,7 @@ export function toggledRole(roleIds: string[], roleId: string): string[] {
 
 /** What the server would refuse about a new channel, by field; empty when it can be sent. */
 export function creationErrors(form: ChannelForm, rules: ChannelRules): ChannelFormErrors {
-  return { ...nameError(form), ...accessError(form, rules) };
+  return { ...nameError(form, rules, null), ...accessError(form, rules) };
 }
 
 /**
@@ -81,7 +88,7 @@ export function updateErrors(channel: Channel, form: ChannelForm, rules: Channel
   const before = channelForm(channel);
   const voice = hasVoice(channel.type);
   return {
-    ...nameError(form),
+    ...nameError(form, rules, channel.id),
     ...(voice && form.bitrate !== before.bitrate ? bitrateError(form, rules) : {}),
     ...(voice && form.userLimit !== before.userLimit ? userLimitError(form) : {}),
     ...(form.private !== before.private || !sameMembers(form.roleIds, before.roleIds) ? accessError(form, rules) : {}),
@@ -129,12 +136,17 @@ export function kbps(bitsPerSecond: number): number {
   return bitsPerSecond / 1000;
 }
 
-function nameError(form: ChannelForm): ChannelFormErrors {
+/** A channel may keep its own name, in another case too; `self` is null for a new one. */
+function nameError(form: ChannelForm, rules: ChannelRules, self: string | null): ChannelFormErrors {
   const name = form.name.trim();
   if (name === "") {
     return { name: "Give the channel a name." };
   }
-  return name.length > MAX_NAME_LENGTH ? { name: `Keep the name to ${MAX_NAME_LENGTH} characters.` } : {};
+  if (name.length > MAX_NAME_LENGTH) {
+    return { name: `Keep the name to ${MAX_NAME_LENGTH} characters.` };
+  }
+  const taken = rules.channels.some((c) => c.id !== self && c.name.toLowerCase() === name.toLowerCase());
+  return taken ? { name: "Another channel has this name. Choose a different one." } : {};
 }
 
 function bitrateError(form: ChannelForm, rules: ChannelRules): ChannelFormErrors {

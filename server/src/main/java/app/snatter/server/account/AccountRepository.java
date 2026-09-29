@@ -9,8 +9,12 @@ import app.snatter.server.blob.BlobId;
 import app.snatter.server.role.RoleId;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -68,6 +72,18 @@ public class AccountRepository {
             .bind("username", username)
             .map(MAPPER)
             .findOne());
+    }
+
+    /** Which of these accounts exist. */
+    public Set<AccountId> existing(Collection<AccountId> ids) {
+        if (ids.isEmpty()) {
+            return Set.of();
+        }
+        return jdbi.withHandle(h -> h
+            .createQuery("SELECT id FROM account WHERE id = ANY(:ids)")
+            .bindArray("ids", UUID.class, ids.stream().map(AccountId::value).toArray(UUID[]::new))
+            .map((rs, ctx) -> new AccountId(uuid(rs, "id")))
+            .collect(Collectors.toSet()));
     }
 
     public long count() {

@@ -66,6 +66,28 @@ class ChannelResourceTest {
     }
 
     @Test
+    void channelNamesAreUniqueRegardlessOfCase() {
+        String owner = TestUsers.ownerToken();
+        String lobby = createChannel("text", "Lobby");
+        String other = createChannel("voice", "Lobby two");
+        try {
+            create(owner, Map.of("type", "voice", "name", "  lobby "))
+                .then().statusCode(409).body("error", equalTo("channel_name_taken"));
+            patch(owner, other, Map.of("name", "LOBBY"))
+                .then().statusCode(409).body("error", equalTo("channel_name_taken"));
+            // A channel may change the case of its own name.
+            patch(owner, lobby, Map.of("name", "lobby")).then().statusCode(200).body("name", equalTo("lobby"));
+            // Other changes to a channel are not held up by its own name.
+            patch(owner, lobby, Map.of("topic", "hello")).then().statusCode(200);
+        } finally {
+            deleteChannel(lobby);
+            deleteChannel(other);
+        }
+        // Deleting a channel frees its name.
+        deleteChannel(createChannel("text", "Lobby"));
+    }
+
+    @Test
     void createsChannelsLastWithVoiceDefaults() {
         String owner = TestUsers.ownerToken();
         int defaultBitrate = given().get("/api/v1/server-info").then().extract().path("voice.defaultBitrate");

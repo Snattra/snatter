@@ -7,12 +7,22 @@ import java.lang.annotation.Target;
 
 /**
  * Applies the named rate limit policy from the server settings to a resource
- * method, keyed by client IP.
+ * method, counted per client IP or per account.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
 public @interface RateLimited {
 
-    /** Policy name: {@code login}, {@code register} or {@code challenge}. */
+    /** Who a request counts against. */
+    enum Per {
+        /** The client's IP address, for endpoints anyone may call. */
+        IP,
+        /** The signed-in account, wherever it connects from; for authenticated endpoints only. */
+        ACCOUNT
+    }
+
+    /** Policy name: {@code login}, {@code register}, {@code challenge}, {@code invite} or {@code message}. */
     String value();
+
+    Per per() default Per.IP;
 }

@@ -19,6 +19,7 @@ import app.snatter.api.model.SystemNoticeDto;
 import app.snatter.api.model.UserMessageDto;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.ChannelId;
+import app.snatter.server.ratelimit.RateLimited;
 import app.snatter.server.settings.RegistrationMode;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -49,6 +50,7 @@ public class MessageResource implements MessagesApi {
     }
 
     @Override
+    @RateLimited(value = "message", per = RateLimited.Per.ACCOUNT)
     public RestResponse<MessageDto> createMessage(ChannelId id, MessageCreateDto body) {
         UserMessage message = messages.send(actor(), id, body.getContent(), body.getReplyToId(), body.getNonce());
         return RestResponse.status(Response.Status.CREATED, toUserDto(message).nonce(body.getNonce()));
@@ -97,6 +99,7 @@ public class MessageResource implements MessagesApi {
             .channelId(m.channelId())
             .authorId(m.authorId())
             .content(m.content())
+            .mentions(m.mentions())
             .replyToId(m.replyToId())
             .replyTo(m.replyTo() == null ? null : new MessageReferenceDto()
                 .id(m.replyTo().id())

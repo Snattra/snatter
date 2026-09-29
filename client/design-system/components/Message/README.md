@@ -20,6 +20,8 @@ One message in a channel. It is a *head* (avatar, author, time) when it starts a
 - A spoiler (`sn-spoiler`) is a `bg` fill hiding its text, `floating` on hover. Clicking it or pressing Enter shows it: it fades in on `duration-fast` and keeps a `panel-active` fill, so it still reads as a spoiler. While hidden, its content is `inert`, so a link inside can't be clicked or reached unseen.
 - There are no headings, images or tables, and no links with their own text.
 
+**Mentions** A member mention is a pill (`sn-mention`): `@` and their display name as it is now, in `accent-text` at 500 on `accent-soft`, turning to an `accent` fill with `on-accent` ink on hover; it opens their Profile. A channel mention is the same pill with the channel's type icon and name, and switches to that channel. Someone no longer a member ("@Unknown member") and a channel the reader can't see ("Unknown channel", with `hash`) are `muted` on `panel-active` and do nothing, so a private channel's name never shows outside it. A message that mentions you is `mentioned`.
+
 **Links** A link always shows its whole address, in `accent-text`, underlined on hover. Opening one never happens straight away: a Modal, "Open this link?", names the host it really goes to and shows the whole address in a `bg` well (`sn-link-address`, mono). Cancel has focus, so opening is always its own choice.
 
 `SystemMessage` renders server notices (someone joined, a channel or the server renamed, the topic changed) as one `muted` line behind an accent arrow. Names in it go in `<strong>`, or in an `sn-name-button` when they open a profile.

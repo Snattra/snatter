@@ -11,15 +11,20 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
+import org.jdbi.v3.core.statement.UnableToExecuteStatementException;
 
 /**
  * Channels. A channel with required roles is private to the members holding
  * at least one of them; channels a member cannot see behave as if they did
- * not exist. Changing channels needs {@code MANAGE_CHANNELS}, checked by the
+ * not exist. Names are unique regardless of case, so a message can name a
+ * channel; that holds for channels the actor cannot see too. Changing channels needs {@code MANAGE_CHANNELS}, checked by the
  * caller, and only reaches channels the actor can see.
  */
 @ApplicationScoped
 public class ChannelService {
+
+    private static final String UNIQUE_VIOLATION = "23505";
 
     /** Requested changes to a channel; null fields stay unchanged, an empty topic clears it. */
     public record Changes(String name, String topic, Integer bitrate, Integer userLimit, Integer position,
@@ -53,8 +58,9 @@ public class ChannelService {
                           Integer userLimit, Set<RoleId> requiredRoleIds) {
         requireVoiceSettingsFit(type, bitrate, userLimit);
         requireValidRequiredRoles(actor, requiredRoleIds);
+        requireFreeName(name.strip(), null);
         Instant now = Instant.now();
-        Channel channel = channels.insertLast(new Channel(
+        Channel channel = nameChecked(() -> channels.insertLast(new Channel(
             ChannelId.newId(),
             type,
             name.strip(),
@@ -65,7 +71,7 @@ public class ChannelService {
                 : null,
             requiredRoleIds,
             now,
-            now));
+            now)));
         events.fire(new ChannelEvent.Created(channel.id(), actor.accountId(), channel.type(), channel.name()));
         return channel;
     }
@@ -78,6 +84,7 @@ public class ChannelService {
         Channel after = before;
         if (changes.name() != null) {
             after = after.withName(changes.name().strip());
+            requireFreeName(after.name(), id);
         }
         if (changes.topic() != null) {
             after = after.withTopic(blankToNull(changes.topic()));
@@ -93,7 +100,11 @@ public class ChannelService {
             after = after.withRequiredRoleIds(changes.requiredRoleIds());
         }
         if (!after.equals(before)) {
-            channels.update(after);
+            Channel changed = after;
+            nameChecked(() -> {
+                channels.update(changed);
+                return changed;
+            });
         }
         if (changes.position() != null && changes.position() != before.position()) {
             channels.moveTo(id, changes.position());
@@ -116,6 +127,28 @@ public class ChannelService {
             events.fire(new ChannelEvent.Moved(id, actor.accountId(), before.position(), updated.position()));
         }
         return updated;
+    }
+
+    private void requireFreeName(String name, ChannelId except) {
+        if (channels.nameTaken(name, except)) {
+            throw nameTaken();
+        }
+    }
+
+    /** Runs a write that may lose a race with another channel taking the same name. */
+    private static <T> T nameChecked(Supplier<T> write) {
+        try {
+            return write.get();
+        } catch (UnableToExecuteStatementException e) {
+            if (e.getCause() instanceof java.sql.SQLException sql && UNIQUE_VIOLATION.equals(sql.getSQLState())) {
+                throw nameTaken();
+            }
+            throw e;
+        }
+    }
+
+    private static ApiException nameTaken() {
+        return ApiException.conflict("channel_name_taken", "Another channel already has that name");
     }
 
     @Transactional

@@ -30,7 +30,8 @@ public class ServerSettingsRepository {
             policy(rs.getInt("rate_limit_login_limit"), rs.getInt("rate_limit_login_period")),
             policy(rs.getInt("rate_limit_register_limit"), rs.getInt("rate_limit_register_period")),
             policy(rs.getInt("rate_limit_challenge_limit"), rs.getInt("rate_limit_challenge_period")),
-            policy(rs.getInt("rate_limit_invite_limit"), rs.getInt("rate_limit_invite_period"))),
+            policy(rs.getInt("rate_limit_invite_limit"), rs.getInt("rate_limit_invite_period")),
+            policy(rs.getInt("rate_limit_message_limit"), rs.getInt("rate_limit_message_period"))),
         id(rs, "system_channel_id", ChannelId::new),
         id(rs, "new_member_role_id", RoleId::new),
         instant(rs, "created_at"),
@@ -56,6 +57,7 @@ public class ServerSettingsRepository {
                        rate_limit_register_limit, rate_limit_register_period,
                        rate_limit_challenge_limit, rate_limit_challenge_period,
                        rate_limit_invite_limit, rate_limit_invite_period,
+                       rate_limit_message_limit, rate_limit_message_period,
                        system_channel_id, new_member_role_id, created_at, updated_at
                 FROM server_settings
                 WHERE id = :id
@@ -86,6 +88,8 @@ public class ServerSettingsRepository {
                     rate_limit_challenge_period = :challengePeriod,
                     rate_limit_invite_limit = :inviteLimit,
                     rate_limit_invite_period = :invitePeriod,
+                    rate_limit_message_limit = :messageLimit,
+                    rate_limit_message_period = :messagePeriod,
                     system_channel_id = :systemChannelId,
                     new_member_role_id = :newMemberRoleId,
                     updated_at = :now
@@ -105,6 +109,8 @@ public class ServerSettingsRepository {
             .bind("challengePeriod", s.rateLimits().challenge().period().toSeconds())
             .bind("inviteLimit", s.rateLimits().invite().limit())
             .bind("invitePeriod", s.rateLimits().invite().period().toSeconds())
+            .bind("messageLimit", s.rateLimits().message().limit())
+            .bind("messagePeriod", s.rateLimits().message().period().toSeconds())
             .bind("systemChannelId", s.systemChannelId())
             .bind("newMemberRoleId", s.newMemberRoleId())
             .bind("now", Instant.now())

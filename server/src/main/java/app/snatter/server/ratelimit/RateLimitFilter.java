@@ -1,12 +1,14 @@
 package app.snatter.server.ratelimit;
 
 import app.snatter.api.model.ApiErrorDto;
+import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.settings.RateLimitPolicy;
 import app.snatter.server.settings.RateLimits;
 import app.snatter.server.settings.ServerSettingsService;
 import io.vertx.core.http.HttpServerRequest;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ResourceInfo;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -17,8 +19,9 @@ import org.jboss.resteasy.reactive.server.ServerRequestFilter;
 
 /**
  * Enforces {@link RateLimited} on resource methods using the policies from the
- * server settings, keyed by client IP. Rejected requests get a 429 with
- * {@code Retry-After}.
+ * server settings, keyed by client IP or by account. Authentication runs
+ * before request filters, so the account is known here. Rejected requests get
+ * a 429 with {@code Retry-After}.
  */
 @ApplicationScoped
 public class RateLimitFilter {
@@ -31,7 +34,8 @@ public class RateLimitFilter {
     }
 
     @ServerRequestFilter
-    public Optional<RestResponse<ApiErrorDto>> filter(ResourceInfo resourceInfo, HttpServerRequest request) {
+    public Optional<RestResponse<ApiErrorDto>> filter(ResourceInfo resourceInfo, HttpServerRequest request,
+                                                      ContainerRequestContext context) {
         Method method = resourceInfo.getResourceMethod();
         if (method == null) {
             return Optional.empty();
@@ -45,8 +49,15 @@ public class RateLimitFilter {
             return Optional.empty();
         }
         RateLimitPolicy policy = limits.policy(limited.value());
-        String ip = request.remoteAddress() == null ? "unknown" : request.remoteAddress().hostAddress();
-        RateLimiter.Decision decision = limiter.tryAcquire(limited.value() + ":" + ip, policy);
+        String who = switch (limited.per()) {
+            case IP -> request.remoteAddress() == null ? "unknown" : request.remoteAddress().hostAddress();
+            // Without an account the request is refused as unauthenticated later on.
+            case ACCOUNT -> context.getSecurityContext().getUserPrincipal() instanceof AccountPrincipal p ? p.accountId().toString() : null;
+        };
+        if (who == null) {
+            return Optional.empty();
+        }
+        RateLimiter.Decision decision = limiter.tryAcquire(limited.value() + ":" + who, policy);
         if (decision.allowed()) {
             return Optional.empty();
         }

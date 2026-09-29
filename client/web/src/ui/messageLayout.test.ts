@@ -9,7 +9,7 @@ function messageId(n: number): string {
 
 function user(n: number, authorId: string, minute: number): Message {
   const createdAt = new Date(2026, 8, 27, 18, minute).toISOString();
-  return { kind: "user", id: messageId(n), channelId: "c", authorId, content: `m${n}`, createdAt };
+  return { kind: "user", id: messageId(n), channelId: "c", authorId, content: `m${n}`, mentions: [], createdAt };
 }
 
 function log(messages: Message[], hasOlder = false): ChannelLog {

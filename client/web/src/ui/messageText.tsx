@@ -1,23 +1,37 @@
 import { type ReactNode, useMemo, useState } from "react";
+import type { Account, Channel } from "../api/types";
 import { Button } from "./controls";
+import { ChannelIcon, Icon } from "./icons";
 import { type Block, type Inline, parseMarkdown } from "./markdown";
 import { Modal } from "./surfaces";
 
-/**
- * A message's content, its Markdown rendered as elements: nothing the author
- * wrote ever becomes HTML. Links open only through `onOpenLink`, which asks
- * first.
- */
-export function MessageText({ content, onOpenLink }: { content: string; onOpenLink: (url: string) => void }) {
-  const blocks = useMemo(() => parseMarkdown(content), [content]);
-  return <>{renderBlocks(blocks, onOpenLink)}</>;
+/** What message text needs from around it: who and what mentions name, and how to open them. */
+export interface TextContext {
+  /** Undefined for someone who is not a member, or no longer one. */
+  member(accountId: string): Account | undefined;
+  /** Undefined for a channel that is gone or that the member cannot see. */
+  channel(channelId: string): Channel | undefined;
+  openProfile(accountId: string): void;
+  openChannel(channelId: string): void;
+  /** Asks before opening. */
+  openLink(url: string): void;
 }
 
-function renderBlocks(blocks: Block[], onOpenLink: (url: string) => void): ReactNode[] {
+/**
+ * A message's content, its Markdown rendered as elements: nothing the author
+ * wrote ever becomes HTML. Mentions show the current name of whom or what they
+ * name, and links open only through `context.openLink`, which asks first.
+ */
+export function MessageText({ content, context }: { content: string; context: TextContext }) {
+  const blocks = useMemo(() => parseMarkdown(content), [content]);
+  return <>{renderBlocks(blocks, context)}</>;
+}
+
+function renderBlocks(blocks: Block[], context: TextContext): ReactNode[] {
   return blocks.map((block, i) => {
     switch (block.type) {
       case "paragraph":
-        return <p key={i}>{renderInlines(block.content, onOpenLink)}</p>;
+        return <p key={i}>{renderInlines(block.content, context)}</p>;
       case "code-block":
         return (
           <pre key={i} className="sn-code-block" data-language={block.language ?? undefined}>
@@ -27,14 +41,14 @@ function renderBlocks(blocks: Block[], onOpenLink: (url: string) => void): React
       case "quote":
         return (
           <blockquote key={i} className="sn-quote">
-            {renderBlocks(block.content, onOpenLink)}
+            {renderBlocks(block.content, context)}
           </blockquote>
         );
       case "list": {
         const items = block.items.map((item, j) => (
           <li key={j}>
-            {renderInlines(item.content, onOpenLink)}
-            {renderBlocks(item.lists, onOpenLink)}
+            {renderInlines(item.content, context)}
+            {renderBlocks(item.lists, context)}
           </li>
         ));
         return block.ordered ? (
@@ -49,7 +63,7 @@ function renderBlocks(blocks: Block[], onOpenLink: (url: string) => void): React
   });
 }
 
-function renderInlines(inlines: Inline[], onOpenLink: (url: string) => void): ReactNode[] {
+function renderInlines(inlines: Inline[], context: TextContext): ReactNode[] {
   return inlines.map((inline, i) => {
     switch (inline.type) {
       case "text":
@@ -57,23 +71,62 @@ function renderInlines(inlines: Inline[], onOpenLink: (url: string) => void): Re
       case "code":
         return <code key={i}>{inline.text}</code>;
       case "link":
-        return <MessageLink key={i} url={inline.url} onOpen={onOpenLink} />;
+        return <MessageLink key={i} url={inline.url} onOpen={context.openLink} />;
+      case "member":
+        return <MemberMention key={i} accountId={inline.accountId} context={context} />;
+      case "channel":
+        return <ChannelMention key={i} channelId={inline.channelId} context={context} />;
       case "strong":
-        return <strong key={i}>{renderInlines(inline.content, onOpenLink)}</strong>;
+        return <strong key={i}>{renderInlines(inline.content, context)}</strong>;
       case "emphasis":
-        return <em key={i}>{renderInlines(inline.content, onOpenLink)}</em>;
+        return <em key={i}>{renderInlines(inline.content, context)}</em>;
       case "underline":
         return (
           <span key={i} className="sn-underline">
-            {renderInlines(inline.content, onOpenLink)}
+            {renderInlines(inline.content, context)}
           </span>
         );
       case "strike":
-        return <s key={i}>{renderInlines(inline.content, onOpenLink)}</s>;
+        return <s key={i}>{renderInlines(inline.content, context)}</s>;
       case "spoiler":
-        return <Spoiler key={i}>{renderInlines(inline.content, onOpenLink)}</Spoiler>;
+        return <Spoiler key={i}>{renderInlines(inline.content, context)}</Spoiler>;
     }
   });
+}
+
+/** A member by their display name as it is now, opening their profile. */
+function MemberMention({ accountId, context }: { accountId: string; context: TextContext }) {
+  const member = context.member(accountId);
+  if (member === undefined) {
+    return <span className="sn-mention sn-mention-unknown">@Unknown member</span>;
+  }
+  return (
+    <button type="button" className="sn-mention" aria-haspopup="dialog" onClick={() => context.openProfile(accountId)}>
+      @{member.displayName}
+    </button>
+  );
+}
+
+/**
+ * A channel by its type icon and name, opening it. One the reader cannot
+ * see shows no name, so a private channel's name never shows outside it.
+ */
+function ChannelMention({ channelId, context }: { channelId: string; context: TextContext }) {
+  const channel = context.channel(channelId);
+  if (channel === undefined) {
+    return (
+      <span className="sn-mention sn-mention-unknown">
+        <Icon name="hash" />
+        Unknown channel
+      </span>
+    );
+  }
+  return (
+    <button type="button" className="sn-mention" onClick={() => context.openChannel(channelId)}>
+      <ChannelIcon channel={channel} />
+      {channel.name}
+    </button>
+  );
 }
 
 /**

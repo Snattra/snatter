@@ -12,7 +12,7 @@ import {
   updateErrors,
 } from "./channelForm";
 
-const member: ChannelRules = { maxBitrate: 256_000, owner: false, heldRoleIds: ["user"] };
+const member: ChannelRules = { maxBitrate: 256_000, owner: false, heldRoleIds: ["user"], channels: [] };
 const owner: ChannelRules = { ...member, owner: true, heldRoleIds: [] };
 
 function channel(changes: Partial<Channel> = {}): Channel {
@@ -65,6 +65,14 @@ describe("creationErrors", () => {
     expect(creationErrors({ ...blankChannelForm, name: "patch-notes" }, member)).toEqual({});
   });
 
+  it("wants a name no other channel has, in any case", () => {
+    const rules = { ...member, channels: [lounge] };
+    expect(creationErrors({ ...blankChannelForm, name: " lounge " }, rules)).toEqual({
+      name: "Another channel has this name. Choose a different one.",
+    });
+    expect(creationErrors({ ...blankChannelForm, name: "Lounge 2" }, rules)).toEqual({});
+  });
+
   it("wants a private channel to name its roles, one of them the member's own", () => {
     const secret = { ...blankChannelForm, name: "secret", private: true };
     expect(creationErrors(secret, member).roles).toBe("Choose at least one role that can see it.");
@@ -84,6 +92,14 @@ describe("creationErrors", () => {
 });
 
 describe("updateErrors", () => {
+  it("lets a channel keep its name, in another case too, but not take another's", () => {
+    const general = channel({ id: "c2", name: "General" });
+    const rules = { ...member, channels: [lounge, general] };
+    expect(updateErrors(lounge, edited(lounge, { name: "LOUNGE" }), rules)).toEqual({});
+    expect(updateErrors(lounge, edited(lounge, { topic: "hi" }), rules)).toEqual({});
+    expect(updateErrors(lounge, edited(lounge, { name: "general" }), rules).name).toBeDefined();
+  });
+
   it("checks voice settings against the server's limits", () => {
     expect(updateErrors(lounge, edited(lounge, { bitrate: "300" }), member)).toEqual({
       bitrate: "Choose from 8 to 256 kbps.",

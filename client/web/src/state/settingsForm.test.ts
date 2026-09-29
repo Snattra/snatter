@@ -10,7 +10,7 @@ const settings: ServerSettings = {
   publicUrl: "https://chat.example.com",
   registrationMode: "invite_only",
   challengeRequired: true,
-  rateLimits: { enabled: true, login: policy, register: policy, challenge: policy, invite: policy },
+  rateLimits: { enabled: true, login: policy, register: policy, challenge: policy, invite: policy, message: policy },
   systemChannelId: "general",
   newMemberRoleId: null,
 };

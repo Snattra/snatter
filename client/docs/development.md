@@ -189,6 +189,24 @@ lookalike letters show in their encoded form) and has focus on Cancel; only
 `Open link` hands the address to `platform.openLink`. A spoiler's content
 is `inert` until it is shown, so a link in it cannot be clicked unseen.
 
+**Mentions.** In the text a member is `<@accountId>` and a channel
+`<#channelId>`. They render as pills with the name as it is now, opening the
+profile or the channel. Someone who is no longer a member, or a channel the
+reader cannot see, shows as unknown, so a private channel's name never
+leaks. A message whose `mentions` (worked out by the server) include the
+reader is highlighted. Role tokens are not read yet and show as typed.
+
+In the composer, typing `@` or `#` at the start of a word opens a list of
+members or channels (`state/mentions.ts` finds the query at the caret and
+ranks the matches). A choice goes into the text as `@username` or
+`#Channel name`, which read well and can be typed by hand too; sending turns
+them into tokens (`withTokens`), outside code. Usernames and channel names
+are unique regardless of case, so each names one member or channel; where
+channel names overlap, as "General" and "General chat" do, the longest that
+fits wins. The channel form checks a new name against the channels the
+member can see; the server, which knows them all, has the last word
+(`channel_name_taken`).
+
 ## Platform
 
 `platform/platform.ts` is the seam for the desktop shell: everything that

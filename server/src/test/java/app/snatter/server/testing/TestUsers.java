@@ -64,7 +64,15 @@ public final class TestUsers {
             "login", Map.of("limit", loginLimit, "periodSeconds", loginPeriod),
             "register", Map.of("limit", registerLimit, "periodSeconds", registerPeriod),
             "challenge", Map.of("limit", challengeLimit, "periodSeconds", challengePeriod),
-            "invite", Map.of("limit", 30, "periodSeconds", 60));
+            "invite", Map.of("limit", 30, "periodSeconds", 60),
+            "message", Map.of("limit", 5, "periodSeconds", 5));
+    }
+
+    /** The test defaults, with rate limits switched on and the given message limit. */
+    public static Map<String, Object> messageRateLimit(int limit, int periodSeconds) {
+        Map<String, Object> limits = new HashMap<>(rateLimits(true, 10, 60, 5, 3600, 30, 60));
+        limits.put("message", Map.of("limit", limit, "periodSeconds", periodSeconds));
+        return limits;
     }
 
     /** Registers a fresh user with a random username. */

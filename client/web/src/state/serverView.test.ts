@@ -31,7 +31,7 @@ function messageId(n: number): string {
 }
 
 function message(n: number, channelId: string, authorId: string): Message {
-  return { kind: "user", id: messageId(n), channelId, authorId, content: "hi", createdAt: "2026-01-01T00:00:00Z" };
+  return { kind: "user", id: messageId(n), channelId, authorId, content: "hi", mentions: [], createdAt: "2026-01-01T00:00:00Z" };
 }
 
 function ready(): Ready {

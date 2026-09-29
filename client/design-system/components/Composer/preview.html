@@ -1,4 +1,4 @@
-<!-- @dsCard group="Forms" height=270 -->
+<!-- @dsCard group="Forms" height=420 -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -18,6 +18,26 @@
 <script>
   var S = window.Snatter, h = React.createElement, useState = React.useState;
 
+  // Mentioning: the list over the composer while "@" is typed; the arrow keys or the pointer move the choice.
+  var people = [
+    { id: "a1", name: "Mallard", username: "mallard" },
+    { id: "a2", name: "Marsh Tit", username: "marsh" },
+    { id: "a3", name: "Merganser", username: "merg" }
+  ];
+
+  function Suggestions() {
+    var active = useState(0);
+    return h("div", { className: "sn-suggestions", role: "listbox", "aria-label": "Members" },
+      h("div", { className: "sn-suggestions-title", "aria-hidden": true }, "Members"),
+      people.map(function (p, i) {
+        return h("div", { key: p.id, role: "option", "aria-selected": i === active[0], className: "sn-suggestion",
+          onMouseMove: function () { active[1](i); } },
+          h(S.Avatar, { name: p.name, seed: p.id, size: "sm" }),
+          h("span", { className: "sn-suggestion-label" }, p.name),
+          h("span", { className: "sn-suggestion-detail" }, p.username));
+      }));
+  }
+
   function Demo() {
     var list = useState([{ id: 1, author: "Teal", text: "Server is back up, come say hi." }]);
     var typing = useState(["Wigeon"]);
@@ -29,7 +49,9 @@
       h(S.MessageList, null, list[0].map(function (m) {
         return h(S.Message, { key: m.id, author: m.author, time: "Today at 18:4" + (m.id % 10), shortTime: "18:4" + (m.id % 10), head: m.head !== false, isNew: m.isNew }, m.text);
       })),
-      h(S.Composer, { placeholder: "Message #general", onSend: send, onAttach: function () {}, footer: h(S.TypingIndicator, { names: typing[0] }) }));
+      h("div", { className: "sn-composer-area", style: { padding: 0 } },
+        h(Suggestions),
+        h(S.Composer, { placeholder: "Message #general", onSend: send, onAttach: function () {}, footer: h(S.TypingIndicator, { names: typing[0] }) })));
   }
   ReactDOM.createRoot(document.getElementById("root")).render(h(Demo));
 

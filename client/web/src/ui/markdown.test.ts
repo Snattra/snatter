@@ -75,6 +75,24 @@ describe("parseInline", () => {
     expect(parseInline("a\\b")).toEqual([text("a\\b")]);
   });
 
+  it("reads member and channel mentions, not role ones", () => {
+    const member = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
+    const channel = "00000000-0000-7000-8000-000000000101";
+    expect(parseInline(`hi <@${member.toUpperCase()}>, see <#${channel}> and <@&${member}>`)).toEqual([
+      text("hi "),
+      { type: "member", accountId: member },
+      text(", see "),
+      { type: "channel", channelId: channel },
+      text(` and <@&${member}>`),
+    ]);
+    expect(parseInline(`**<@${member}>** \`<@${member}>\` <@nope>`)).toEqual([
+      { type: "strong", content: [{ type: "member", accountId: member }] },
+      text(" "),
+      { type: "code", text: `<@${member}>` },
+      text(" <@nope>"),
+    ]);
+  });
+
   it("finds bare web addresses", () => {
     expect(parseInline("see https://snatter.app/docs?x=1#top now")).toEqual([
       text("see "),

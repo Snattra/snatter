@@ -31,6 +31,7 @@ const sections: { id: Section; label: string }[] = [
 const sectionOf: Record<SettingsField, Section> = {
   name: "overview",
   publicUrl: "joining",
+  message: "limits",
   login: "limits",
   register: "limits",
   challenge: "limits",
@@ -38,6 +39,7 @@ const sectionOf: Record<SettingsField, Section> = {
 };
 
 const policyLabels: Record<RateLimitPolicyName, string> = {
+  message: "Messages sent by one member",
   login: "Sign-in attempts",
   register: "Accounts created",
   challenge: "Bot checks requested",
@@ -280,7 +282,7 @@ function RateLimits({ form, errors, edit }: Omit<SectionProps, "view">) {
       <Choice
         type="checkbox"
         label="Limit repeated attempts"
-        description="Slows down anyone guessing passwords or signing up in bulk. Counted per IP address."
+        description="Slows down anyone flooding a channel, guessing passwords or signing up in bulk. Messages are counted per member, everything else per IP address."
         checked={form.rateLimitsEnabled}
         onChange={(event) => edit({ rateLimitsEnabled: event.target.checked })}
       />

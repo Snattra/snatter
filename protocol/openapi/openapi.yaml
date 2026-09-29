@@ -869,6 +869,9 @@ paths:
         name existing roles
         (`invalid_required_role`), and unless the caller is the owner they
         must include a role the caller holds (`required_role_not_held`).
+
+        Channel names are unique regardless of case, across all channels,
+        including ones the caller cannot see (`channel_name_taken`).
       security:
         - session: []
       requestBody:
@@ -890,6 +893,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Another channel already has this name, in any case (`channel_name_taken`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /api/v1/channels/{id}:
     get:
@@ -923,8 +932,8 @@ paths:
       description: |
         Requires `MANAGE_CHANNELS` and a channel the caller can see. Absent
         fields stay unchanged; the type cannot be changed. Moving a channel
-        shifts the channels between its old and new place by one. Voice
-        settings and required roles follow the rules of creation.
+        shifts the channels between its old and new place by one. The name,
+        voice settings and required roles follow the rules of creation.
       security:
         - session: []
       parameters:
@@ -954,6 +963,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Another channel already has this name, in any case (`channel_name_taken`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
     delete:
       tags: [channels]
       operationId: deleteChannel
@@ -1035,7 +1050,10 @@ paths:
       description: |
         Requires `SEND_MESSAGES` in the channel. A reply must refer to a
         user message in the same channel (`invalid_reply`). Voice-only
-        channels have no messages (`voice_only_channel`).
+        channels have no messages (`voice_only_channel`). A message
+        mentions at most 20 members (`too_many_mentions`). How many
+        messages a member may send is the `message` rate limit, counted
+        per account across all channels (`rate_limited`).
       security:
         - session: []
       parameters:
@@ -1065,6 +1083,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /api/v1/channels/{id}/messages/{messageId}:
     get:
@@ -1104,6 +1124,8 @@ paths:
       description: |
         Only the author may edit, and only user messages (`forbidden`). The
         previous text is not kept; `editedAt` records that it changed.
+        The mentions are worked out again from the new text, with the same
+        limit as sending (`too_many_mentions`).
       security:
         - session: []
       parameters:
@@ -1380,7 +1402,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/MessageBase"
         - type: object
-          required: [content]
+          required: [content, mentions]
           properties:
             content:
               type: string
@@ -1394,6 +1416,16 @@ components:
                 its own text; everything else shows as typed, line breaks
                 included. Mentions are tokens in the text: `<@accountId>` for a member,
                 `<@&roleId>` for a role and `<#channelId>` for a channel.
+            mentions:
+              type: array
+              items:
+                $ref: "#/components/schemas/AccountId"
+              maxItems: 20
+              description: |
+                The members the content mentions, worked out by the server
+                from its `<@accountId>` tokens: each once, in order of first
+                mention, and only accounts that existed when the message was
+                sent or last edited.
             replyToId:
               allOf:
                 - $ref: "#/components/schemas/MessageId"
@@ -1987,10 +2019,15 @@ components:
 
     RateLimits:
       type: object
-      required: [enabled, login, register, challenge, invite]
+      description: |
+        Token buckets: each allows `limit` requests at once, refilling at
+        `limit` per `periodSeconds`. `message` is counted per account,
+        the others per client IP address.
+      required: [enabled, login, register, challenge, invite, message]
       properties:
         enabled:
           type: boolean
+          description: Switches every limit on or off
         login:
           $ref: "#/components/schemas/RateLimitPolicy"
         register:
@@ -2001,6 +2038,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/RateLimitPolicy"
           description: Applies to the public invite preview
+        message:
+          allOf:
+            - $ref: "#/components/schemas/RateLimitPolicy"
+          description: Messages sent by one member, in any channel
 
     ServerSettings:
       type: object

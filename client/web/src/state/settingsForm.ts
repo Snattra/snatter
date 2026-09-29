@@ -2,7 +2,7 @@ import type { RateLimits, RegistrationMode, ServerSettings, ServerSettingsUpdate
 import { sameData, wholeNumber } from "./forms";
 
 /** The rate limit policies, in the order the settings list them. */
-export const RATE_LIMIT_POLICIES = ["login", "register", "challenge", "invite"] as const;
+export const RATE_LIMIT_POLICIES = ["message", "login", "register", "challenge", "invite"] as const;
 export type RateLimitPolicyName = (typeof RATE_LIMIT_POLICIES)[number];
 
 /** The contract's limits on a policy. */
@@ -49,6 +49,7 @@ export function settingsForm(settings: ServerSettings): SettingsForm {
     publicUrl: settings.publicUrl ?? "",
     rateLimitsEnabled: settings.rateLimits.enabled,
     rateLimits: {
+      message: policy("message"),
       login: policy("login"),
       register: policy("register"),
       challenge: policy("challenge"),
@@ -69,7 +70,7 @@ export function settingsErrors(form: SettingsForm): SettingsErrors {
   }
   for (const name of RATE_LIMIT_POLICIES) {
     if (policyIn(form.rateLimits[name]) === null) {
-      errors[name] = "Allow 1 to 100,000 tries, every 1 to 86,400 seconds.";
+      errors[name] = "Allow 1 to 100,000, every 1 to 86,400 seconds.";
     }
   }
   return errors;
@@ -115,11 +116,11 @@ export function settingsChanges(settings: ServerSettings, form: SettingsForm): S
 }
 
 function rateLimitsIn(form: SettingsForm): RateLimits | null {
-  const [login, register, challenge, invite] = RATE_LIMIT_POLICIES.map((name) => policyIn(form.rateLimits[name]));
-  if (login == null || register == null || challenge == null || invite == null) {
+  const [message, login, register, challenge, invite] = RATE_LIMIT_POLICIES.map((name) => policyIn(form.rateLimits[name]));
+  if (message == null || login == null || register == null || challenge == null || invite == null) {
     return null;
   }
-  return { enabled: form.rateLimitsEnabled, login, register, challenge, invite };
+  return { enabled: form.rateLimitsEnabled, login, register, challenge, invite, message };
 }
 
 function policyIn(policy: PolicyForm): { limit: number; periodSeconds: number } | null {

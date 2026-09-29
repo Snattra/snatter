@@ -1,10 +1,11 @@
-import { type ReactNode, type Ref, useRef, useState } from "react";
+import { type ReactNode, type Ref, useId, useLayoutEffect, useRef, useState } from "react";
 import type { Account, SystemMessage as SystemMessageData, UserMessage } from "../api/types";
 import type { Pending } from "../state/channelLog";
+import { insertMention, type MentionQuery, queryAt } from "../state/mentions";
 import { classes } from "./classes";
 import { Button, IconButton } from "./controls";
 import { Icon } from "./icons";
-import { MessageText } from "./messageText";
+import { MessageText, type TextContext } from "./messageText";
 import { Avatar } from "./people";
 import { longTime, shortTime } from "./time";
 
@@ -25,6 +26,8 @@ interface MessageProps {
   head: boolean;
   /** Rises in; only for messages that arrive while the channel is open. */
   isNew?: boolean;
+  /** Warmed with the mention gradient: it mentions the member reading it. */
+  mentioned?: boolean;
   state?: "sent" | "pending" | "failed";
   /** Under a failed message: what went wrong and what to do. */
   error?: ReactNode;
@@ -35,7 +38,7 @@ interface MessageProps {
 
 /** One message in a channel. */
 export function Message(props: MessageProps) {
-  const { origin, author, createdAt, head, isNew = false, state = "sent", error, onAuthor, children } = props;
+  const { origin, author, createdAt, head, isNew = false, mentioned = false, state = "sent", error, onAuthor, children } = props;
   const at = new Date(createdAt);
   const name = author?.displayName ?? "Deleted account";
   return (
@@ -44,6 +47,7 @@ export function Message(props: MessageProps) {
         "sn-message",
         head && "sn-message-head",
         isNew && "sn-message-new",
+        mentioned && "sn-message-mentioned",
         state === "pending" && "sn-message-pending",
         state === "failed" && "sn-message-failed",
       )}
@@ -95,10 +99,11 @@ export function UserMessageRow(props: {
   author: Account | undefined;
   head: boolean;
   isNew: boolean;
+  mentioned: boolean;
   onAuthor: (() => void) | undefined;
-  onOpenLink: (url: string) => void;
+  text: TextContext;
 }) {
-  const { origin, message, author, head, isNew, onAuthor, onOpenLink } = props;
+  const { origin, message, author, head, isNew, mentioned, onAuthor, text } = props;
   return (
     <Message
       origin={origin}
@@ -106,9 +111,10 @@ export function UserMessageRow(props: {
       createdAt={message.createdAt}
       head={head}
       isNew={isNew}
+      mentioned={mentioned}
       onAuthor={onAuthor}
     >
-      <MessageText content={message.content} onOpenLink={onOpenLink} />
+      <MessageText content={message.content} context={text} />
     </Message>
   );
 }
@@ -120,11 +126,11 @@ export function PendingRow(props: {
   author: Account;
   head: boolean;
   onAuthor: (() => void) | undefined;
-  onOpenLink: (url: string) => void;
+  text: TextContext;
   onRetry: () => void;
   onDiscard: () => void;
 }) {
-  const { origin, pending, author, head, onAuthor, onOpenLink, onRetry, onDiscard } = props;
+  const { origin, pending, author, head, onAuthor, text, onRetry, onDiscard } = props;
   const failed = pending.error !== null;
   return (
     <Message
@@ -147,7 +153,7 @@ export function PendingRow(props: {
         </>
       }
     >
-      <MessageText content={pending.content} onOpenLink={onOpenLink} />
+      <MessageText content={pending.content} context={text} />
     </Message>
   );
 }
@@ -256,6 +262,18 @@ export function UnreadBar({ count, since, onJump, onMarkRead }: UnreadBarProps) 
   );
 }
 
+/** Something the composer offers to mention while `@` or `#` is being typed. */
+export interface Suggestion {
+  id: string;
+  /** The member's avatar or the channel's icon. */
+  leading: ReactNode;
+  label: string;
+  /** After the label in `muted`, such as the username. */
+  detail?: string;
+  /** What replaces the query in the text, such as `@wigeon`. */
+  insert: string;
+}
+
 interface ComposerProps {
   placeholder: string;
   disabled?: boolean;
@@ -263,6 +281,8 @@ interface ComposerProps {
   onSend: (text: string) => void;
   /** Called as the member types, with the current text. */
   onChange?: (text: string) => void;
+  /** What to offer for the mention being typed, best first; none hides the list. */
+  suggest?: (query: MentionQuery) => Suggestion[];
   /** The line under the field: the TypingIndicator. */
   footer: ReactNode;
 }
@@ -271,11 +291,52 @@ interface ComposerProps {
  * The message field at the foot of a channel. Enter sends, Shift+Enter adds
  * a line, and composing with an IME never sends. The send button springs in
  * once there is something to send.
+ *
+ * Typing `@` or `#` at the start of a word lists what `suggest` offers
+ * above the field. The arrow keys move through it, Enter or Tab puts the
+ * choice in the text, and Escape closes it until the next mention.
  */
-export function Composer({ placeholder, disabled = false, onSend, onChange, footer }: ComposerProps) {
+export function Composer({ placeholder, disabled = false, onSend, onChange, suggest, footer }: ComposerProps) {
   const [text, setText] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [focused, setFocused] = useState(false);
+  const [active, setActive] = useState(0);
+  // Where the mention closed with Escape starts; a new one opens the list again.
+  const [dismissed, setDismissed] = useState<number | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
+  const nextCaret = useRef<number | null>(null);
+  const listId = useId();
   const ready = text.trim() !== "" && !disabled;
+
+  const query = suggest && focused ? queryAt(text, caret) : null;
+  const options = query && suggest ? suggest(query) : [];
+  const open = query !== null && options.length > 0 && dismissed !== query.start;
+  const current = Math.min(active, options.length - 1);
+
+  // Put the caret after a mention just chosen, once the text holds it.
+  useLayoutEffect(() => {
+    if (nextCaret.current !== null && field.current !== null) {
+      field.current.setSelectionRange(nextCaret.current, nextCaret.current);
+      setCaret(nextCaret.current);
+      nextCaret.current = null;
+    }
+  }, [text]);
+
+  function edit(next: string, at: number) {
+    setText(next);
+    setCaret(at);
+    setActive(0);
+    if (queryAt(next, at)?.start !== dismissed) {
+      setDismissed(null);
+    }
+    onChange?.(next);
+  }
+
+  function choose(option: Suggestion, at: MentionQuery) {
+    const inserted = insertMention(text, at, option.insert);
+    nextCaret.current = inserted.caret;
+    edit(inserted.text, inserted.caret);
+  }
 
   function send() {
     const content = text.trim();
@@ -284,11 +345,37 @@ export function Composer({ placeholder, disabled = false, onSend, onChange, foot
     }
     onSend(content);
     setText("");
+    setCaret(0);
+    setDismissed(null);
     field.current?.focus();
   }
 
   return (
     <div className="sn-composer-area">
+      {open && (
+        <div className="sn-suggestions" role="listbox" id={listId} aria-label={query.sigil === "@" ? "Members" : "Channels"}>
+          <div className="sn-suggestions-title" aria-hidden="true">
+            {query.sigil === "@" ? "Members" : "Channels"}
+          </div>
+          {options.map((option, i) => (
+            <div
+              key={option.id}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === current}
+              className="sn-suggestion"
+              // Keeps focus in the field.
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseMove={() => setActive(i)}
+              onClick={() => choose(option, query)}
+            >
+              {option.leading}
+              <span className="sn-suggestion-label">{option.label}</span>
+              {option.detail && <span className="sn-suggestion-detail">{option.detail}</span>}
+            </div>
+          ))}
+        </div>
+      )}
       <div className={classes("sn-composer", ready && "sn-composer-ready")}>
         <textarea
           ref={field}
@@ -298,12 +385,41 @@ export function Composer({ placeholder, disabled = false, onSend, onChange, foot
           aria-label={placeholder}
           disabled={disabled}
           maxLength={4000}
-          onChange={(event) => {
-            setText(event.target.value);
-            onChange?.(event.target.value);
-          }}
+          role={suggest ? "combobox" : undefined}
+          aria-autocomplete={suggest ? "list" : undefined}
+          aria-expanded={suggest ? open : undefined}
+          aria-controls={open ? listId : undefined}
+          aria-activedescendant={open ? `${listId}-${current}` : undefined}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+          onChange={(event) => edit(event.target.value, event.target.selectionStart)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            if (event.nativeEvent.isComposing) {
+              return;
+            }
+            if (open) {
+              const option = options[current];
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                const step = event.key === "ArrowDown" ? 1 : options.length - 1;
+                setActive((current + step) % options.length);
+                return;
+              }
+              if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+                event.preventDefault();
+                if (option !== undefined) {
+                  choose(option, query);
+                }
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setDismissed(query.start);
+                return;
+              }
+            }
+            if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               send();
             }

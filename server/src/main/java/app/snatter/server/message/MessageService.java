@@ -1,5 +1,7 @@
 package app.snatter.server.message;
 
+import app.snatter.server.account.AccountId;
+import app.snatter.server.account.AccountRepository;
 import app.snatter.server.api.ApiException;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.Channel;
@@ -10,6 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Messages in channels and how far members have read them. Reading needs
@@ -21,14 +24,16 @@ public class MessageService {
 
     private final MessageRepository messages;
     private final ReadStateRepository readStates;
+    private final AccountRepository accounts;
     private final ChannelService channels;
     private final Event<MessageEvent> events;
     private final Event<ReadStateEvent> readEvents;
 
-    public MessageService(MessageRepository messages, ReadStateRepository readStates, ChannelService channels,
-                          Event<MessageEvent> events, Event<ReadStateEvent> readEvents) {
+    public MessageService(MessageRepository messages, ReadStateRepository readStates, AccountRepository accounts,
+                          ChannelService channels, Event<MessageEvent> events, Event<ReadStateEvent> readEvents) {
         this.messages = messages;
         this.readStates = readStates;
+        this.accounts = accounts;
         this.channels = channels;
         this.events = events;
         this.readEvents = readEvents;
@@ -61,7 +66,8 @@ public class MessageService {
             throw new ApiException(403, "forbidden", "You cannot send messages in this channel");
         }
         UserMessage.Reference replyTo = replyToId == null ? null : requireRepliable(channelId, replyToId);
-        UserMessage message = UserMessage.create(channelId, author.accountId(), content.strip(), replyTo);
+        String text = content.strip();
+        UserMessage message = UserMessage.create(channelId, author.accountId(), text, mentionsIn(text), replyTo);
         messages.insert(message);
         events.fire(new MessageEvent.Created(message, author.sessionId(), nonce));
         // Their own message is never unread to the author.
@@ -92,7 +98,8 @@ public class MessageService {
         if (!(require(channelId, id) instanceof UserMessage original) || !original.isBy(author.accountId())) {
             throw new ApiException(403, "forbidden", "You can only edit your own messages");
         }
-        UserMessage edited = original.edited(content.strip());
+        String text = content.strip();
+        UserMessage edited = original.edited(text, mentionsIn(text));
         messages.updateContent(edited);
         events.fire(new MessageEvent.Updated(edited));
         return edited;
@@ -108,6 +115,20 @@ public class MessageService {
         }
         messages.delete(id);
         events.fire(new MessageEvent.Deleted(channelId, id));
+    }
+
+    /**
+     * The existing accounts the text mentions. A token for an account that
+     * does not exist stays in the text but is no mention.
+     */
+    private List<AccountId> mentionsIn(String content) {
+        Set<AccountId> mentioned = Mentions.in(content);
+        if (mentioned.size() > Mentions.MAX) {
+            throw ApiException.badRequest("too_many_mentions",
+                "A message can mention at most " + Mentions.MAX + " members");
+        }
+        Set<AccountId> existing = accounts.existing(mentioned);
+        return mentioned.stream().filter(existing::contains).toList();
     }
 
     /** A visible channel that keeps messages. */

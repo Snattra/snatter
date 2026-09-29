@@ -70,6 +70,7 @@ class MessageResourceTest {
                 .body("channelId", equalTo(channel))
                 .body("authorId", equalTo(alice.id()))
                 .body("content", equalTo("hello <@" + bob.id() + ">"))
+                .body("mentions", equalTo(List.of(bob.id())))
                 .body("$", not(hasKey("notice")))
                 .body("nonce", equalTo("n-1"))
                 .body("editedAt", nullValue())
@@ -82,7 +83,10 @@ class MessageResourceTest {
             as(bob.token()).body(Map.of("content", "hijacked")).patch("/api/v1/channels/" + channel + "/messages/" + id)
                 .then().statusCode(403).body("error", equalTo("forbidden"));
             as(alice.token()).body(Map.of("content", "hello again")).patch("/api/v1/channels/" + channel + "/messages/" + id)
-                .then().statusCode(200).body("content", equalTo("hello again")).body("editedAt", notNullValue());
+                .then().statusCode(200)
+                .body("content", equalTo("hello again"))
+                .body("mentions", equalTo(List.of()))
+                .body("editedAt", notNullValue());
 
             as(bob.token()).delete("/api/v1/channels/" + channel + "/messages/" + id)
                 .then().statusCode(403).body("error", equalTo("forbidden"));
@@ -109,6 +113,79 @@ class MessageResourceTest {
         message(member, GENERAL_TEXT, multiline).then().body("content", equalTo("first line\nsecond line"));
         as(member).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + longest).then().statusCode(204);
         as(member).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + multiline).then().statusCode(204);
+    }
+
+    @Test
+    void mentionsAreTheExistingMembersNamedInTheContent() {
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User bob = TestUsers.register();
+        TestUsers.User carol = TestUsers.register();
+        String nobody = UUID.randomUUID().toString();
+        String role = UUID.randomUUID().toString();
+        String content = "<@" + carol.id() + "> and <@" + bob.id() + ">, again <@" + carol.id().toUpperCase() + ">,"
+            + " <@" + nobody + "> <@&" + role + "> <#" + GENERAL_TEXT + "> <@not-an-id>";
+        String id = send(alice.token(), GENERAL_TEXT, Map.of("content", content)).then().statusCode(201)
+            .body("content", equalTo(content))
+            .body("mentions", equalTo(List.of(carol.id(), bob.id())))
+            .extract().path("id");
+        message(bob.token(), GENERAL_TEXT, id).then().body("mentions", equalTo(List.of(carol.id(), bob.id())));
+
+        // Editing works them out again.
+        as(alice.token()).body(Map.of("content", "just <@" + alice.id() + ">"))
+            .patch("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + id)
+            .then().statusCode(200).body("mentions", equalTo(List.of(alice.id())));
+        list(bob.token(), GENERAL_TEXT, "").then().body("find { it.id == '" + id + "' }.mentions", equalTo(List.of(alice.id())));
+
+        // At most 20 members, counted before checking they exist.
+        StringBuilder many = new StringBuilder();
+        for (int i = 0; i < 21; i++) {
+            many.append("<@").append(UUID.randomUUID()).append("> ");
+        }
+        send(alice.token(), GENERAL_TEXT, Map.of("content", many.toString()))
+            .then().statusCode(400).body("error", equalTo("too_many_mentions"));
+        as(alice.token()).body(Map.of("content", many.toString()))
+            .patch("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + id)
+            .then().statusCode(400).body("error", equalTo("too_many_mentions"));
+        // Twenty, one of them twice, is fine; only the one that exists is a mention.
+        StringBuilder twenty = new StringBuilder("<@" + alice.id() + "> ");
+        for (int i = 0; i < 19; i++) {
+            twenty.append("<@").append(UUID.randomUUID()).append("> ");
+        }
+        twenty.append("<@").append(alice.id()).append(">");
+        String allowed = send(alice.token(), GENERAL_TEXT, Map.of("content", twenty.toString()))
+            .then().statusCode(201).body("mentions", equalTo(List.of(alice.id()))).extract().path("id");
+        as(alice.token()).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + allowed).then().statusCode(204);
+        as(alice.token()).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + id).then().statusCode(204);
+    }
+
+    @Test
+    void sendingIsRateLimitedPerAccount() {
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User bob = TestUsers.register();
+        List<String> sent = new ArrayList<>();
+        try {
+            TestUsers.patchSettings(Map.of("rateLimits", TestUsers.messageRateLimit(2, 60))).then().statusCode(200)
+                .body("rateLimits.message.limit", equalTo(2))
+                .body("rateLimits.message.periodSeconds", equalTo(60));
+            sent.add(send(alice.token(), GENERAL_TEXT, "one"));
+            sent.add(send(alice.token(), GENERAL_TEXT, "two"));
+            send(alice.token(), GENERAL_TEXT, Map.of("content", "three")).then().statusCode(429)
+                .header("Retry-After", notNullValue())
+                .body("error", equalTo("rate_limited"));
+            // Counted per account: bob, from the same address, still has his own.
+            sent.add(send(bob.token(), GENERAL_TEXT, "mine"));
+            // Only sending counts: alice can still edit and read.
+            as(alice.token()).body(Map.of("content", "one, edited"))
+                .patch("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + sent.getFirst()).then().statusCode(200);
+            list(alice.token(), GENERAL_TEXT, "").then().statusCode(200);
+        } finally {
+            TestUsers.patchSettings(Map.of("rateLimits", TestUsers.rateLimits(false, 10, 60, 5, 3600, 30, 60)))
+                .then().statusCode(200);
+        }
+        sent.add(send(alice.token(), GENERAL_TEXT, "three"));
+        for (String id : sent) {
+            as(TestUsers.ownerToken()).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + id).then().statusCode(204);
+        }
     }
 
     @Test

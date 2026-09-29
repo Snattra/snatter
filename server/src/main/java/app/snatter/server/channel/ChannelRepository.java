@@ -94,6 +94,20 @@ public class ChannelRepository {
         });
     }
 
+    /** Whether a channel other than {@code except} (which may be null) has this name, in any case. */
+    public boolean nameTaken(String name, ChannelId except) {
+        return jdbi.withHandle(h -> h
+            .createQuery("""
+                SELECT 1 FROM channel
+                WHERE lower(name) = lower(:name) AND (CAST(:except AS uuid) IS NULL OR id <> :except)
+                """)
+            .bind("name", name)
+            .bind("except", except)
+            .mapTo(Integer.class)
+            .findOne()
+            .isPresent());
+    }
+
     /** Saves name, topic, voice settings and required roles. Type and position have their own operations. */
     public void update(Channel channel) {
         jdbi.useHandle(h -> {

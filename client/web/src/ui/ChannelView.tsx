@@ -7,6 +7,7 @@ import type { ServerView } from "../state/serverView";
 import { useAttention } from "./hooks";
 import { layoutRows, unreadAfter } from "./messageLayout";
 import { MessageList, NewMessagesDivider, PendingRow, SystemMessageRow, UnreadBar, UserMessageRow } from "./messages";
+import type { TextContext } from "./messageText";
 import { Skeleton } from "./surfaces";
 import { sinceTime } from "./time";
 
@@ -25,6 +26,8 @@ interface ChannelViewProps {
   onOpenProfile: (accountId: string) => void;
   /** Asks before opening a link in a message. */
   onOpenLink: (url: string) => void;
+  /** Switches to a channel a message mentions. */
+  onOpenChannel: (channelId: string) => void;
 }
 
 /**
@@ -37,11 +40,20 @@ interface ChannelViewProps {
  * stop reading, the divider is set after what they last saw, so whatever
  * arrives meanwhile shows as new when they come back.
  */
-export function ChannelView({ connection, view, channel, log, onOpenProfile, onOpenLink }: ChannelViewProps) {
+export function ChannelView(props: ChannelViewProps) {
+  const { connection, view, channel, log, onOpenProfile, onOpenLink, onOpenChannel } = props;
   const me = view.account.id;
   // The author's profile, for a message whose author is still a member.
   const opener = (authorId: string | null | undefined) =>
     authorId != null && view.members[authorId] !== undefined ? () => onOpenProfile(authorId) : undefined;
+  // What mentions in messages name, as the view knows it now.
+  const text: TextContext = {
+    member: (id) => view.members[id],
+    channel: (id) => view.channels[id],
+    openProfile: onOpenProfile,
+    openChannel: onOpenChannel,
+    openLink: onOpenLink,
+  };
   const reading = view.reading[channel.id];
   const scroller = useRef<HTMLDivElement>(null);
   const divider = useRef<HTMLDivElement>(null);
@@ -231,8 +243,9 @@ export function ChannelView({ connection, view, channel, log, onOpenProfile, onO
                         author={row.message.authorId ? view.members[row.message.authorId] : undefined}
                         head={row.head}
                         isNew={log?.live[row.message.id] === true}
+                        mentioned={row.message.mentions.includes(me)}
                         onAuthor={opener(row.message.authorId)}
-                        onOpenLink={onOpenLink}
+                        text={text}
                       />
                     );
                   case "pending":
@@ -244,7 +257,7 @@ export function ChannelView({ connection, view, channel, log, onOpenProfile, onO
                         author={view.account}
                         head={row.head}
                         onAuthor={opener(me)}
-                        onOpenLink={onOpenLink}
+                        text={text}
                         onRetry={() => void connection.retry(channel.id, row.pending.nonce)}
                         onDiscard={() => connection.discard(channel.id, row.pending.nonce)}
                       />

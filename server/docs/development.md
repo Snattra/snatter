@@ -206,6 +206,11 @@ channels, and only they, have a bitrate in bits per second and a user limit,
 clients. The type is fixed at creation. A fresh server has one text channel,
 `General`.
 
+Names are unique regardless of case (a unique index on `lower(name)`), so a
+message can name a channel and a client can tell which one it means;
+`channel_name_taken` otherwise. This holds across channels the caller cannot
+see, so it reveals that a hidden channel has a name, and nothing else.
+
 Channels form one flat list ordered by `position`, 0 at the top, and
 positions are always contiguous. `ChannelRepository` takes a
 `SHARE ROW EXCLUSIVE` lock on the table for every operation that changes
@@ -250,9 +255,19 @@ notice text from the type, so it can be translated, and must show unknown
 types generically.
 
 **Content** is at most 4000 characters, trimmed, and never blank. It is plain
-text that clients render as Markdown. Mentions are tokens in the text,
-`<@accountId>`, `<@&roleId>` and `<#channelId>`, so a later notification
-feature can find them without any stored message changing format.
+text that clients render as Markdown, in the dialect the contract describes.
+Mentions are tokens in the text, `<@accountId>`, `<@&roleId>` and
+`<#channelId>`.
+
+**Mentions.** Sending or editing works out the members the content mentions
+(`message.Mentions`, the `<@accountId>` tokens) and stores them in
+`mentioned_account_ids`, a `uuid[]` with a GIN index, so notifications can
+find a member's mentions (`mentioned_account_ids @> ARRAY[:id]`) without
+reading any text. Each account counts once, in order of first mention, and
+only accounts that exist; a token for anyone else stays in the text as it
+is. A message may mention at most 20 members, counted before that check
+(`too_many_mentions`). Role and channel tokens are not stored: role
+mentions are for later, and a channel is a link, not someone to notify.
 
 **Order and paging.** Message ids are UUID version 7 from `persistence.Ids`,
 which are strictly increasing within the server process (a counter follows
@@ -435,11 +450,25 @@ the code filled in. Accounts remember the invite and inviter they came in with
 ## Rate limiting
 
 `@RateLimited("<policy>")` on a resource method applies the named policy from
-`ServerSettings.rateLimits`, keyed by client IP, through `RateLimitFilter`.
-Policies are token buckets; a refused request gets 429 with `Retry-After`
-and the `rate_limited` error. Buckets live in memory, so this protects a
-single server instance, and they are reset whenever the owner changes the
-policies. Policies exist for `login`, `register`, `challenge` and `invite`.
+`ServerSettings.rateLimits` through `RateLimitFilter`, counted per client IP
+or, with `per = ACCOUNT`, per signed-in account. Authentication runs before
+the filter, so the account is known there. Policies are token buckets; a
+refused request gets 429 with `Retry-After` and the `rate_limited` error.
+Buckets live in memory, so this protects a single server instance, and they
+are reset whenever the policies change. One switch, `rateLimits.enabled`,
+turns them all on or off.
+
+| Policy      | Counted per | Guards                                  | Default      |
+|-------------|-------------|-----------------------------------------|--------------|
+| `login`     | IP          | Signing in                              | 10 per 60 s  |
+| `register`  | IP          | Creating accounts                       | 5 per hour   |
+| `challenge` | IP          | Fetching registration challenges        | 30 per 60 s  |
+| `invite`    | IP          | The public invite preview               | 30 per 60 s  |
+| `message`   | account     | Sending messages, in any channel        | 5 per 5 s    |
+
+Messages are counted per account so that people sharing an address (a
+household, a LAN party) do not slow each other down, and one account gains
+nothing from switching addresses. Only sending counts; editing does not.
 
 ## HTTP API
 

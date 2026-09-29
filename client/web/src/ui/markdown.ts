@@ -1,8 +1,8 @@
 /**
  * The Markdown of message content, a chat dialect: what the author typed
  * stays as typed (line breaks and blank lines included), with bold, italic,
- * underline, strikethrough, spoilers, code, quotes, lists and bare links on
- * top. There is no HTML, no image, no heading and no link with its own text:
+ * underline, strikethrough, spoilers, code, quotes, lists, bare links and
+ * mentions on top. There is no HTML, no image, no heading and no link with its own text:
  * a link always shows where it goes. Parsing never fails; anything that is
  * not formatting is text.
  *
@@ -27,6 +27,10 @@ export type Inline =
   | { type: "text"; text: string }
   | { type: "code"; text: string }
   | { type: "link"; url: string }
+  /** A `<@accountId>` token. */
+  | { type: "member"; accountId: string }
+  /** A `<#channelId>` token. */
+  | { type: "channel"; channelId: string }
   | { type: Emphasis; content: Inline[] };
 
 export type Emphasis = "strong" | "emphasis" | "underline" | "strike" | "spoiler";
@@ -223,6 +227,8 @@ interface Pair {
 type Piece = Inline | Run;
 
 const ESCAPABLE = /[!-/:-@[-`{-~]/;
+// Role tokens, <@&roleId>, are not read yet: they show as typed.
+const MENTION = /^<([@#])([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})>/i;
 const URL_START = /^https?:\/\//i;
 const WORD = /[\p{L}\p{N}]/u;
 const SPACE = /\s/;
@@ -269,6 +275,16 @@ function split(text: string): Piece[] {
         i += length;
       }
       continue;
+    }
+
+    if (c === "<") {
+      const mention = MENTION.exec(text.slice(i, i + 40));
+      if (mention !== null) {
+        const [token, sigil = "", id = ""] = mention;
+        push(sigil === "@" ? { type: "member", accountId: id.toLowerCase() } : { type: "channel", channelId: id.toLowerCase() });
+        i += token.length;
+        continue;
+      }
     }
 
     if (c === "<" || c === "h" || c === "H") {
