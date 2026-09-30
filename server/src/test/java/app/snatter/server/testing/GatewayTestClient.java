@@ -3,6 +3,7 @@ package app.snatter.server.testing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import app.snatter.server.protocol.Protocol;
 import io.restassured.RestAssured;
 import io.restassured.path.json.JsonPath;
 import java.net.URI;
@@ -68,7 +69,11 @@ public final class GatewayTestClient implements AutoCloseable {
     }
 
     public void identify(String token) {
-        send("{\"type\":\"identify\",\"token\":\"" + token + "\"}");
+        identify(token, Protocol.CURRENT.toString());
+    }
+
+    public void identify(String token, String protocol) {
+        send("{\"type\":\"identify\",\"token\":\"" + token + "\",\"protocol\":\"" + protocol + "\"}");
     }
 
     /** Takes the first buffered or arriving frame of the type. */

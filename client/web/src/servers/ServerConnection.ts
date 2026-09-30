@@ -31,6 +31,7 @@ import {
 import { isAfter, later } from "../state/ids";
 import { INVITE_LIFETIME_SECONDS, reusableInvite } from "../state/invites";
 import { isTimedOut } from "../state/moderation";
+import { type Outdated, compatibility, isOutdated } from "../state/protocol";
 import { type ServerView, applyFrame, fromReady } from "../state/serverView";
 import { type ServerEntry, blank, useServers } from "../state/store";
 import { describeError } from "../ui/errors";
@@ -470,6 +471,14 @@ export class ServerConnection {
     this.update({ status: "connecting", notice: null });
     this.gateway = new Gateway(Gateway.urlFor(this.origin), token, {
       frame: (frame) => {
+        // Checked on every ready, since the server may have been upgraded while the app was away.
+        if (frame.type === "ready") {
+          const compatible = compatibility(frame.server.protocol);
+          if (isOutdated(compatible)) {
+            this.stopOutdated(compatible);
+            return;
+          }
+        }
         useServers.getState().update(this.origin, (entry) => {
           if (frame.type === "ready") {
             return { ...entry, status: "connected", view: fromReady(frame) };
@@ -483,9 +492,22 @@ export class ServerConnection {
         }
       },
       reconnecting: () => this.update({ status: "reconnecting" }),
-      ended: (reason) => void this.signOut(endedNotice(reason)),
+      ended: (reason) => {
+        if (reason === "client_outdated") {
+          this.stopOutdated(reason);
+        } else {
+          void this.signOut(endedNotice(reason));
+        }
+      },
     });
     this.gateway.start();
+  }
+
+  /** Stops talking to the server, keeping the session for when the app or the server has been updated. */
+  private stopOutdated(outdated: Outdated): void {
+    this.gateway?.stop();
+    this.gateway = null;
+    this.update({ status: outdated, view: null });
   }
 
   private async signOut(notice: string | null): Promise<void> {
@@ -534,13 +556,15 @@ export class ServerConnection {
   }
 }
 
-function endedNotice(reason: GatewayCloseReason): string {
+function endedNotice(reason: GatewayCloseReason | null): string {
   switch (reason) {
     case "banned":
       return "You were banned from this server. Signing in again shows why.";
     case "session_ended":
     case "authentication_failed":
       return "Your session has ended. Please sign in again.";
+    case null:
+      return "The server closed the connection. Please sign in again.";
     default:
       return `The connection was closed (${reason}). Please sign in again.`;
   }

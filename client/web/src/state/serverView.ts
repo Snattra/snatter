@@ -133,6 +133,11 @@ export function applyFrame(view: ServerView, frame: Event, now: number): ServerV
     case "message_deleted":
     case "messages_purged":
       return view;
+    default:
+      // Only a frame type from a newer server gets here, and it changes nothing
+      // this client shows; a type in the contract that is not handled above fails the build.
+      frame satisfies never;
+      return view;
   }
 }
 

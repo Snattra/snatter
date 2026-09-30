@@ -57,28 +57,28 @@ docker build -t snatter-server ./server
 
 ## Configuration
 
-Defaults live in `src/main/resources/application.properties`. Every property
-can be overridden by an environment variable using Quarkus' naming rules, for
-example `QUARKUS_HTTP_PORT=9000`.
+Environment variables say where the server runs; nothing else is needed, and
+there is no configuration file to mount.
 
-| Variable                        | Default                                    | Purpose                         |
-|---------------------------------|--------------------------------------------|---------------------------------|
-| `SNATTER_DB_URL`                | `jdbc:postgresql://localhost:5432/snatter` | PostgreSQL JDBC URL             |
-| `SNATTER_DB_USER`               | `snatter`                                  | Database user                   |
-| `SNATTER_DB_PASSWORD`           | none, required                             | Database password               |
-| `SNATTER_AUTH_SESSION_LIFETIME` | `P30D`                                     | How long a login stays valid without use |
-| `SNATTER_STORAGE_ROOT`          | `./data` (`/var/lib/snatter` in the container) | Directory for uploaded content such as avatars |
-| `SNATTER_REGISTRATION_CHALLENGE_MAX_NUMBER` | `100000` | Difficulty of the registration proof-of-work challenge |
-| `SNATTER_REGISTRATION_CHALLENGE_TTL` | `PT10M` | How long a challenge stays valid |
-| `SNATTER_VOICE_DEFAULT_BITRATE` | `64000` | Bitrate of new voice channels, bits per second |
-| `SNATTER_VOICE_MAX_BITRATE` | `256000` | Highest bitrate a channel may be set to (Opus allows up to 510000) |
+| Variable               | Default                                        | Purpose                        |
+|------------------------|------------------------------------------------|--------------------------------|
+| `SNATTER_DB_URL`       | `jdbc:postgresql://localhost:5432/snatter`     | PostgreSQL JDBC URL            |
+| `SNATTER_DB_USER`      | `snatter`                                      | Database user                  |
+| `SNATTER_DB_PASSWORD`  | none, required                                 | Database password              |
+| `SNATTER_STORAGE_ROOT` | `./data` (`/var/lib/snatter` in the container) | Directory for uploaded content such as avatars |
+| `QUARKUS_HTTP_PORT`    | `8080`                                         | Port the server listens on     |
+
+Behind a reverse proxy, also set `QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING`
+and `QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED` to `true` so rate limits see the
+client's address, as `compose.yaml` does.
 
 PostgreSQL is the only supported database. The schema is created and upgraded
 automatically at startup.
 
-Registration mode, the proof-of-work requirement and rate limits are not
-configuration: members with the `MANAGE_SERVER` permission change them at
-runtime through
+How the community runs is not configuration: registration mode, the bot
+check and its difficulty, rate limits, how long sessions last and voice
+bitrates are server settings that members with the `MANAGE_SERVER`
+permission change at runtime, in the app's Server settings or through
 `PATCH /api/v1/server-settings`. The first account registered on a fresh
 server becomes the owner.
 

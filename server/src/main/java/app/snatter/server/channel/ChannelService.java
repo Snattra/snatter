@@ -4,6 +4,7 @@ import app.snatter.server.api.ApiException;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.role.RoleId;
 import app.snatter.server.role.RoleRepository;
+import app.snatter.server.settings.ServerSettingsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.transaction.Transactional;
@@ -33,13 +34,14 @@ public class ChannelService {
 
     private final ChannelRepository channels;
     private final RoleRepository roles;
-    private final VoiceConfig voice;
+    private final ServerSettingsService settings;
     private final Event<ChannelEvent> events;
 
-    public ChannelService(ChannelRepository channels, RoleRepository roles, VoiceConfig voice, Event<ChannelEvent> events) {
+    public ChannelService(ChannelRepository channels, RoleRepository roles, ServerSettingsService settings,
+                          Event<ChannelEvent> events) {
         this.channels = channels;
         this.roles = roles;
-        this.voice = voice;
+        this.settings = settings;
         this.events = events;
     }
 
@@ -67,7 +69,8 @@ public class ChannelService {
             blankToNull(topic),
             0,
             type.hasVoice()
-                ? new VoiceSettings(Objects.requireNonNullElse(bitrate, voice.newChannelBitrate()), Objects.requireNonNullElse(userLimit, 0))
+                ? new VoiceSettings(Objects.requireNonNullElse(bitrate, settings.current().voiceDefaultBitrate()),
+                    Objects.requireNonNullElse(userLimit, 0))
                 : null,
             requiredRoleIds,
             now,
@@ -176,9 +179,6 @@ public class ChannelService {
     private void requireVoiceSettingsFit(ChannelType type, Integer bitrate, Integer userLimit) {
         if (!type.hasVoice() && (bitrate != null || userLimit != null)) {
             throw ApiException.badRequest("not_a_voice_channel", "Text channels have no bitrate or user limit");
-        }
-        if (bitrate != null && bitrate > voice.maxBitrate()) {
-            throw ApiException.badRequest("bitrate_too_high", "This server allows at most " + voice.maxBitrate() + " bits per second");
         }
     }
 

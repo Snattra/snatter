@@ -1,13 +1,17 @@
 import type { GatewayClientFrame, GatewayCloseReason, GatewayServerFrame } from "../api/types";
+import { PROTOCOL_VERSION } from "../state/protocol";
 import { closeAction } from "./closeCodes";
 
 export interface GatewayListener {
-  /** A frame in order; `ready` starts over after every reconnect. */
+  /**
+   * A frame in order; `ready` starts over after every reconnect. The type
+   * may be one from a newer server that the contract here does not know.
+   */
   frame(frame: GatewayServerFrame): void;
   /** The connection dropped and will be retried; what the client knows is going stale. */
   reconnecting(): void;
-  /** The server ended the session or refused it; no more retries. */
-  ended(reason: GatewayCloseReason): void;
+  /** The server ended the session or refused it, for a reason this client may not know by name; no more retries. */
+  ended(reason: GatewayCloseReason | null): void;
 }
 
 /** Closed by the client itself when frames arrive out of order, so it resyncs. */
@@ -16,9 +20,9 @@ const MAX_RETRY_DELAY_MS = 30_000;
 
 /**
  * One gateway connection that keeps itself open: it identifies with the
- * session token, checks that frames are numbered without gaps, and after
- * losing the connection retries with growing, jittered delays until the next
- * `ready`.
+ * session token and the client's protocol version, checks that frames are
+ * numbered without gaps, and after losing the connection retries with
+ * growing, jittered delays until the next `ready`.
  */
 export class Gateway {
   private socket: WebSocket | null = null;
@@ -63,7 +67,9 @@ export class Gateway {
     const socket = new WebSocket(this.url);
     this.socket = socket;
     socket.onopen = () => {
-      socket.send(JSON.stringify({ type: "identify", token: this.token } satisfies GatewayClientFrame));
+      socket.send(
+        JSON.stringify({ type: "identify", token: this.token, protocol: PROTOCOL_VERSION } satisfies GatewayClientFrame),
+      );
     };
     socket.onmessage = (event: MessageEvent<string>) => {
       const frame = JSON.parse(event.data) as GatewayServerFrame;

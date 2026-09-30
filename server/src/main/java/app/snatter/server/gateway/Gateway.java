@@ -48,6 +48,8 @@ import app.snatter.server.message.ReadState;
 import app.snatter.server.message.ReadStateEvent;
 import app.snatter.server.message.ReadStateRepository;
 import app.snatter.server.message.UserMessage;
+import app.snatter.server.protocol.Protocol;
+import app.snatter.server.protocol.ProtocolVersion;
 import app.snatter.server.role.Permission;
 import app.snatter.server.role.PermissionDtos;
 import app.snatter.server.role.Role;
@@ -60,6 +62,7 @@ import app.snatter.server.settings.ServerSettingsService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.exc.InvalidTypeIdException;
 import io.quarkus.websockets.next.WebSocketConnection;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -110,6 +113,12 @@ public class Gateway {
     /** The least time between two {@code typing} frames passed on for the same channel and connection. */
     private static final long TYPING_INTERVAL_NANOS = Duration.ofSeconds(5).toNanos();
 
+    /** How often open connections keep their sessions alive and check they have not ended. */
+    private static final Duration KEEP_ALIVE_INTERVAL = Duration.ofMinutes(5);
+
+    /** Frames a connection may have unsent before it counts as too slow and is closed. */
+    private static final int MAX_PENDING_FRAMES = 1000;
+
     private final Principals principals;
     private final AuthService auth;
     private final AccountRepository accounts;
@@ -151,7 +160,7 @@ public class Gateway {
             thread.setDaemon(true);
             return thread;
         });
-        long keepAlive = config.keepAliveInterval().toMillis();
+        long keepAlive = KEEP_ALIVE_INTERVAL.toMillis();
         dispatcher.scheduleWithFixedDelay(guarded(this::keepSessionsAlive), keepAlive, keepAlive, TimeUnit.MILLISECONDS);
     }
 
@@ -179,12 +188,18 @@ public class Gateway {
             GatewayClientFrameDto frame;
             try {
                 frame = json.readValue(text, GatewayClientFrameDto.class);
+            } catch (InvalidTypeIdException e) {
+                // A frame type from a newer client is ignored, as the contract promises; one without a type is invalid.
+                if (e.getTypeId() == null) {
+                    close(client, GatewayClose.INVALID_FRAME);
+                }
+                return;
             } catch (JsonProcessingException e) {
                 close(client, GatewayClose.INVALID_FRAME);
                 return;
             }
             switch (frame) {
-                case GatewayIdentifyDto identify -> identify(client, identify.getToken());
+                case GatewayIdentifyDto identify -> identify(client, identify);
                 case GatewayTypingDto typing -> typing(client, typing.getChannelId());
             }
         });
@@ -206,11 +221,21 @@ public class Gateway {
         }
     }
 
-    private void identify(Client client, String token) {
+    private void identify(Client client, GatewayIdentifyDto identify) {
         if (client.identified()) {
             close(client, GatewayClose.ALREADY_IDENTIFIED);
             return;
         }
+        Optional<ProtocolVersion> version = ProtocolVersion.parse(identify.getProtocol());
+        if (version.isEmpty()) {
+            close(client, GatewayClose.INVALID_FRAME);
+            return;
+        }
+        if (!Protocol.accepts(version.get())) {
+            close(client, GatewayClose.CLIENT_OUTDATED);
+            return;
+        }
+        String token = identify.getToken();
         Optional<AccountPrincipal> principal = token == null ? Optional.empty() : principals.authenticate(token);
         if (principal.isEmpty()) {
             close(client, GatewayClose.AUTHENTICATION_FAILED);
@@ -527,7 +552,7 @@ public class Gateway {
         if (client.closing) {
             return;
         }
-        if (client.pending.get() >= config.maxPendingFrames()) {
+        if (client.pending.get() >= MAX_PENDING_FRAMES) {
             close(client, GatewayClose.TOO_SLOW);
             return;
         }

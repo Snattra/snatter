@@ -25,6 +25,7 @@ public class ServerSettingsRepository {
         id(rs, "owner_account_id", AccountId::new),
         RegistrationMode.fromDbValue(rs.getString("registration_mode")),
         rs.getBoolean("registration_challenge"),
+        rs.getInt("challenge_max_number"),
         new RateLimits(
             rs.getBoolean("rate_limits_enabled"),
             policy(rs.getInt("rate_limit_login_limit"), rs.getInt("rate_limit_login_period")),
@@ -32,6 +33,8 @@ public class ServerSettingsRepository {
             policy(rs.getInt("rate_limit_challenge_limit"), rs.getInt("rate_limit_challenge_period")),
             policy(rs.getInt("rate_limit_invite_limit"), rs.getInt("rate_limit_invite_period")),
             policy(rs.getInt("rate_limit_message_limit"), rs.getInt("rate_limit_message_period"))),
+        Duration.ofDays(rs.getInt("session_lifetime_days")),
+        rs.getInt("voice_default_bitrate"),
         id(rs, "system_channel_id", ChannelId::new),
         id(rs, "new_member_role_id", RoleId::new),
         instant(rs, "created_at"),
@@ -51,13 +54,14 @@ public class ServerSettingsRepository {
         return jdbi.withHandle(h -> h
             .createQuery("""
                 SELECT name, description, public_url, owner_account_id,
-                       registration_mode, registration_challenge,
+                       registration_mode, registration_challenge, challenge_max_number,
                        rate_limits_enabled,
                        rate_limit_login_limit, rate_limit_login_period,
                        rate_limit_register_limit, rate_limit_register_period,
                        rate_limit_challenge_limit, rate_limit_challenge_period,
                        rate_limit_invite_limit, rate_limit_invite_period,
                        rate_limit_message_limit, rate_limit_message_period,
+                       session_lifetime_days, voice_default_bitrate,
                        system_channel_id, new_member_role_id, created_at, updated_at
                 FROM server_settings
                 WHERE id = :id
@@ -79,6 +83,7 @@ public class ServerSettingsRepository {
                     public_url = :publicUrl,
                     registration_mode = :registrationMode,
                     registration_challenge = :challengeRequired,
+                    challenge_max_number = :challengeMaxNumber,
                     rate_limits_enabled = :rateLimitsEnabled,
                     rate_limit_login_limit = :loginLimit,
                     rate_limit_login_period = :loginPeriod,
@@ -90,6 +95,8 @@ public class ServerSettingsRepository {
                     rate_limit_invite_period = :invitePeriod,
                     rate_limit_message_limit = :messageLimit,
                     rate_limit_message_period = :messagePeriod,
+                    session_lifetime_days = :sessionLifetimeDays,
+                    voice_default_bitrate = :voiceDefaultBitrate,
                     system_channel_id = :systemChannelId,
                     new_member_role_id = :newMemberRoleId,
                     updated_at = :now
@@ -100,6 +107,7 @@ public class ServerSettingsRepository {
             .bind("publicUrl", s.publicUrl())
             .bind("registrationMode", s.registrationMode().dbValue())
             .bind("challengeRequired", s.challengeRequired())
+            .bind("challengeMaxNumber", s.challengeMaxNumber())
             .bind("rateLimitsEnabled", s.rateLimits().enabled())
             .bind("loginLimit", s.rateLimits().login().limit())
             .bind("loginPeriod", s.rateLimits().login().period().toSeconds())
@@ -111,6 +119,8 @@ public class ServerSettingsRepository {
             .bind("invitePeriod", s.rateLimits().invite().period().toSeconds())
             .bind("messageLimit", s.rateLimits().message().limit())
             .bind("messagePeriod", s.rateLimits().message().period().toSeconds())
+            .bind("sessionLifetimeDays", (int) s.sessionLifetime().toDays())
+            .bind("voiceDefaultBitrate", s.voiceDefaultBitrate())
             .bind("systemChannelId", s.systemChannelId())
             .bind("newMemberRoleId", s.newMemberRoleId())
             .bind("now", Instant.now())

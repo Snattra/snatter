@@ -113,8 +113,8 @@ class ChannelResourceTest {
 
             create(owner, Map.of("type", "text", "name", "x", "bitrate", 64000))
                 .then().statusCode(400).body("error", equalTo("not_a_voice_channel"));
-            create(owner, Map.of("type", "voice", "name", "x", "bitrate", 300000))
-                .then().statusCode(400).body("error", equalTo("bitrate_too_high"));
+            create(owner, Map.of("type", "voice", "name", "x", "bitrate", 600000))
+                .then().statusCode(400).body("error", equalTo("validation_failed"));
             create(owner, Map.of("type", "voice", "name", "x", "bitrate", 7000))
                 .then().statusCode(400).body("error", equalTo("validation_failed"));
             create(owner, Map.of("type", "text", "name", "   "))
@@ -145,7 +145,8 @@ class ChannelResourceTest {
             patch(owner, b, Map.of("bitrate", 96000, "userLimit", 10)).then().statusCode(200)
                 .body("bitrate", equalTo(96000)).body("userLimit", equalTo(10));
             patch(owner, a, Map.of("bitrate", 96000)).then().statusCode(400).body("error", equalTo("not_a_voice_channel"));
-            patch(owner, b, Map.of("bitrate", 300000)).then().statusCode(400).body("error", equalTo("bitrate_too_high"));
+            patch(owner, b, Map.of("bitrate", 510000)).then().statusCode(200).body("bitrate", equalTo(510000));
+            patch(owner, b, Map.of("bitrate", 600000)).then().statusCode(400).body("error", equalTo("validation_failed"));
 
             int aPosition = as(owner).get("/api/v1/channels/" + a).then().extract().path("position");
             patch(owner, c, Map.of("position", aPosition)).then().statusCode(200).body("position", equalTo(aPosition));

@@ -8,8 +8,18 @@ import type { ServerView } from "./serverView";
  * - `connecting`: signed in, waiting for `ready`
  * - `connected`: the view is live
  * - `reconnecting`: the view is stale until the next `ready`
+ * - `client_outdated`, `server_outdated`: the app or the server is too old
+ *   for the other, so the app stopped talking to it; the session is kept for
+ *   when that is fixed
  */
-export type ConnectionStatus = "unknown" | "signed_out" | "connecting" | "connected" | "reconnecting";
+export type ConnectionStatus =
+  | "unknown"
+  | "signed_out"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "client_outdated"
+  | "server_outdated";
 
 export interface ServerEntry {
   origin: string;

@@ -43,10 +43,10 @@ function ready(): Ready {
     server: {
       name: "Snatter",
       version: "0.1.0",
-      apiVersion: 1,
+      protocol: { version: "1.0", minClient: "1.0" },
       community: { name: "Test" },
       registration: { mode: "open", challengeRequired: false, setupRequired: false },
-      voice: { defaultBitrate: 64000, maxBitrate: 256000 },
+      voice: { defaultBitrate: 64000 },
     },
     roles: [],
     members: [me, bob],
@@ -119,6 +119,12 @@ describe("serverView", () => {
 
     const sent = applyFrame(typing, { type: "message_created", seq: 3, message: message(4, "a", "bob") }, 1_000);
     expect(typingIn(sent, "a", 1_000)).toEqual([]);
+  });
+
+  it("ignores frame types from a newer server", () => {
+    const view = fromReady(ready());
+    const frame = { type: "reaction_added", seq: 2, messageId: messageId(1) } as unknown as Event;
+    expect(applyFrame(view, frame, 1_000)).toBe(view);
   });
 
   it("knows which channels have unread messages", () => {

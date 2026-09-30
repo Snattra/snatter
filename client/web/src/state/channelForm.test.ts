@@ -12,7 +12,7 @@ import {
   updateErrors,
 } from "./channelForm";
 
-const member: ChannelRules = { maxBitrate: 256_000, owner: false, heldRoleIds: ["user"], channels: [] };
+const member: ChannelRules = { owner: false, heldRoleIds: ["user"], channels: [] };
 const owner: ChannelRules = { ...member, owner: true, heldRoleIds: [] };
 
 function channel(changes: Partial<Channel> = {}): Channel {
@@ -101,8 +101,8 @@ describe("updateErrors", () => {
   });
 
   it("checks voice settings against the server's limits", () => {
-    expect(updateErrors(lounge, edited(lounge, { bitrate: "300" }), member)).toEqual({
-      bitrate: "Choose from 8 to 256 kbps.",
+    expect(updateErrors(lounge, edited(lounge, { bitrate: "600" }), member)).toEqual({
+      bitrate: "Choose from 8 to 510 kbps.",
     });
     expect(updateErrors(lounge, edited(lounge, { bitrate: "" }), member).bitrate).toBeDefined();
     expect(updateErrors(lounge, edited(lounge, { bitrate: "7.9" }), member).bitrate).toBeDefined();
@@ -114,9 +114,6 @@ describe("updateErrors", () => {
   });
 
   it("leaves alone what did not change, as only changes are sent", () => {
-    const loud = { ...lounge, bitrate: 384_000 };
-    expect(updateErrors(loud, edited(loud, { name: "Loud" }), member)).toEqual({});
-
     // A private channel the member sees only through a role they no longer hold.
     const hidden = channel({ requiredRoleIds: ["mod"] });
     expect(updateErrors(hidden, edited(hidden, { topic: "psst" }), member)).toEqual({});

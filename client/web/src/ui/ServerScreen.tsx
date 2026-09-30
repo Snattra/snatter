@@ -12,6 +12,7 @@ import {
   withTokens,
 } from "../state/mentions";
 import { isBanned, isTimedOut } from "../state/moderation";
+import { type Compatibility, compatibility } from "../state/protocol";
 import { can, canInvite, canSend, hasUnread, sortedChannels, typingIn } from "../state/serverView";
 import type { ServerEntry } from "../state/store";
 import { ChannelView } from "./ChannelView";
@@ -156,7 +157,14 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
             </ChannelList>
           </Sidebar>
         }
-        banner={<StatusBanner reconnecting={entry.status === "reconnecting"} account={view.account} />}
+        banner={
+          <StatusBanner
+            reconnecting={entry.status === "reconnecting"}
+            account={view.account}
+            compatible={compatibility(view.info.protocol)}
+            manageServer={manageServer}
+          />
+        }
         header={
           <ChannelHeader channel={selected}>
             {manageChannels && selected !== null && (
@@ -330,11 +338,19 @@ function suggester(origin: string, { members, channels }: Mentionables) {
 }
 
 /**
- * Across the top of the channel: the connection coming back, or else the
- * member's own timeout, which the gateway ends in the view when it runs out.
- * One at a time, the connection first.
+ * Across the top of the channel, one at a time and the most pressing first:
+ * the connection coming back; the member's own timeout, which the gateway
+ * ends in the view when it runs out; a newer version of the app, which the
+ * server serves; and, for those who run the server, the server being older
+ * than the app.
  */
-function StatusBanner({ reconnecting, account }: { reconnecting: boolean; account: Account }) {
+function StatusBanner(props: {
+  reconnecting: boolean;
+  account: Account;
+  compatible: Compatibility;
+  manageServer: boolean;
+}) {
+  const { reconnecting, account, compatible, manageServer } = props;
   if (reconnecting) {
     return <Banner busy>Reconnecting…</Banner>;
   }
@@ -342,6 +358,16 @@ function StatusBanner({ reconnecting, account }: { reconnecting: boolean; accoun
     return (
       <Banner>
         You're timed out until {aheadTime(new Date(account.timedOutUntil), new Date())}. You can read, but not write.
+      </Banner>
+    );
+  }
+  if (compatible === "update_available") {
+    return <Banner tone="accent">Snatter has been updated. Reload the page to get the new version.</Banner>;
+  }
+  if (compatible === "server_older" && manageServer) {
+    return (
+      <Banner tone="accent">
+        This server runs an older version of Snatter than this app, so some features are missing until it's updated.
       </Banner>
     );
   }

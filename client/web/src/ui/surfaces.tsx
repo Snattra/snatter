@@ -38,11 +38,15 @@ export function Callout(props: { title: string; tone?: "accent" | "warning"; chi
   );
 }
 
-/** A connection-wide state across the top of the channel pane; it slides down when it mounts. */
-export function Banner({ busy = false, children }: { busy?: boolean; children: ReactNode }) {
+/**
+ * A connection-wide state across the top of the channel pane; it slides down
+ * when it mounts. `warning` for degraded, `accent` for information.
+ */
+export function Banner(props: { tone?: "warning" | "accent"; busy?: boolean; children: ReactNode }) {
+  const { tone = "warning", busy = false, children } = props;
   return (
     <div className="sn-banner-slot">
-      <div className="sn-banner" role="status">
+      <div className={classes("sn-banner", tone === "accent" && "sn-banner-accent")} role="status">
         {busy && <Spinner />}
         {children}
       </div>

@@ -11,6 +11,7 @@ import {
   creationErrors,
   hasVoice,
   kbps,
+  MAX_BITRATE,
   rulesFor,
   toggledRole,
   updateErrors,
@@ -140,7 +141,7 @@ export function ChannelSettingsModal({ connection, view, onClose, ...props }: Ch
   // After backing out of deleting, focus goes back to Delete channel rather than the name.
   const [backedOut, setBackedOut] = useState(false);
   const changed = !sameData(form, channelForm(channel));
-  const maxKbps = kbps(view.info.voice.maxBitrate);
+  const maxKbps = kbps(MAX_BITRATE);
   const subject = (
     <>
       <ChannelIcon channel={props.channel} />

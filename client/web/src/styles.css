@@ -640,6 +640,11 @@ textarea.sn-input {
   animation: sn-slide-down var(--duration-base) var(--ease-out);
 }
 
+.sn-banner-accent {
+  background: var(--accent-strong) var(--gradient-accent);
+  color: var(--on-accent);
+}
+
 /* ---------- Tag ---------- */
 
 .sn-tags {

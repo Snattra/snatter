@@ -56,12 +56,12 @@ class ModerationResourceTest {
                 .body("reason", equalTo("spamming"))
                 .body("bannedBy", equalTo(mod.id()))
                 .body("createdAt", notNullValue());
-            assertEquals(new Closed(4007, "banned"), gateway.awaitClose());
+            assertEquals(new Closed(4005, "banned"), gateway.awaitClose());
         }
         as(member.token()).get("/api/v1/accounts/me").then().statusCode(401);
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.identify(member.token());
-            assertEquals(new Closed(4003, "authentication_failed"), gateway.awaitClose());
+            assertEquals(new Closed(4002, "authentication_failed"), gateway.awaitClose());
         }
 
         login(member.username(), "wrong password here").then().statusCode(401).body("error", equalTo("invalid_credentials"));

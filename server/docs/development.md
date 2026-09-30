@@ -67,7 +67,7 @@ account id, username, session id and effective permissions, so
 in resources. `auth.Principals` builds that principal, for HTTP requests and
 gateway connections alike.
 
-A session expires after `snatter.auth.session-lifetime` without use. Each
+A session expires after the server setting `sessionLifetimeDays` without use. Each
 authenticated request moves `expires_at` forward, written at most every five
 minutes together with `last_seen_at`, and open gateway connections do the
 same through `AuthService.keepAlive`. Logging out deletes the session and
@@ -114,8 +114,11 @@ Everything else is decided by permissions; see "Roles and permissions".
 Everything the owner can change at runtime lives in the
 `server_settings` row and is read through `ServerSettingsService`, which
 caches the row in memory and fires a `Changed` event on updates. Request paths
-never query the table. Tuning that only an operator would touch, such as the
-challenge difficulty, stays in `application.properties`.
+never query the table. `application.properties` holds only how the server is
+built and wired; environment variables say where it runs (database, storage,
+port), and anything about how the community runs is a server setting.
+Internal timing, such as the challenge lifetime or the gateway's keep-alive
+interval, is a constant in the class that uses it.
 
 ## Roles and permissions
 
@@ -200,10 +203,10 @@ again.
 
 A channel (`channel` table) is `text`, `voice` or `voice_text`. Voice
 channels, and only they, have a bitrate in bits per second and a user limit,
-0 meaning none; the table enforces this. New voice channels get
-`snatter.voice.default-bitrate` and no channel may exceed
-`snatter.voice.max-bitrate`; both are published in `ServerInfo.voice` for
-clients. The type is fixed at creation. A fresh server has one text channel,
+0 meaning none; the table enforces this. A bitrate may be anything Opus
+supports, 8 to 510 kbps. New voice channels get the server setting
+`voice.defaultBitrate`, published in `ServerInfo.voice` for clients. The type
+is fixed at creation. A fresh server has one text channel,
 `General`.
 
 Names are unique regardless of case (a unique index on `lower(name)`), so a
@@ -349,11 +352,21 @@ WebSockets Next. The frames are part of the API contract: the `Gateway*`
 schemas in `openapi.yaml`, with `GatewayClientFrame` and
 `GatewayServerFrame` as sealed unions on `type`, generated like every other
 DTO. The contract's description covers the lifecycle a client follows:
-`identify` with a session token within `snatter.gateway.identify-timeout`,
-receive `ready`, then events numbered by `seq`. Reconnecting clients start
+`identify` with a session token within ten seconds (`GatewayConfig`, which
+only tests shorten), receive `ready`, then events numbered by `seq`. Reconnecting clients start
 over with a fresh `ready` and catch up on messages over REST with `after`.
 Close codes are the `GatewayCloseReason` values, mirrored by
-`gateway.GatewayClose`.
+`gateway.GatewayClose`: 4000 to 4499 tell the client not to reconnect, 4500
+to 4999 to reconnect.
+
+**Versions.** `identify` carries the client's protocol version, and a client
+older than `protocol.Protocol.MIN_CLIENT` is closed with `client_outdated`
+before its token is looked at. The minimum is the first version of the
+server's own major; a release raises it to turn away clients with a known
+problem. `Protocol.CURRENT` must equal `info.version`
+in the contract, which `ProtocolTest` checks. Client frames of a type the
+server does not know are dropped, not closed with `invalid_frame`, so a
+newer client can talk to an older server.
 
 **One dispatcher thread.** `GatewayEndpoint` only hands connections and
 frames to `Gateway`, which does everything on a single thread: opening,
@@ -413,14 +426,13 @@ other connections the same way (see "Messages").
 principal for their lifetime; its permissions are resolved again when roles
 change. When a session ends (`SessionEvent.Ended`: logout today, revocation
 later) its connections close with `session_ended`; a ban closes all of the
-member's connections with `banned` instead. Every
-`snatter.gateway.keep-alive-interval` the dispatcher extends the sessions of
-open connections through `AuthService.keepAlive`, so a client that is only
+member's connections with `banned` instead. Every five minutes the
+dispatcher extends the sessions of open connections through `AuthService.keepAlive`, so a client that is only
 listening stays logged in, and closes connections whose session is gone.
 
 **Slow clients.** Frames are sent asynchronously and counted until the
 WebSocket has written them. A connection with more than
-`snatter.gateway.max-pending-frames` outstanding is closed with `too_slow`;
+1000 frames outstanding is closed with `too_slow`;
 the client reconnects and gets a fresh `ready`.
 
 ## Registration policy
@@ -583,7 +595,7 @@ Error codes: `validation_failed`, `username_taken`, `registration_closed`,
 `challenge_required`, `challenge_invalid`, `forbidden`, `rate_limited`,
 `invite_invalid`, `invite_not_found`, `invite_unusable`, `role_not_found`,
 `role_in_use`, `permission_escalation`,
-`channel_not_found`, `not_a_voice_channel`, `bitrate_too_high`, `invalid_required_role`,
+`channel_not_found`, `not_a_voice_channel`, `invalid_required_role`,
 `required_role_not_held`, `banned`, `member_outranks_you`, `cannot_moderate_self`, `invalid_display_name`,
 `voice_only_channel`, `message_not_found`, `invalid_reply`, `invalid_paging`,
 `invalid_credentials`, `account_not_found`, `blob_not_found`,

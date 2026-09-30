@@ -28,10 +28,10 @@ function viewOf(me: Account, owner = false): ServerView {
     info: {
       name: "Snatter",
       version: "0.1.0",
-      apiVersion: 1,
+      protocol: { version: "1.0", minClient: "1.0" },
       community: { name: "Test" },
       registration: { mode: "open", challengeRequired: false, setupRequired: false },
-      voice: { defaultBitrate: 64000, maxBitrate: 256000 },
+      voice: { defaultBitrate: 64000 },
       ownerId: "boss",
     },
     roles,

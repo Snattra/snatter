@@ -1,11 +1,12 @@
 package app.snatter.server.settings;
 
 import app.snatter.api.model.CommunityDto;
+import app.snatter.api.model.ProtocolInfoDto;
 import app.snatter.api.model.RegistrationInfoDto;
 import app.snatter.api.model.RegistrationModeDto;
 import app.snatter.api.model.ServerInfoDto;
 import app.snatter.api.model.VoiceInfoDto;
-import app.snatter.server.channel.VoiceConfig;
+import app.snatter.server.protocol.Protocol;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -13,17 +14,12 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @ApplicationScoped
 public class ServerInfoDtos {
 
-    /** Bumped whenever the HTTP or WebSocket API changes incompatibly. */
-    public static final int API_VERSION = 1;
-
     private final String version;
-    private final VoiceConfig voice;
     private final ServerSettingsService settings;
 
-    public ServerInfoDtos(@ConfigProperty(name = "quarkus.application.version") String version, VoiceConfig voice,
+    public ServerInfoDtos(@ConfigProperty(name = "quarkus.application.version") String version,
                           ServerSettingsService settings) {
         this.version = version;
-        this.voice = voice;
         this.settings = settings;
     }
 
@@ -31,15 +27,15 @@ public class ServerInfoDtos {
         return new ServerInfoDto()
             .name("Snatter")
             .version(version)
-            .apiVersion(API_VERSION)
+            .protocol(new ProtocolInfoDto()
+                .version(Protocol.CURRENT.toString())
+                .minClient(Protocol.MIN_CLIENT.toString()))
             .community(new CommunityDto().name(s.name()).description(s.description()))
             .ownerId(s.ownerId())
             .registration(new RegistrationInfoDto()
                 .mode(RegistrationModeDto.fromValue(s.registrationMode().dbValue()))
                 .challengeRequired(s.challengeRequired())
                 .setupRequired(settings.setupRequired()))
-            .voice(new VoiceInfoDto()
-                .defaultBitrate(voice.newChannelBitrate())
-                .maxBitrate(voice.maxBitrate()));
+            .voice(new VoiceInfoDto().defaultBitrate(s.voiceDefaultBitrate()));
     }
 }

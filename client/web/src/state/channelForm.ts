@@ -2,9 +2,10 @@ import type { Channel, ChannelCreate, ChannelType, ChannelUpdate } from "../api/
 import { sameMembers, wholeNumber } from "./forms";
 import type { ServerView } from "./serverView";
 
-/** The contract's limits on a channel; the server may allow a lower bitrate at most. */
+/** The contract's limits on a channel. Bitrates, in bits per second, are what Opus supports. */
 const MAX_NAME_LENGTH = 100;
-const MIN_BITRATE = 8_000;
+export const MIN_BITRATE = 8_000;
+export const MAX_BITRATE = 510_000;
 const MAX_USER_LIMIT = 99;
 
 /**
@@ -27,8 +28,6 @@ export type ChannelFormErrors = Partial<Record<"name" | "bitrate" | "userLimit" 
 
 /** What the server checks a channel against, as far as the member's view knows it. */
 export interface ChannelRules {
-  /** The server's highest bitrate, in bits per second. */
-  maxBitrate: number;
   /** The owner sees every channel, so may make one private to roles they do not hold. */
   owner: boolean;
   heldRoleIds: string[];
@@ -38,7 +37,6 @@ export interface ChannelRules {
 
 export function rulesFor(view: ServerView): ChannelRules {
   return {
-    maxBitrate: view.info.voice.maxBitrate,
     owner: view.permissions.owner,
     heldRoleIds: view.account.roleIds,
     channels: Object.values(view.channels),
@@ -81,15 +79,15 @@ export function creationErrors(form: ChannelForm, rules: ChannelRules): ChannelF
 
 /**
  * What the server would refuse about a change, by field; empty when it can be
- * sent. Only what changed is checked, as only that is sent: a bitrate over a
- * limit the server has since lowered stays until someone changes it.
+ * sent. Only what changed is checked, as only that is sent: a private
+ * channel seen through a role the member no longer holds can still be renamed.
  */
 export function updateErrors(channel: Channel, form: ChannelForm, rules: ChannelRules): ChannelFormErrors {
   const before = channelForm(channel);
   const voice = hasVoice(channel.type);
   return {
     ...nameError(form, rules, channel.id),
-    ...(voice && form.bitrate !== before.bitrate ? bitrateError(form, rules) : {}),
+    ...(voice && form.bitrate !== before.bitrate ? bitrateError(form) : {}),
     ...(voice && form.userLimit !== before.userLimit ? userLimitError(form) : {}),
     ...(form.private !== before.private || !sameMembers(form.roleIds, before.roleIds) ? accessError(form, rules) : {}),
   };
@@ -149,10 +147,10 @@ function nameError(form: ChannelForm, rules: ChannelRules, self: string | null):
   return taken ? { name: "Another channel has this name. Choose a different one." } : {};
 }
 
-function bitrateError(form: ChannelForm, rules: ChannelRules): ChannelFormErrors {
+function bitrateError(form: ChannelForm): ChannelFormErrors {
   const bitrate = bitrateIn(form);
-  return bitrate === null || bitrate < MIN_BITRATE || bitrate > rules.maxBitrate
-    ? { bitrate: `Choose from ${kbps(MIN_BITRATE)} to ${kbps(rules.maxBitrate)} kbps.` }
+  return bitrate === null || bitrate < MIN_BITRATE || bitrate > MAX_BITRATE
+    ? { bitrate: `Choose from ${kbps(MIN_BITRATE)} to ${kbps(MAX_BITRATE)} kbps.` }
     : {};
 }
 

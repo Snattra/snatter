@@ -3,8 +3,10 @@ import { unwrap } from "../api/client";
 import type { InvitePreview, ServerInfo } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
 import { USERNAME_PATTERN, displayNameProblem, tidyDisplayName } from "../state/names";
+import { compatibility, isOutdated } from "../state/protocol";
 import { Button, Field, Tabs } from "./controls";
 import { describeError } from "./errors";
+import { OutdatedScreen } from "./OutdatedScreen";
 import { Backdrop, Callout, Card } from "./surfaces";
 
 type Tab = "log_in" | "register";
@@ -91,6 +93,12 @@ export function AuthScreen({ connection, notice, invite }: AuthScreenProps) {
         challenge,
       ),
     );
+  }
+
+  // Before anyone signs in, in case they could not use the server afterwards.
+  const compatible = info === null ? null : compatibility(info.protocol);
+  if (compatible !== null && isOutdated(compatible)) {
+    return <OutdatedScreen outdated={compatible} />;
   }
 
   const setup = info?.registration.setupRequired === true;

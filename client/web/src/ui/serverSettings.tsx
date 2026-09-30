@@ -4,6 +4,7 @@ import type { ServerConnection } from "../servers/ServerConnection";
 import { sameData } from "../state/forms";
 import { type ServerView, sortedChannels, sortedRoles } from "../state/serverView";
 import {
+  CHALLENGE_DIFFICULTIES,
   type PolicyForm,
   RATE_LIMIT_POLICIES,
   type RateLimitPolicyName,
@@ -19,11 +20,12 @@ import { Button, Choice, ChoiceGroup, Field, Select, Spinner, Tabs, TextArea } f
 import { describeError } from "./errors";
 import { Modal } from "./surfaces";
 
-type Section = "overview" | "joining" | "limits";
+type Section = "overview" | "joining" | "voice" | "limits";
 
 const sections: { id: Section; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "joining", label: "Joining" },
+  { id: "voice", label: "Voice" },
   { id: "limits", label: "Rate limits" },
 ];
 
@@ -31,6 +33,8 @@ const sections: { id: Section; label: string }[] = [
 const sectionOf: Record<SettingsField, Section> = {
   name: "overview",
   publicUrl: "joining",
+  sessionLifetimeDays: "joining",
+  voiceDefaultBitrate: "voice",
   message: "limits",
   login: "limits",
   register: "limits",
@@ -50,8 +54,8 @@ type Loaded =
   { status: "loading" } | { status: "failed"; error: string } | { status: "ready"; settings: ServerSettings };
 
 /**
- * "Server settings", in three tabs: the community itself, how people join,
- * and rate limits. The settings are fetched as it opens, and only what the
+ * "Server settings", in four tabs: the community itself, how people join and
+ * stay signed in, voice quality, and rate limits. The settings are fetched as it opens, and only what the
  * member changed is saved.
  */
 export function ServerSettingsModal(props: { connection: ServerConnection; view: ServerView; onClose: () => void }) {
@@ -165,6 +169,7 @@ export function ServerSettingsModal(props: { connection: ServerConnection; view:
       )}
       {form !== null && section === "overview" && <Overview view={view} form={form} errors={errors} edit={edit} />}
       {form !== null && section === "joining" && <Joining view={view} form={form} errors={errors} edit={edit} />}
+      {form !== null && section === "voice" && <Voice form={form} errors={errors} edit={edit} />}
       {form !== null && section === "limits" && <RateLimits form={form} errors={errors} edit={edit} />}
     </Modal>
   );
@@ -249,6 +254,22 @@ function Joining({ view, form, errors, edit }: SectionProps) {
         onChange={(event) => edit({ challengeRequired: event.target.checked })}
       />
       <Select
+        label="Puzzle difficulty"
+        hint="A harder puzzle slows bots down more, and people on slow devices too."
+        disabled={!form.challengeRequired}
+        value={form.challengeMaxNumber}
+        onChange={(event) => edit({ challengeMaxNumber: event.target.value })}
+      >
+        {CHALLENGE_DIFFICULTIES.map(({ maxNumber, label }) => (
+          <option key={maxNumber} value={String(maxNumber)}>
+            {label}
+          </option>
+        ))}
+        {!CHALLENGE_DIFFICULTIES.some(({ maxNumber }) => String(maxNumber) === form.challengeMaxNumber) && (
+          <option value={form.challengeMaxNumber}>Custom</option>
+        )}
+      </Select>
+      <Select
         label="Role for new members"
         hint="Every new account gets it. Without a role, new members can read but not write."
         value={form.newMemberRoleId}
@@ -271,6 +292,36 @@ function Joining({ view, form, errors, edit }: SectionProps) {
         value={form.publicUrl}
         error={errors.publicUrl}
         onChange={(event) => edit({ publicUrl: event.target.value }, "publicUrl")}
+      />
+      <Field
+        label="Stay signed in for (days)"
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={365}
+        hint="How long someone stays signed in without using Snatter, from 1 to 365 days. A change applies from their next visit."
+        value={form.sessionLifetimeDays}
+        error={errors.sessionLifetimeDays}
+        onChange={(event) => edit({ sessionLifetimeDays: event.target.value }, "sessionLifetimeDays")}
+      />
+    </>
+  );
+}
+
+function Voice({ form, errors, edit }: Omit<SectionProps, "view">) {
+  return (
+    <>
+      <Field
+        label="Default bitrate (kbps)"
+        type="number"
+        inputMode="decimal"
+        min={8}
+        max={510}
+        step="any"
+        hint="What new voice channels start at. Higher sounds better and takes more bandwidth."
+        value={form.voiceDefaultBitrate}
+        error={errors.voiceDefaultBitrate}
+        onChange={(event) => edit({ voiceDefaultBitrate: event.target.value }, "voiceDefaultBitrate")}
       />
     </>
   );

@@ -51,15 +51,13 @@ public class AuthService {
     private final ServerSettingsService settings;
     private final RoleRepository roles;
     private final BanRepository bans;
-    private final AuthConfig config;
     private final Event<AccountEvent> events;
     private final Event<SessionEvent> sessionEvents;
     private final SecureRandom random = new SecureRandom();
 
     public AuthService(AccountRepository accounts, SessionRepository sessions, PasswordHasher hasher,
                        AltchaService challenges, InviteService invites, ServerSettingsService settings, RoleRepository roles,
-                       BanRepository bans,
-                       AuthConfig config, Event<AccountEvent> events, Event<SessionEvent> sessionEvents) {
+                       BanRepository bans, Event<AccountEvent> events, Event<SessionEvent> sessionEvents) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.hasher = hasher;
@@ -68,7 +66,6 @@ public class AuthService {
         this.settings = settings;
         this.roles = roles;
         this.bans = bans;
-        this.config = config;
         this.events = events;
         this.sessionEvents = sessionEvents;
     }
@@ -171,7 +168,7 @@ public class AuthService {
     @Transactional
     public boolean keepAlive(SessionId sessionId) {
         Instant now = Instant.now();
-        return sessions.touch(sessionId, now, now.plus(config.sessionLifetime()));
+        return sessions.touch(sessionId, now, now.plus(settings.current().sessionLifetime()));
     }
 
     /** Resolves a bearer token to its session and account, or empty if unknown or expired. */
@@ -193,7 +190,7 @@ public class AuthService {
         }
         // Sessions expire after a period without use, so each use moves the expiry.
         if (session.lastSeenAt().plus(TOUCH_INTERVAL).isBefore(now)) {
-            sessions.touch(session.id(), now, now.plus(config.sessionLifetime()));
+            sessions.touch(session.id(), now, now.plus(settings.current().sessionLifetime()));
         }
         return accounts.findById(session.accountId()).map(a -> new Authenticated(session, a));
     }
@@ -203,7 +200,7 @@ public class AuthService {
         random.nextBytes(raw);
         String token = TOKEN_PREFIX + B64.encodeToString(raw);
         Instant now = Instant.now();
-        Session session = new Session(SessionId.newId(), account.id(), now, now.plus(config.sessionLifetime()), now);
+        Session session = new Session(SessionId.newId(), account.id(), now, now.plus(settings.current().sessionLifetime()), now);
         sessions.insert(session, hashToken(token), ip, truncate(userAgent, 255));
         return new Login(account, token, session.expiresAt());
     }

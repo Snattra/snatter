@@ -1,6 +1,7 @@
 package app.snatter.server.auth;
 
 import app.snatter.server.api.ApiException;
+import app.snatter.server.settings.ServerSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -9,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -33,27 +35,31 @@ public class AltchaService {
     private static final String ALGORITHM = "SHA-256";
     private static final HexFormat HEX = HexFormat.of();
 
-    private final ChallengeConfig config;
+    /** How long a challenge may be used after it was issued. */
+    private static final Duration TTL = Duration.ofMinutes(10);
+
+    private final ServerSettingsService settings;
     private final UsedChallengeRepository used;
     private final ObjectMapper json;
     private final SecureRandom random = new SecureRandom();
     private final byte[] hmacKey = new byte[32];
 
-    public AltchaService(ChallengeConfig config, UsedChallengeRepository used, ObjectMapper json) {
-        this.config = config;
+    public AltchaService(ServerSettingsService settings, UsedChallengeRepository used, ObjectMapper json) {
+        this.settings = settings;
         this.used = used;
         this.json = json;
         random.nextBytes(hmacKey);
     }
 
     public Challenge create() {
-        long expires = Instant.now().plus(config.ttl()).getEpochSecond();
+        int maxNumber = settings.current().challengeMaxNumber();
+        long expires = Instant.now().plus(TTL).getEpochSecond();
         byte[] saltBytes = new byte[12];
         random.nextBytes(saltBytes);
         String salt = HEX.formatHex(saltBytes) + "?expires=" + expires;
-        int number = random.nextInt(config.maxNumber() + 1);
+        int number = random.nextInt(maxNumber + 1);
         String challenge = sha256Hex(salt + number);
-        return new Challenge(ALGORITHM, challenge, salt, hmac(challenge), config.maxNumber());
+        return new Challenge(ALGORITHM, challenge, salt, hmac(challenge), maxNumber);
     }
 
     /**
@@ -79,7 +85,9 @@ public class AltchaService {
                 || number == null || !number.canConvertToInt()) {
             throw invalid("Challenge payload is incomplete");
         }
-        if (number.intValue() < 0 || number.intValue() > config.maxNumber()) {
+        // No upper bound: the difficulty may have changed since the challenge was issued, and the
+        // signed challenge already pins the number.
+        if (number.intValue() < 0) {
             throw invalid("Challenge number out of range");
         }
         Instant expiresAt = expiresAt(salt);

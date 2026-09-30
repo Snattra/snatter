@@ -10,7 +10,10 @@ const settings: ServerSettings = {
   publicUrl: "https://chat.example.com",
   registrationMode: "invite_only",
   challengeRequired: true,
+  challengeMaxNumber: 100_000,
   rateLimits: { enabled: true, login: policy, register: policy, challenge: policy, invite: policy, message: policy },
+  sessionLifetimeDays: 30,
+  voice: { defaultBitrate: 64_000 },
   systemChannelId: "general",
   newMemberRoleId: null,
 };
@@ -26,6 +29,10 @@ describe("settingsForm", () => {
     expect(form.newMemberRoleId).toBe("");
     expect(form.systemChannelId).toBe("general");
     expect(form.rateLimits.login).toEqual({ limit: "10", periodSeconds: "60" });
+  });
+
+  it("holds the bitrate in kilobits", () => {
+    expect(settingsForm(settings).voiceDefaultBitrate).toBe("64");
   });
 });
 
@@ -52,6 +59,19 @@ describe("settingsErrors", () => {
       },
     });
     expect(Object.keys(errors)).toEqual(["register", "invite"]);
+  });
+
+  it("keeps sessions from 1 to 365 days", () => {
+    expect(settingsErrors(edited({ sessionLifetimeDays: "0" })).sessionLifetimeDays).toBeDefined();
+    expect(settingsErrors(edited({ sessionLifetimeDays: "366" })).sessionLifetimeDays).toBeDefined();
+    expect(settingsErrors(edited({ sessionLifetimeDays: "7.5" })).sessionLifetimeDays).toBeDefined();
+    expect(settingsErrors(edited({ sessionLifetimeDays: "365" }))).toEqual({});
+  });
+
+  it("keeps the bitrate within what Opus supports", () => {
+    expect(settingsErrors(edited({ voiceDefaultBitrate: "600" })).voiceDefaultBitrate).toBe("Choose from 8 to 510 kbps.");
+    expect(settingsErrors(edited({ voiceDefaultBitrate: "4" })).voiceDefaultBitrate).toBeDefined();
+    expect(settingsErrors(edited({ voiceDefaultBitrate: "510" }))).toEqual({});
   });
 });
 
@@ -100,5 +120,15 @@ describe("settingsChanges", () => {
       rateLimits: { ...form.rateLimits, login: { limit: "5", periodSeconds: "60" } },
     });
     expect(update).toEqual({ rateLimits: { ...settings.rateLimits, login: { limit: 5, periodSeconds: 60 } } });
+  });
+
+  it("sends the numbers that changed, the bitrate in bits per second", () => {
+    expect(
+      settingsChanges(settings, edited({ challengeMaxNumber: "25000", sessionLifetimeDays: "7", voiceDefaultBitrate: "96" })),
+    ).toEqual({
+      challengeMaxNumber: 25_000,
+      sessionLifetimeDays: 7,
+      voice: { defaultBitrate: 96_000 },
+    });
   });
 });

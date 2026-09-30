@@ -1,4 +1,5 @@
 import type { RateLimits, RegistrationMode, ServerSettings, ServerSettingsUpdate } from "../api/types";
+import { MAX_BITRATE, MIN_BITRATE, kbps } from "./channelForm";
 import { sameData, wholeNumber } from "./forms";
 
 /** The rate limit policies, in the order the settings list them. */
@@ -8,6 +9,16 @@ export type RateLimitPolicyName = (typeof RATE_LIMIT_POLICIES)[number];
 /** The contract's limits on a policy. */
 const MAX_LIMIT = 100_000;
 const MAX_PERIOD_SECONDS = 86_400;
+
+/** The contract's limit on how long sessions last. */
+const MAX_SESSION_LIFETIME_DAYS = 365;
+
+/** Bot check difficulties to pick from, as the largest number the puzzle may hide. */
+export const CHALLENGE_DIFFICULTIES = [
+  { maxNumber: 25_000, label: "Light" },
+  { maxNumber: 100_000, label: "Normal" },
+  { maxNumber: 400_000, label: "Strong" },
+] as const;
 
 /** An http(s) address, as the contract has it for `publicUrl`. */
 const PUBLIC_URL = /^https?:\/\/[^/\s]+(\/\S*)?$/;
@@ -25,13 +36,23 @@ export interface SettingsForm {
   systemChannelId: string;
   registrationMode: RegistrationMode;
   challengeRequired: boolean;
+  /** The difficulty, as the largest number in digits. */
+  challengeMaxNumber: string;
   newMemberRoleId: string;
   publicUrl: string;
+  sessionLifetimeDays: string;
+  /** In kilobits per second. */
+  voiceDefaultBitrate: string;
   rateLimitsEnabled: boolean;
   rateLimits: Record<RateLimitPolicyName, PolicyForm>;
 }
 
-export type SettingsField = "name" | "publicUrl" | RateLimitPolicyName;
+export type SettingsField =
+  | "name"
+  | "publicUrl"
+  | "sessionLifetimeDays"
+  | "voiceDefaultBitrate"
+  | RateLimitPolicyName;
 export type SettingsErrors = Partial<Record<SettingsField, string>>;
 
 export function settingsForm(settings: ServerSettings): SettingsForm {
@@ -45,8 +66,11 @@ export function settingsForm(settings: ServerSettings): SettingsForm {
     systemChannelId: settings.systemChannelId ?? "",
     registrationMode: settings.registrationMode,
     challengeRequired: settings.challengeRequired,
+    challengeMaxNumber: String(settings.challengeMaxNumber),
     newMemberRoleId: settings.newMemberRoleId ?? "",
     publicUrl: settings.publicUrl ?? "",
+    sessionLifetimeDays: String(settings.sessionLifetimeDays),
+    voiceDefaultBitrate: String(kbps(settings.voice.defaultBitrate)),
     rateLimitsEnabled: settings.rateLimits.enabled,
     rateLimits: {
       message: policy("message"),
@@ -67,6 +91,13 @@ export function settingsErrors(form: SettingsForm): SettingsErrors {
   const publicUrl = form.publicUrl.trim();
   if (publicUrl !== "" && !PUBLIC_URL.test(publicUrl)) {
     errors.publicUrl = "Use a whole address, such as https://chat.example.com.";
+  }
+  const days = wholeNumber(form.sessionLifetimeDays);
+  if (days === null || days < 1 || days > MAX_SESSION_LIFETIME_DAYS) {
+    errors.sessionLifetimeDays = "Choose from 1 to 365 days.";
+  }
+  if (bitrateIn(form.voiceDefaultBitrate) === null) {
+    errors.voiceDefaultBitrate = `Choose from ${kbps(MIN_BITRATE)} to ${kbps(MAX_BITRATE)} kbps.`;
   }
   for (const name of RATE_LIMIT_POLICIES) {
     if (policyIn(form.rateLimits[name]) === null) {
@@ -102,6 +133,18 @@ export function settingsChanges(settings: ServerSettings, form: SettingsForm): S
   if (form.challengeRequired !== settings.challengeRequired) {
     update.challengeRequired = form.challengeRequired;
   }
+  const challengeMaxNumber = wholeNumber(form.challengeMaxNumber);
+  if (challengeMaxNumber !== null && challengeMaxNumber !== settings.challengeMaxNumber) {
+    update.challengeMaxNumber = challengeMaxNumber;
+  }
+  const sessionLifetimeDays = wholeNumber(form.sessionLifetimeDays);
+  if (sessionLifetimeDays !== null && sessionLifetimeDays !== settings.sessionLifetimeDays) {
+    update.sessionLifetimeDays = sessionLifetimeDays;
+  }
+  const defaultBitrate = bitrateIn(form.voiceDefaultBitrate);
+  if (defaultBitrate !== null && defaultBitrate !== settings.voice.defaultBitrate) {
+    update.voice = { defaultBitrate };
+  }
   if (form.systemChannelId !== (settings.systemChannelId ?? "")) {
     update.systemChannelId = form.systemChannelId;
   }
@@ -121,6 +164,13 @@ function rateLimitsIn(form: SettingsForm): RateLimits | null {
     return null;
   }
   return { enabled: form.rateLimitsEnabled, login, register, challenge, invite, message };
+}
+
+/** Bits per second from kilobits as typed, within what Opus supports; null for anything else. */
+function bitrateIn(text: string): number | null {
+  const trimmed = text.trim();
+  const value = Math.round(Number(trimmed) * 1000);
+  return trimmed === "" || !Number.isFinite(value) || value < MIN_BITRATE || value > MAX_BITRATE ? null : value;
 }
 
 function policyIn(policy: PolicyForm): { limit: number; periodSeconds: number } | null {

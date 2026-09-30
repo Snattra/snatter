@@ -7,6 +7,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 
+import app.snatter.server.protocol.Protocol;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Test;
@@ -15,16 +16,16 @@ import org.junit.jupiter.api.Test;
 class ServerInfoResourceTest {
 
     @Test
-    void exposesNameVersionAndApiVersion() {
+    void exposesNameVersionAndProtocol() {
         given()
             .when().get("/api/v1/server-info")
             .then()
             .statusCode(200)
             .body("name", equalTo("Snatter"))
             .body("version", not(emptyString()))
-            .body("apiVersion", equalTo(ServerInfoDtos.API_VERSION))
-            .body("voice.defaultBitrate", equalTo(64000))
-            .body("voice.maxBitrate", equalTo(256000));
+            .body("protocol.version", equalTo(Protocol.CURRENT.toString()))
+            .body("protocol.minClient", equalTo(Protocol.CURRENT.major() + ".0"))
+            .body("voice.defaultBitrate", equalTo(64000));
     }
 
     @Test

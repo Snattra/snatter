@@ -7,6 +7,7 @@ import app.snatter.api.model.RegistrationModeDto;
 import app.snatter.api.model.ServerInfoDto;
 import app.snatter.api.model.ServerSettingsDto;
 import app.snatter.api.model.ServerSettingsUpdateDto;
+import app.snatter.api.model.VoiceInfoDto;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.ChannelId;
@@ -63,8 +64,17 @@ public class ServerSettingsResource implements ServerApi {
         if (update.getChallengeRequired() != null) {
             s = s.withChallengeRequired(update.getChallengeRequired());
         }
+        if (update.getChallengeMaxNumber() != null) {
+            s = s.withChallengeMaxNumber(update.getChallengeMaxNumber());
+        }
         if (update.getRateLimits() != null) {
             s = s.withRateLimits(fromDto(update.getRateLimits()));
+        }
+        if (update.getSessionLifetimeDays() != null) {
+            s = s.withSessionLifetime(Duration.ofDays(update.getSessionLifetimeDays()));
+        }
+        if (update.getVoice() != null) {
+            s = s.withVoiceDefaultBitrate(update.getVoice().getDefaultBitrate());
         }
         if (update.getSystemChannelId() != null) {
             s = s.withSystemChannelId(update.getSystemChannelId().isEmpty() ? null : ChannelId.fromString(update.getSystemChannelId()));
@@ -82,6 +92,7 @@ public class ServerSettingsResource implements ServerApi {
             .publicUrl(s.publicUrl())
             .registrationMode(toDto(s.registrationMode()))
             .challengeRequired(s.challengeRequired())
+            .challengeMaxNumber(s.challengeMaxNumber())
             .rateLimits(new RateLimitsDto()
                 .enabled(s.rateLimits().enabled())
                 .login(toDto(s.rateLimits().login()))
@@ -89,6 +100,8 @@ public class ServerSettingsResource implements ServerApi {
                 .challenge(toDto(s.rateLimits().challenge()))
                 .invite(toDto(s.rateLimits().invite()))
                 .message(toDto(s.rateLimits().message())))
+            .sessionLifetimeDays((int) s.sessionLifetime().toDays())
+            .voice(new VoiceInfoDto().defaultBitrate(s.voiceDefaultBitrate()))
             .systemChannelId(s.systemChannelId())
             .newMemberRoleId(s.newMemberRoleId());
     }

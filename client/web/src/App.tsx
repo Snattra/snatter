@@ -5,6 +5,7 @@ import { inviteCodeIn } from "./state/invites";
 import { useServer } from "./state/store";
 import { AuthScreen } from "./ui/AuthScreen";
 import { Spinner } from "./ui/controls";
+import { OutdatedScreen } from "./ui/OutdatedScreen";
 import { ServerScreen } from "./ui/ServerScreen";
 
 const mode = resolveMode();
@@ -45,6 +46,9 @@ function ServerApp({ origin }: { origin: string }) {
       );
     case "signed_out":
       return <AuthScreen connection={connection} notice={entry.notice} invite={invite} />;
+    case "client_outdated":
+    case "server_outdated":
+      return <OutdatedScreen outdated={entry.status} />;
     default:
       return <ServerScreen connection={connection} entry={entry} />;
   }

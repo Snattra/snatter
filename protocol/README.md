@@ -10,6 +10,7 @@ while the server and official client remain AGPL.
 | Path                   | What it is                                       |
 |------------------------|--------------------------------------------------|
 | `openapi/openapi.yaml` | The HTTP API, OpenAPI 3.0. Hand-written; this is the source of truth. |
+| `CHANGELOG.md`         | What changed in each protocol version.           |
 
 Planned: the WebSocket gateway event schema and the media signalling protocol.
 
@@ -24,11 +25,34 @@ running server at `/q/openapi`.
 
 Clients and SDKs are expected to generate their code from the same file.
 
+## Versions
+
+The protocol version is `info.version` in `openapi.yaml`, written
+`major.minor`. A minor version only adds; a major version breaks existing
+clients. Servers and clients tell each other their versions (see "Versions"
+in the contract's description), so each side can tell when the other is too
+old:
+
+- The server accepts every client of its own major version. A server
+  release can raise the minimum (`Protocol.MIN_CLIENT`), for example to turn
+  away a client with a known problem.
+- The official client works with servers back to the first version of the
+  previous major, since members cannot update the servers they use.
+- Between those, a client behind the server offers an update, and one ahead
+  of it leaves out what the server cannot do yet.
+
+What counts as breaking: removing or renaming anything, changing a field's
+type or meaning, a new required request field, or a new check that rejects
+requests that were valid. Everything else is a minor change, as long as an
+older client that ignores it still works.
+
 ## Changing the API
 
-1. Edit `openapi/openapi.yaml`. Keep changes within a version additive; an
-   incompatible change means a new path prefix and a bump of `apiVersion` in
-   `GET /api/v1/server-info`.
+1. Edit `openapi/openapi.yaml`. Unless `info.version` already moved since the
+   last release, bump it: the minor version for an addition, the major version
+   for a breaking change. Note the change in `CHANGELOG.md`, and move
+   `Protocol.CURRENT` in the server and `PROTOCOL_VERSION` in the web client
+   along; a test on each side fails until they match.
 2. Build the server (`mvn verify` in `server/`) and adjust the resource
    classes until it compiles and the tests pass.
 3. Every error response uses the `ApiError` schema with a stable `error`

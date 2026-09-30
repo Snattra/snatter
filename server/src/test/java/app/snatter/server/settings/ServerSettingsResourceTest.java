@@ -10,6 +10,7 @@ import static org.hamcrest.Matchers.nullValue;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -142,6 +143,73 @@ class ServerSettingsResourceTest {
             .body("salt", org.hamcrest.Matchers.containsString("?expires="))
             .body("signature", notNullValue())
             .body("maxnumber", greaterThanOrEqualTo(1));
+    }
+
+    @Test
+    void defaultsMatchWhatConfigurationUsedToSet() {
+        given()
+            .header("Authorization", "Bearer " + TestUsers.ownerToken())
+            .get("/api/v1/server-settings")
+            .then()
+            .statusCode(200)
+            .body("sessionLifetimeDays", equalTo(30))
+            .body("challengeMaxNumber", equalTo(100000))
+            .body("voice.defaultBitrate", equalTo(64000));
+    }
+
+    @Test
+    void challengeDifficultyAppliesToTheNextChallenge() {
+        try {
+            TestUsers.patchSettings(Map.of("challengeMaxNumber", 20000))
+                .then().statusCode(200).body("challengeMaxNumber", equalTo(20000));
+            given().get("/api/v1/auth/challenge").then().statusCode(200).body("maxnumber", equalTo(20000));
+        } finally {
+            TestUsers.patchSettings(Map.of("challengeMaxNumber", 100000)).then().statusCode(200);
+        }
+    }
+
+    @Test
+    void newVoiceChannelsGetTheDefaultBitrate() {
+        try {
+            TestUsers.patchSettings(Map.of("voice", Map.of("defaultBitrate", 32000)))
+                .then().statusCode(200).body("voice.defaultBitrate", equalTo(32000));
+            given().get("/api/v1/server-info").then().body("voice.defaultBitrate", equalTo(32000));
+
+            String fresh = createChannel(Map.of("type", "voice", "name", "fresh"));
+            try {
+                channel(fresh).then().body("bitrate", equalTo(32000));
+            } finally {
+                deleteChannel(fresh);
+            }
+        } finally {
+            TestUsers.patchSettings(Map.of("voice", Map.of("defaultBitrate", 64000))).then().statusCode(200);
+        }
+    }
+
+    @Test
+    void rejectsSettingsOutOfRange() {
+        TestUsers.patchSettings(Map.of("voice", Map.of("defaultBitrate", 600000)))
+            .then().statusCode(400).body("error", equalTo("validation_failed"));
+        TestUsers.patchSettings(Map.of("sessionLifetimeDays", 0))
+            .then().statusCode(400).body("error", equalTo("validation_failed"));
+        TestUsers.patchSettings(Map.of("challengeMaxNumber", 10))
+            .then().statusCode(400).body("error", equalTo("validation_failed"));
+    }
+
+    private static RequestSpecification asOwner() {
+        return given().header("Authorization", "Bearer " + TestUsers.ownerToken()).contentType(ContentType.JSON);
+    }
+
+    private static String createChannel(Map<String, Object> body) {
+        return asOwner().body(body).post("/api/v1/channels").then().statusCode(201).extract().path("id");
+    }
+
+    private static io.restassured.response.Response channel(String id) {
+        return asOwner().get("/api/v1/channels/" + id);
+    }
+
+    private static void deleteChannel(String id) {
+        asOwner().delete("/api/v1/channels/" + id).then().statusCode(204);
     }
 
     private static io.restassured.response.Response login(String username, String password) {

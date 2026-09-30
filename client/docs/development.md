@@ -25,7 +25,10 @@ through `openapi-fetch`, so paths, parameters and bodies are type-checked;
 `ApiError` body. Gateway frames are the generated `GatewayServerFrame` and
 `GatewayClientFrame` unions, discriminated by `type`, so a `switch` on
 `frame.type` is exhaustive and a new frame in the contract fails the build
-where it is not handled. Close codes work the same way (`gateway/closeCodes.ts`).
+where it is not handled. Frames from a newer server can still be of a type
+the build did not know, so such a `switch` also has a `default` that ignores
+the frame (with `frame satisfies never` to keep the build check). Close codes
+work the same way (`gateway/closeCodes.ts`).
 
 ## Modes and servers
 
@@ -74,10 +77,27 @@ composer sends `typing` when the text is not blank, at most every 8 seconds.
 `gateway/Gateway.ts` identifies with the session token, requires frames to be
 numbered without gaps (a gap closes and resyncs), and on losing the connection
 retries with jittered, growing delays up to 30 seconds. `closeAction` decides
-between reconnecting (network trouble, `too_slow`, `identify_timeout`) and
-ending the session (`session_ended`, `authentication_failed`, `banned`, and
-protocol errors, which a retry would repeat). An ended session signs the
-client out with a notice.
+between reconnecting and ending the session by the contract's ranges, so it
+also knows what to do with codes added later: 4000 to 4499 end it
+(`session_ended`, `authentication_failed`, `banned`, and protocol errors,
+which a retry would repeat), everything else reconnects (network trouble,
+`too_slow`, `identify_timeout`). An ended session signs the client out with a
+notice, except `client_outdated`.
+
+## Versions
+
+`state/protocol.ts` holds the protocol version the client speaks
+(`PROTOCOL_VERSION`, kept equal to the contract's `info.version` by a test)
+and the oldest server version it works with (`OLDEST_SERVER_PROTOCOL`, the
+first of the previous major). `compatibility` weighs these against the
+server's `ServerInfo.protocol`. The sign-in screen checks it before anyone
+signs in, and `ServerConnection` checks it on every `ready`, since the server
+may have been upgraded meanwhile. When either side is too old, or the server
+closes the connection with `client_outdated`, the app stops talking to the
+server and shows `OutdatedScreen`, keeping the session for when it is fixed.
+A server that is newer but still accepts the app gets a banner asking for a
+reload, which fetches the newer app the server serves; one that is older
+gets a banner for those who can manage the server.
 
 ## Authentication
 
@@ -124,9 +144,11 @@ controls for them only while they hold the permission (`can`), so gaining or
 losing a role shows or hides them at once:
 
 - `MANAGE_SERVER`: the `settings` button beside the community name opens
-  Server settings (`ui/serverSettings.tsx`) in three tabs: Overview (name,
+  Server settings (`ui/serverSettings.tsx`) in four tabs: Overview (name,
   description, the notices channel), Joining (registration mode, the bot
-  check, the role for new members, the public address) and Rate limits.
+  check and its difficulty, the role for new members, the public address,
+  how long sessions last), Voice (the default bitrate) and Rate
+  limits.
 - `MANAGE_CHANNELS`: "Create channel" at the end of the channel list, and the
   `settings` button in the channel header for the current channel's name,
   topic, voice settings and who can see it, and deleting it

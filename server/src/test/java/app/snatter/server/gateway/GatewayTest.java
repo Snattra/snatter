@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.server.protocol.Protocol;
+import app.snatter.server.protocol.ProtocolVersion;
 import app.snatter.server.testing.GatewayTestClient;
 import app.snatter.server.testing.GatewayTestClient.Closed;
 import app.snatter.server.testing.TestUsers;
@@ -69,7 +71,7 @@ class GatewayTest {
             assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
-            gateway.send("{\"type\":\"dance\"}");
+            gateway.send("{\"token\":\"" + token + "\"}");
             assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
@@ -82,15 +84,54 @@ class GatewayTest {
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.identify("snt_not-a-real-token");
-            assertEquals(new Closed(4003, "authentication_failed"), gateway.awaitClose());
+            assertEquals(new Closed(4002, "authentication_failed"), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.identified(token)) {
             gateway.identify(token);
-            assertEquals(new Closed(4004, "already_identified"), gateway.awaitClose());
+            assertEquals(new Closed(4003, "already_identified"), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             // The test profile gives connections one second to identify.
-            assertEquals(new Closed(4002, "identify_timeout"), gateway.awaitClose());
+            assertEquals(new Closed(4500, "identify_timeout"), gateway.awaitClose());
+        }
+    }
+
+    @Test
+    void frameTypesFromNewerClientsAreIgnored() {
+        TestUsers.User member = TestUsers.register();
+        try (GatewayTestClient gateway = GatewayTestClient.connect()) {
+            gateway.send("{\"type\":\"dance\",\"style\":\"waltz\"}");
+            gateway.identify(member.token());
+            assertEquals(member.id(), gateway.await("ready").getString("account.id"));
+            // Frames are handled in order, so this answer shows the one before did not close the connection.
+            gateway.send("{\"type\":\"dance\"}");
+            gateway.identify(member.token());
+            assertEquals(new Closed(4003, "already_identified"), gateway.awaitClose());
+        }
+    }
+
+    @Test
+    void clientsStateTheirProtocolVersion() {
+        String token = TestUsers.register().token();
+        try (GatewayTestClient gateway = GatewayTestClient.connect()) {
+            gateway.send("{\"type\":\"identify\",\"token\":\"" + token + "\"}");
+            assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
+        }
+        try (GatewayTestClient gateway = GatewayTestClient.connect()) {
+            gateway.identify(token, "one");
+            assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
+        }
+        try (GatewayTestClient gateway = GatewayTestClient.connect()) {
+            gateway.identify(token, "0.9");
+            assertEquals(new Closed(4006, "client_outdated"), gateway.awaitClose());
+        }
+        // Newer clients get in; whether they can work with this server is theirs to decide.
+        ProtocolVersion current = Protocol.CURRENT;
+        for (String newer : List.of(current.major() + "." + (current.minor() + 1), (current.major() + 1) + ".0")) {
+            try (GatewayTestClient gateway = GatewayTestClient.connect()) {
+                gateway.identify(token, newer);
+                assertEquals(current.toString(), gateway.await("ready").getString("server.protocol.version"));
+            }
         }
     }
 
@@ -399,8 +440,8 @@ class GatewayTest {
              GatewayTestClient second = GatewayTestClient.identified(member.token());
              GatewayTestClient elsewhere = GatewayTestClient.identified(otherSession)) {
             as(member.token()).post("/api/v1/auth/logout").then().statusCode(204);
-            assertEquals(new Closed(4005, "session_ended"), first.awaitClose());
-            assertEquals(new Closed(4005, "session_ended"), second.awaitClose());
+            assertEquals(new Closed(4004, "session_ended"), first.awaitClose());
+            assertEquals(new Closed(4004, "session_ended"), second.awaitClose());
 
             String id = send(otherSession, GENERAL_TEXT, Map.of("content", "still here")).then().statusCode(201).extract().path("id");
             elsewhere.await("message_created", f -> id.equals(f.getString("message.id")));

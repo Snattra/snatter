@@ -1,18 +1,38 @@
 openapi: 3.0.3
 info:
   title: Snatter API
-  version: "1"
+  version: "1.0"
   description: |
     HTTP API and WebSocket gateway of a Snatter server.
 
     Authenticate with `POST /api/v1/auth/register` or `POST /api/v1/auth/login`
     and send the returned token on later calls as
     `Authorization: Bearer <token>`. Tokens are opaque; do not parse them.
-    A session ends after 30 days without use, when it is logged out, or when
-    the server revokes it; any authenticated call extends it.
+    A session ends when it goes unused for as long as the server allows
+    (`ServerSettings.sessionLifetimeDays`, 30 days unless changed), when it
+    is logged out, or when the server revokes it; any authenticated call
+    extends it.
 
     Every error response has the `ApiError` shape with a stable `error` code.
-    The API is versioned in the path; within a version, changes are additive.
+
+    ## Versions
+
+    The protocol has a version `major.minor`, the `info.version` of this
+    document. A minor version only adds: operations, optional fields, frame
+    types, enum values, close codes. A major version breaks something.
+    Clients must ignore fields and frame types they do not know and make the
+    best of enum values they do not know, and the server ignores client
+    frames of a type it does not know, so either side can be a minor version
+    ahead of the other.
+
+    `GET /api/v1/server-info` states the server's version and the oldest
+    client version it accepts, in `protocol`. It keeps that path and that
+    field in every version, so any client can find out whether it can talk
+    to any server, before signing in. Clients send their own version in
+    `identify`; the server closes the connection with `client_outdated`
+    when it is older than it accepts. The server accepts every client of its
+    own major version unless a release raises the minimum. It is up to
+    the client which server versions it works with.
 
     ## Gateway
 
@@ -39,6 +59,9 @@ info:
     The server closes the connection with a code from `GatewayCloseReason`
     and its name as the reason text. It sends WebSocket pings; clients need
     no heartbeat of their own.
+
+    Clients ignore frames of a type they do not know, which a newer server
+    may send; their `seq` still counts.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -902,8 +925,8 @@ paths:
         Requires `MANAGE_CHANNELS`. The channel is placed last. Voice
         channels start at the server's default bitrate unless one is given.
         `bitrate` and `userLimit` are rejected for text channels
-        (`not_a_voice_channel`), and so is a bitrate above
-        `ServerInfo.voice.maxBitrate` (`bitrate_too_high`).
+        (`not_a_voice_channel`). A bitrate may be anything Opus supports,
+        8000 to 510000 bits per second.
 
         `requiredRoleIds` are stored in the same transaction, so a private
         channel is never visible to anyone else, not even briefly. They must
@@ -2011,7 +2034,7 @@ components:
 
     ServerInfo:
       type: object
-      required: [name, version, apiVersion, community, registration, voice]
+      required: [name, version, protocol, community, registration, voice]
       properties:
         registration:
           $ref: "#/components/schemas/RegistrationInfo"
@@ -2025,10 +2048,8 @@ components:
           type: string
           description: Software version
           example: 0.1.0
-        apiVersion:
-          type: integer
-          description: API compatibility version; bumped on incompatible changes
-          example: 1
+        protocol:
+          $ref: "#/components/schemas/ProtocolInfo"
         community:
           $ref: "#/components/schemas/Community"
         ownerId:
@@ -2039,6 +2060,29 @@ components:
             The server owner, who holds every permission and cannot be
             moderated; null on a fresh server with no accounts yet
 
+    ProtocolInfo:
+      type: object
+      description: Which protocol versions the server speaks and accepts; see Versions at the top
+      required: [version, minClient]
+      properties:
+        version:
+          allOf:
+            - $ref: "#/components/schemas/ProtocolVersion"
+          description: The protocol version the server speaks
+        minClient:
+          allOf:
+            - $ref: "#/components/schemas/ProtocolVersion"
+          description: |
+            The oldest client protocol version the server accepts in
+            `identify`: the first of its own major version, or later if the
+            server's release raised it
+
+    ProtocolVersion:
+      type: string
+      pattern: '^[0-9]+\.[0-9]+$'
+      description: A protocol version, `major.minor`; compare the parts as numbers
+      example: "1.0"
+
     RegistrationMode:
       type: string
       enum: [open, invite_only]
@@ -2048,16 +2092,14 @@ components:
 
     VoiceInfo:
       type: object
-      required: [defaultBitrate, maxBitrate]
+      required: [defaultBitrate]
       properties:
         defaultBitrate:
           type: integer
+          minimum: 8000
+          maximum: 510000
           description: Bitrate of new voice channels, in bits per second
           example: 64000
-        maxBitrate:
-          type: integer
-          description: Highest bitrate a channel may be set to on this server
-          example: 256000
 
     RegistrationInfo:
       type: object
@@ -2118,7 +2160,7 @@ components:
 
     ServerSettings:
       type: object
-      required: [name, registrationMode, challengeRequired, rateLimits]
+      required: [name, registrationMode, challengeRequired, challengeMaxNumber, rateLimits, sessionLifetimeDays, voice]
       properties:
         name:
           type: string
@@ -2138,8 +2180,14 @@ components:
         challengeRequired:
           type: boolean
           description: Require a proof-of-work challenge on registration
+        challengeMaxNumber:
+          $ref: "#/components/schemas/ChallengeMaxNumber"
         rateLimits:
           $ref: "#/components/schemas/RateLimits"
+        sessionLifetimeDays:
+          $ref: "#/components/schemas/SessionLifetimeDays"
+        voice:
+          $ref: "#/components/schemas/VoiceInfo"
         systemChannelId:
           allOf:
             - $ref: "#/components/schemas/ChannelId"
@@ -2178,8 +2226,14 @@ components:
           $ref: "#/components/schemas/RegistrationMode"
         challengeRequired:
           type: boolean
+        challengeMaxNumber:
+          $ref: "#/components/schemas/ChallengeMaxNumber"
         rateLimits:
           $ref: "#/components/schemas/RateLimits"
+        sessionLifetimeDays:
+          $ref: "#/components/schemas/SessionLifetimeDays"
+        voice:
+          $ref: "#/components/schemas/VoiceInfo"
         systemChannelId:
           type: string
           pattern: '^$|^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
@@ -2195,6 +2249,24 @@ components:
             Id of the role new members get; an empty string gives them none.
             An unknown role is rejected (`role_not_found`). Existing members
             keep their roles.
+
+    ChallengeMaxNumber:
+      type: integer
+      minimum: 1000
+      maximum: 10000000
+      description: |
+        Difficulty of the registration challenge: the `maxnumber` of the
+        challenges the server issues. A client tries half of it on average.
+      example: 100000
+
+    SessionLifetimeDays:
+      type: integer
+      minimum: 1
+      maximum: 365
+      description: |
+        How many days a session stays valid without being used. A change
+        applies to each session from its next use.
+      example: 30
 
     Challenge:
       type: object
@@ -2368,24 +2440,28 @@ components:
         |------|-------------------------|---------------------------------------|
         | 4000 | `invalid_frame`         | fix the client; the frame was not understood |
         | 4001 | `not_identified`        | send `identify` first                 |
-        | 4002 | `identify_timeout`      | reconnect and identify sooner         |
-        | 4003 | `authentication_failed` | log in again; the token is not valid  |
-        | 4004 | `already_identified`    | identify only once per connection     |
-        | 4005 | `session_ended`         | log in again; the session was logged out or revoked |
-        | 4006 | `too_slow`              | reconnect; the client fell too far behind |
-        | 4007 | `banned`                | stop reconnecting; logging in says why |
+        | 4002 | `authentication_failed` | log in again; the token is not valid  |
+        | 4003 | `already_identified`    | identify only once per connection     |
+        | 4004 | `session_ended`         | log in again; the session was logged out or revoked |
+        | 4005 | `banned`                | stop reconnecting; logging in says why |
+        | 4006 | `client_outdated`       | stop reconnecting until the client is updated; the session stays valid |
+        | 4500 | `identify_timeout`      | reconnect and identify sooner         |
+        | 4501 | `too_slow`              | reconnect; the client fell too far behind |
 
-        A server shutting down closes with the standard 1001 (going away);
-        reconnect after a moment.
+        Codes from 4000 to 4499 mean a reconnect would be refused again, and
+        codes from 4500 to 4999 mean reconnect, so a client knows what to do
+        with a code added after it was built. A server shutting down closes
+        with the standard 1001 (going away); reconnect after a moment.
       enum:
         - invalid_frame
         - not_identified
-        - identify_timeout
         - authentication_failed
         - already_identified
         - session_ended
-        - too_slow
         - banned
+        - client_outdated
+        - identify_timeout
+        - too_slow
 
     GatewayClientFrame:
       description: A frame the client sends, told apart by `type`
@@ -2401,13 +2477,20 @@ components:
     GatewayIdentify:
       type: object
       description: Authenticates the connection; must be the first frame, sent once
-      required: [type, token]
+      required: [type, token, protocol]
       properties:
         type:
           type: string
         token:
           type: string
           description: A session token from login or registration
+        protocol:
+          allOf:
+            - $ref: "#/components/schemas/ProtocolVersion"
+          description: |
+            The protocol version the client speaks. Older than the server's
+            `protocol.minClient`, the connection is closed with
+            `client_outdated`.
 
     GatewayTyping:
       type: object

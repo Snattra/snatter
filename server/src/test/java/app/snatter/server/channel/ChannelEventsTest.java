@@ -61,11 +61,12 @@ class ChannelEventsTest {
     @Test
     void rejectedChangesFireNothing() {
         AccountPrincipal owner = owner();
-        Channel channel = channels.create(owner, ChannelType.VOICE, "quiet", null, null, null, Set.of());
+        Channel channel = channels.create(owner, ChannelType.TEXT, "quiet", null, null, null, Set.of());
         try {
+            // Renamed and given a bitrate, which text channels do not have: all of it is refused.
             assertThrows(ApiException.class, () ->
-                channels.update(owner, channel.id(), new ChannelService.Changes("loud", null, 999_000, null, null, null)));
-            assertEquals(List.of(new ChannelEvent.Created(channel.id(), owner.accountId(), ChannelType.VOICE, "quiet")),
+                channels.update(owner, channel.id(), new ChannelService.Changes("loud", null, 64_000, null, null, null)));
+            assertEquals(List.of(new ChannelEvent.Created(channel.id(), owner.accountId(), ChannelType.TEXT, "quiet")),
                 recorded.about(channel.id()));
         } finally {
             channels.delete(owner, channel.id());
