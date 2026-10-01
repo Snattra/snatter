@@ -188,8 +188,11 @@
                                 <useSealed>true</useSealed>
                                 <dateLibrary>java8</dateLibrary>
                                 <!-- Response DTOs travel inside Response.entity(), where Quarkus
-                                     cannot see them, so register every model for native reflection. -->
+                                     cannot see them, so register every model for native reflection.
+                                     Enums too: without it, one only the gateway sends (such as
+                                     PresenceStatusDto) serialises by its Java name, "ONLINE". -->
                                 <additionalModelTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalModelTypeAnnotations>
+                                <additionalEnumTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalEnumTypeAnnotations>
                                 <additionalOneOfTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalOneOfTypeAnnotations>
                                 <generatePom>false</generatePom>
                                 <sourceFolder>src/main/java</sourceFolder>
