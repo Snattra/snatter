@@ -20,6 +20,10 @@ This appends a line like `Signed-off-by: Your Name <you@example.com>` using
 the name and email from your git configuration. Pull requests with unsigned
 commits will not be merged.
 
+The one exception is Dependabot, which cannot sign off its commits. Its pull
+requests only bump versions of third-party dependencies, so they may be merged
+without a sign-off.
+
 ## Licensing of contributions
 
 - Code under `server/` and `client/` is licensed under the AGPL-3.0.

@@ -1,0 +1,38 @@
+# Dependabot version updates. Minor and patch bumps are grouped into one pull
+# request per ecosystem; major bumps each get their own. Security updates are
+# switched on in the repository settings and do not wait for these schedules.
+
+version: 2
+
+updates:
+  # The client workspace. The lockfile in client/ covers every workspace
+  # package, so this one entry also updates client/web.
+  - package-ecosystem: npm
+    directory: /client
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: maven
+    directory: /server
+    schedule:
+      interval: weekly
+    groups:
+      maven-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Base images: the build-from-source Dockerfiles that compose.yaml uses, and
+  # the Quarkus Dockerfiles for prebuilt server builds.
+  - package-ecosystem: docker
+    directories:
+      - /client/web
+      - /server
+      - /server/src/main/docker
+    schedule:
+      interval: weekly
