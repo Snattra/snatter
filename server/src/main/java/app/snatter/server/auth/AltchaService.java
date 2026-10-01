@@ -32,6 +32,10 @@ public class AltchaService {
     public record Challenge(String algorithm, String challenge, String salt, String signature, int maxnumber) {
     }
 
+    /** A correctly solved challenge, not yet recorded as used. */
+    public record Solved(String challenge, Instant expiresAt) {
+    }
+
     private static final String ALGORITHM = "SHA-256";
     private static final HexFormat HEX = HexFormat.of();
 
@@ -64,12 +68,12 @@ public class AltchaService {
 
     /**
      * Checks a solved challenge payload: the base64 JSON object
-     * {@code {algorithm, challenge, number, salt, signature}}.
+     * {@code {algorithm, challenge, number, salt, signature}}. Touches no
+     * database, so it belongs before the transaction that {@link #redeem}s it.
      *
      * @throws ApiException {@code challenge_invalid} when anything is off
      */
-    @Transactional
-    public void verify(String payload) {
+    public Solved check(String payload) {
         JsonNode solution;
         try {
             solution = json.readTree(Base64.getDecoder().decode(payload.strip()));
@@ -81,8 +85,13 @@ public class AltchaService {
         String salt = text(solution, "salt");
         String signature = text(solution, "signature");
         JsonNode number = solution.get("number");
-        if (!ALGORITHM.equals(algorithm) || challenge == null || salt == null || signature == null
-                || number == null || !number.canConvertToInt()) {
+        if (!ALGORITHM.equals(algorithm)
+            || challenge == null
+            || salt == null
+            || signature == null
+            || number == null ||
+            !number.canConvertToInt()
+        ) {
             throw invalid("Challenge payload is incomplete");
         }
         // No upper bound: the difficulty may have changed since the challenge was issued, and the
@@ -102,11 +111,33 @@ public class AltchaService {
                 challenge.getBytes(StandardCharsets.US_ASCII))) {
             throw invalid("Challenge solution is wrong");
         }
-        if (!used.markUsed(challenge, expiresAt)) {
+        return new Solved(challenge, expiresAt);
+    }
+
+    /**
+     * Records a solved challenge as used, in the transaction of what it
+     * admits, so a solution cannot be replayed and a rolled back registration
+     * does not spend it.
+     *
+     * <p>Expiry is checked again here: {@link #check} ran before the password
+     * hash, which may finish after the challenge expired, and the record of
+     * an expired challenge is deleted below, so it would no longer stop a
+     * replay. The clock is read after recording, while this transaction holds
+     * the write lock, so no redemption can follow a cleanup that removed it.
+     *
+     * @throws ApiException {@code challenge_invalid} if it was used already or has expired
+     */
+    @Transactional
+    public void redeem(Solved solved) {
+        if (!used.markUsed(solved.challenge(), solved.expiresAt())) {
             throw invalid("Challenge has already been used");
         }
+        Instant now = Instant.now();
+        if (!now.isBefore(solved.expiresAt())) {
+            throw invalid("Challenge has expired");
+        }
         // Opportunistic cleanup; rows are tiny and this keeps the table bounded.
-        used.deleteExpired(Instant.now());
+        used.deleteExpired(now);
     }
 
     private static Instant expiresAt(String salt) {

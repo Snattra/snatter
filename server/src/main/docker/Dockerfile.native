@@ -23,6 +23,12 @@ RUN chown 1001 /work \
     && chown 1001:root /work
 COPY --chown=1001:root --chmod=0755 target/*-runner /work/application
 
+# The database and uploaded content. Mount a volume here.
+RUN mkdir -p /var/lib/snatter \
+    && chown 1001:root /var/lib/snatter \
+    && chmod "g+rwX" /var/lib/snatter
+ENV SNATTER_STORAGE_ROOT=/var/lib/snatter
+
 EXPOSE 8080
 USER 1001
 

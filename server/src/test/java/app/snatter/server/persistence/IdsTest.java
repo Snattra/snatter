@@ -15,7 +15,7 @@ class IdsTest {
             UUID next = Ids.newId();
             assertEquals(7, next.version());
             assertEquals(2, next.variant());
-            // Lowercase hex strings of equal length compare like PostgreSQL compares uuids.
+            // Ids are stored as these lowercase strings, and the database orders them as text.
             assertTrue(next.toString().compareTo(previous.toString()) > 0, previous + " then " + next);
             previous = next;
         }

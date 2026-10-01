@@ -40,22 +40,23 @@ Windows first, then macOS, then Linux.
 The quickest way to run Snatter, no JDK, Maven or Node.js required:
 
 ```
-cp .env.example .env      # set SNATTER_DB_PASSWORD
 docker compose up --build
 ```
 
-This builds the server and the web app from source and starts them together
-with PostgreSQL in the production profile. Open http://localhost:8080 and
-create the first account, which becomes the owner. The web container serves
-the app and forwards `/api` to the server, so the API is on the same port
-(try `/api/v1/server-info`); the server is not published on its own. Database
-files persist in the `db-data` and `server-data` volumes, so
+This builds the server and the web app from source and starts them in the
+production profile. Open http://localhost:8080 and create the first account,
+which becomes the owner. The web container serves the app and forwards `/api`
+to the server, so the API is on the same port (try `/api/v1/server-info`); the
+server is not published on its own. The server keeps everything, its SQLite
+database and uploaded content, in the `server-data` volume, so
 `docker compose down` keeps your data and `docker compose down -v` wipes it.
+To publish on another port, set `SNATTER_HTTP_PORT` in a `.env` file (see
+`.env.example`).
 
 ## Developing locally
 
 Run the server and the client side by side, each in its own terminal. You
-need a JDK 25+, Maven, Docker and Node.js 24+; the READMEs in `server/` and
+need a JDK 25+, Maven and Node.js 24+; the READMEs in `server/` and
 `client/` have the details.
 
 ```

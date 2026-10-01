@@ -2,6 +2,7 @@ package app.snatter.server.channel;
 
 import app.snatter.server.api.ApiException;
 import app.snatter.server.auth.AccountPrincipal;
+import app.snatter.server.persistence.SqlErrors;
 import app.snatter.server.role.RoleId;
 import app.snatter.server.role.RoleRepository;
 import app.snatter.server.settings.ServerSettingsService;
@@ -24,8 +25,6 @@ import org.jdbi.v3.core.statement.UnableToExecuteStatementException;
  */
 @ApplicationScoped
 public class ChannelService {
-
-    private static final String UNIQUE_VIOLATION = "23505";
 
     /** Requested changes to a channel; null fields stay unchanged, an empty topic clears it. */
     public record Changes(String name, String topic, Integer bitrate, Integer userLimit, Integer position,
@@ -143,7 +142,7 @@ public class ChannelService {
         try {
             return write.get();
         } catch (UnableToExecuteStatementException e) {
-            if (e.getCause() instanceof java.sql.SQLException sql && UNIQUE_VIOLATION.equals(sql.getSQLState())) {
+            if (SqlErrors.isUniqueViolation(e)) {
                 throw nameTaken();
             }
             throw e;

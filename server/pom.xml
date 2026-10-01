@@ -28,6 +28,7 @@
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.version>3.39.4</quarkus.platform.version>
         <quarkus-jdbi.version>1.10.1</quarkus-jdbi.version>
+        <sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
         <skipITs>true</skipITs>
         <!-- The hand-written OpenAPI document in the Apache-licensed protocol
              module is the API contract. Server interfaces and DTOs are
@@ -90,9 +91,12 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-narayana-jta</artifactId>
         </dependency>
+        <!-- Plain driver rather than a Quarkus extension: it supports native
+             images by itself and bundles SQLite for every major platform. -->
         <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-jdbc-postgresql</artifactId>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>${sqlite-jdbc.version}</version>
         </dependency>
         <dependency>
             <groupId>io.quarkiverse.jdbi</groupId>
@@ -102,10 +106,6 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-flyway</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -188,8 +188,11 @@
                                 <useSealed>true</useSealed>
                                 <dateLibrary>java8</dateLibrary>
                                 <!-- Response DTOs travel inside Response.entity(), where Quarkus
-                                     cannot see them, so register every model for native reflection. -->
+                                     cannot see them, so register every model for native reflection.
+                                     Enums too: without it, one only the gateway sends (such as
+                                     PresenceStatusDto) serialises by its Java name, "ONLINE". -->
                                 <additionalModelTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalModelTypeAnnotations>
+                                <additionalEnumTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalEnumTypeAnnotations>
                                 <additionalOneOfTypeAnnotations>@io.quarkus.runtime.annotations.RegisterForReflection</additionalOneOfTypeAnnotations>
                                 <generatePom>false</generatePom>
                                 <sourceFolder>src/main/java</sourceFolder>

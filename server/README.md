@@ -11,8 +11,10 @@ covers Docker Compose, which needs no toolchain at all.
 
 - JDK 25 or newer
 - Maven 3.9 or newer
-- Docker (or Podman) for dev mode and tests, which start a throwaway
-  PostgreSQL container automatically through Quarkus Dev Services
+- Docker (or Podman), only to build the native executable
+
+The database is SQLite, built into the server, so dev mode and the tests need
+nothing else running.
 
 [SDKMAN](https://sdkman.io) installs the JDK and Maven: `sdk install java
 26.0.2+1.1-tem` and `sdk install maven`. There is deliberately no Maven wrapper
@@ -62,18 +64,23 @@ there is no configuration file to mount.
 
 | Variable               | Default                                        | Purpose                        |
 |------------------------|------------------------------------------------|--------------------------------|
-| `SNATTER_DB_URL`       | `jdbc:postgresql://localhost:5432/snatter`     | PostgreSQL JDBC URL            |
-| `SNATTER_DB_USER`      | `snatter`                                      | Database user                  |
-| `SNATTER_DB_PASSWORD`  | none, required                                 | Database password              |
-| `SNATTER_STORAGE_ROOT` | `./data` (`/var/lib/snatter` in the container) | Directory for uploaded content such as avatars |
+| `SNATTER_STORAGE_ROOT` | `./data` (`/var/lib/snatter` in the container) | Directory for everything the server keeps: the database and uploaded content such as avatars |
+| `SNATTER_DB_PATH`      | `snatter.db` in `SNATTER_STORAGE_ROOT`          | The SQLite database file, if it should live elsewhere |
 | `QUARKUS_HTTP_PORT`    | `8080`                                         | Port the server listens on     |
 
 Behind a reverse proxy, also set `QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING`
 and `QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED` to `true` so rate limits see the
 client's address, as `compose.yaml` does.
 
-PostgreSQL is the only supported database. The schema is created and upgraded
-automatically at startup.
+The database is a single SQLite file. The server creates it, and its
+directory, on first start, and upgrades the schema automatically. Keep it on a
+local disk: SQLite's locking does not work over network file systems such as
+NFS or SMB shares, and a database there can be corrupted. Uploaded content
+may live on such a share; point `SNATTER_DB_PATH` at a local disk then.
+
+To back up, stop the server and copy the data directory. Copying the database
+file while the server runs can give a broken copy; `sqlite3 snatter.db
+".backup backup.db"` makes a consistent one without stopping it.
 
 How the community runs is not configuration: registration mode, the bot
 check and its difficulty, rate limits, how long sessions last and voice

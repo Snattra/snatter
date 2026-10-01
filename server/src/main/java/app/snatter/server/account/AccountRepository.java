@@ -13,7 +13,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
@@ -37,7 +36,7 @@ public class AccountRepository {
     private static final String SELECT = """
         SELECT a.id, a.username, a.display_name, a.avatar_blob_id, a.timed_out_until, a.created_at,
                (SELECT b.created_at FROM ban b WHERE b.account_id = a.id) AS banned_at,
-               array_remove(array_agg(ar.role_id), NULL) AS role_ids
+               json_group_array(ar.role_id) FILTER (WHERE ar.role_id IS NOT NULL) AS role_ids
         FROM account a
         LEFT JOIN account_role ar ON ar.account_id = a.id
         """;
@@ -80,8 +79,8 @@ public class AccountRepository {
             return Set.of();
         }
         return jdbi.withHandle(h -> h
-            .createQuery("SELECT id FROM account WHERE id = ANY(:ids)")
-            .bindArray("ids", UUID.class, ids.stream().map(AccountId::value).toArray(UUID[]::new))
+            .createQuery("SELECT id FROM account WHERE id IN (<ids>)")
+            .bindList("ids", List.copyOf(ids))
             .map((rs, ctx) -> new AccountId(uuid(rs, "id")))
             .collect(Collectors.toSet()));
     }

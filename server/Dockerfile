@@ -32,7 +32,7 @@ COPY --from=build --chown=185 /build/server/target/quarkus-app/*.jar /deployment
 COPY --from=build --chown=185 /build/server/target/quarkus-app/app/ /deployments/app/
 COPY --from=build --chown=185 /build/server/target/quarkus-app/quarkus/ /deployments/quarkus/
 
-# Uploaded content. Mount a volume here.
+# The database and uploaded content. Mount a volume here.
 USER root
 RUN mkdir -p /var/lib/snatter && chown 185:0 /var/lib/snatter
 ENV SNATTER_STORAGE_ROOT=/var/lib/snatter

@@ -57,13 +57,29 @@ public class InviteService {
     }
 
     /**
+     * Checks, without using it, that the invite could admit a registration
+     * now, so a registration with a bad invite fails before the expensive
+     * work. {@link #redeem} decides for certain.
+     *
+     * @throws ApiException {@code invite_invalid} if it cannot be used
+     */
+    public void requireUsable(InviteCode code) {
+        if (invites.find(code).filter(i -> i.isUsable(Instant.now())).isEmpty()) {
+            throw invalid();
+        }
+    }
+
+    /**
      * Consumes one use of the invite for a registration. Must run inside the
      * registration's transaction so a failed registration gives the use back.
      *
      * @throws ApiException {@code invite_invalid} if it cannot be used
      */
     public Invite redeem(InviteCode code) {
-        return invites.redeem(code, Instant.now())
-            .orElseThrow(() -> new ApiException(403, "invite_invalid", "That invite is unknown, revoked, expired or used up"));
+        return invites.redeem(code, Instant.now()).orElseThrow(InviteService::invalid);
+    }
+
+    private static ApiException invalid() {
+        return new ApiException(403, "invite_invalid", "That invite is unknown, revoked, expired or used up");
     }
 }

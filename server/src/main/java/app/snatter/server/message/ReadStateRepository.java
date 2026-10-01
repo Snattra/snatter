@@ -6,9 +6,9 @@ import static app.snatter.server.persistence.Rows.uuid;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.channel.ChannelId;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.transaction.Transactional;
 import java.util.Collection;
 import java.util.List;
-import java.util.UUID;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -31,8 +31,10 @@ public class ReadStateRepository {
 
     /**
      * Gives the member a marker at the newest message in each of the channels
-     * that has none yet, so what is already there counts as read.
+     * that has none yet, so what is already there counts as read. The
+     * gateway calls this outside any transaction, so it brings its own.
      */
+    @Transactional
     public void startReading(AccountId accountId, Collection<ChannelId> channelIds) {
         if (channelIds.isEmpty()) {
             return;
@@ -40,25 +42,28 @@ public class ReadStateRepository {
         jdbi.useHandle(h -> h
             .createUpdate("""
                 INSERT INTO read_state (account_id, channel_id, last_read_id)
-                SELECT :accountId, c.id, %s FROM channel c WHERE c.id = ANY(:channelIds)
+                SELECT :accountId, c.id, %s FROM channel c WHERE c.id IN (<channelIds>)
                 ON CONFLICT (account_id, channel_id) DO NOTHING
                 """.formatted(LATEST))
             .bind("accountId", accountId)
-            .bindArray("channelIds", UUID.class, uuids(channelIds))
+            .bindList("channelIds", List.copyOf(channelIds))
             .execute());
     }
 
     /** The member's markers in those channels, with each channel's newest message. */
     public List<ReadState> find(AccountId accountId, Collection<ChannelId> channelIds) {
+        if (channelIds.isEmpty()) {
+            return List.of();
+        }
         return jdbi.withHandle(h -> h
             .createQuery("""
                 SELECT c.id AS channel_id, r.last_read_id, %s AS last_message_id
                 FROM channel c
                 LEFT JOIN read_state r ON r.channel_id = c.id AND r.account_id = :accountId
-                WHERE c.id = ANY(:channelIds)
+                WHERE c.id IN (<channelIds>)
                 """.formatted(LATEST))
             .bind("accountId", accountId)
-            .bindArray("channelIds", UUID.class, uuids(channelIds))
+            .bindList("channelIds", List.copyOf(channelIds))
             .map(MAPPER)
             .list());
     }
@@ -85,9 +90,5 @@ public class ReadStateRepository {
             .bind("channelId", channelId)
             .bind("messageId", messageId)
             .execute()) > 0;
-    }
-
-    private static UUID[] uuids(Collection<ChannelId> ids) {
-        return ids.stream().map(ChannelId::value).toArray(UUID[]::new);
     }
 }
