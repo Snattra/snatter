@@ -3,6 +3,7 @@ package app.snatter.server.message;
 import static app.snatter.server.persistence.Rows.id;
 import static app.snatter.server.persistence.Rows.ids;
 import static app.snatter.server.persistence.Rows.instant;
+import static app.snatter.server.persistence.Rows.json;
 import static app.snatter.server.persistence.Rows.uuid;
 
 import app.snatter.server.account.AccountId;
@@ -11,9 +12,9 @@ import app.snatter.server.settings.RegistrationMode;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -84,7 +85,7 @@ public class MessageRepository {
     public List<Message> findLatest(ChannelId channelId, MessageId before, int limit) {
         List<Message> newestFirst = jdbi.withHandle(h -> h
             .createQuery(SELECT + """
-                WHERE m.channel_id = :channelId AND (CAST(:before AS uuid) IS NULL OR m.id < :before)
+                WHERE m.channel_id = :channelId AND (:before IS NULL OR m.id < :before)
                 ORDER BY m.id DESC
                 LIMIT :limit
                 """)
@@ -122,7 +123,7 @@ public class MessageRepository {
                 .bind("channelId", m.channelId())
                 .bind("authorId", m.authorId())
                 .bind("content", m.content())
-                .bindArray("mentions", UUID.class, uuids(m.mentions()))
+                .bind("mentions", json(m.mentions()))
                 .bind("replyToId", m.replyToId())
                 .bind("createdAt", m.createdAt())
                 .execute());
@@ -130,10 +131,11 @@ public class MessageRepository {
             case SystemMessage m -> {
                 StoredNotice notice = store(m.notice());
                 jdbi.useHandle(h -> h
+                    // Patching an empty object drops the null values, as a JSON merge patch does.
                     .createUpdate("""
                         INSERT INTO message (id, channel_id, kind, author_id, system_type, system_data, created_at)
                         VALUES (:id, :channelId, 'system', :authorId, :type,
-                                jsonb_strip_nulls(jsonb_build_object('from', CAST(:from AS text), 'to', CAST(:to AS text))),
+                                json_patch('{}', json_object('from', :from, 'to', :to)),
                                 :createdAt)
                         """)
                     .bind("id", m.id())
@@ -157,7 +159,7 @@ public class MessageRepository {
                 """)
             .bind("id", message.id())
             .bind("content", message.content())
-            .bindArray("mentions", UUID.class, uuids(message.mentions()))
+            .bind("mentions", json(message.mentions()))
             .bind("editedAt", message.editedAt())
             .execute());
     }
@@ -165,7 +167,7 @@ public class MessageRepository {
     /** What a user message becomes when deleted; everything its author wrote goes. */
     private static final String DELETE_CONTENT = """
         UPDATE message
-        SET kind = 'deleted', content = NULL, mentioned_account_ids = '{}', reply_to_id = NULL, edited_at = NULL,
+        SET kind = 'deleted', content = NULL, mentioned_account_ids = '[]', reply_to_id = NULL, edited_at = NULL,
             deleted_at = :at, deleted_by = :by, removed_by_moderator = :byModerator
         """;
 
@@ -194,20 +196,21 @@ public class MessageRepository {
         if (channelIds.isEmpty()) {
             return List.of();
         }
-        return jdbi.withHandle(h -> h
-            .createQuery("WITH purged AS (" + DELETE_CONTENT + """
-                WHERE author_id = :authorId AND kind = 'user' AND created_at >= :since AND channel_id = ANY(:channelIds)
+        List<Purged> purged = jdbi.withHandle(h -> h
+            .createQuery(DELETE_CONTENT + """
+                WHERE author_id = :authorId AND kind = 'user' AND created_at >= :since AND channel_id IN (<channelIds>)
                 RETURNING id, channel_id
-                ) SELECT id, channel_id FROM purged ORDER BY id
                 """)
             .bind("authorId", authorId)
             .bind("since", since)
-            .bindArray("channelIds", UUID.class, channelIds.stream().map(ChannelId::value).toArray(UUID[]::new))
+            .bindList("channelIds", List.copyOf(channelIds))
             .bind("at", at)
             .bind("by", by)
             .bind("byModerator", !authorId.equals(by))
             .map((rs, ctx) -> new Purged(new ChannelId(uuid(rs, "channel_id")), new MessageId(uuid(rs, "id"))))
             .list());
+        // RETURNING comes in no particular order; ids as stored order the messages.
+        return purged.stream().sorted(Comparator.comparing(p -> p.id().value().toString())).toList();
     }
 
     /** Removes a message entirely; for notices. */
@@ -216,10 +219,6 @@ public class MessageRepository {
             .createUpdate("DELETE FROM message WHERE id = :id")
             .bind("id", id)
             .execute());
-    }
-
-    private static UUID[] uuids(List<AccountId> ids) {
-        return ids.stream().map(AccountId::value).toArray(UUID[]::new);
     }
 
     private static StoredNotice store(SystemNotice notice) {

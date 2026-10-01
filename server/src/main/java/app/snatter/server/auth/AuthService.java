@@ -9,6 +9,7 @@ import app.snatter.server.api.ApiException;
 import app.snatter.server.moderation.Ban;
 import app.snatter.server.moderation.BanRepository;
 import app.snatter.server.moderation.BannedException;
+import app.snatter.server.persistence.SqlErrors;
 import app.snatter.server.invite.Invite;
 import app.snatter.server.invite.InviteCode;
 import app.snatter.server.invite.InviteService;
@@ -37,7 +38,6 @@ public class AuthService {
     /** Prefix on every token so leaked tokens are recognisable by secret scanners. */
     static final String TOKEN_PREFIX = "snt_";
     private static final int TOKEN_BYTES = 32;
-    private static final String UNIQUE_VIOLATION = "23505";
     /** A session's use (last_seen_at, and with it expires_at) is written at most this often, to keep reads cheap. */
     private static final Duration TOUCH_INTERVAL = Duration.ofMinutes(5);
 
@@ -86,44 +86,71 @@ public class AuthService {
      * Creates a local account. The first account on a fresh server is always
      * allowed and becomes the server owner; after that the registration mode
      * and challenge policy from the server settings apply.
+     *
+     * <p>The checks and the deliberately slow password hash come first; only
+     * the writes run in a transaction, as every transaction holds SQLite's
+     * write lock (see {@code JdbiProducer}).
      */
-    @Transactional
     public Login register(Registration registration, String ip, String userAgent) {
         // Checked first, so a bad name spends no invite use or challenge.
         String displayName = DisplayNames.normalize(registration.displayName());
-        ServerSettings policy = settings.current();
         boolean firstAccount = settings.setupRequired();
-
-        Invite invite = null;
-        if (!firstAccount) {
-            if (registration.inviteCode() != null) {
-                invite = invites.redeem(registration.inviteCode());
-            } else if (policy.registrationMode() != RegistrationMode.OPEN) {
-                throw new ApiException(403, "registration_closed", "Registration on this server requires an invite");
-            }
-            if (policy.challengeRequired()) {
-                if (registration.altcha() == null || registration.altcha().isBlank()) {
-                    throw ApiException.badRequest("challenge_required", "Solve a challenge from /api/v1/auth/challenge first");
-                }
-                challenges.verify(registration.altcha());
-            }
-        }
-
+        AltchaService.Solved solved = firstAccount ? null : admit(registration);
         if (accounts.usernameExists(registration.username())) {
-            throw ApiException.conflict("username_taken", "That username is already in use");
+            throw usernameTaken();
         }
+        String passwordHash = hasher.hash(registration.password());
         String name = displayName == null ? registration.username() : displayName;
+        return createAccount(registration, name, passwordHash, firstAccount, solved, ip, userAgent);
+    }
+
+    /**
+     * Applies the registration mode and challenge policy to a registration
+     * that is not the server's first, and returns its solved challenge to
+     * redeem, if one is required.
+     */
+    private AltchaService.Solved admit(Registration registration) {
+        ServerSettings policy = settings.current();
+        if (registration.inviteCode() != null) {
+            invites.requireUsable(registration.inviteCode());
+        } else if (policy.registrationMode() != RegistrationMode.OPEN) {
+            throw new ApiException(403, "registration_closed", "Registration on this server requires an invite");
+        }
+        if (!policy.challengeRequired()) {
+            return null;
+        }
+        if (registration.altcha() == null || registration.altcha().isBlank()) {
+            throw ApiException.badRequest("challenge_required", "Solve a challenge from /api/v1/auth/challenge first");
+        }
+        return challenges.check(registration.altcha());
+    }
+
+    /** The writes of a registration: all of them happen, or none, so a failure spends no invite use or challenge. */
+    @Transactional
+    Login createAccount(Registration registration, String name, String passwordHash, boolean firstAccount,
+                        AltchaService.Solved solved, String ip, String userAgent) {
+        boolean first = firstAccount;
+        AltchaService.Solved challenge = solved;
+        if (first && !settings.setupRequired()) {
+            // Another registration became the first account meanwhile; this one is judged like any other.
+            first = false;
+            challenge = admit(registration);
+        }
+        Invite invite = !first && registration.inviteCode() != null ? invites.redeem(registration.inviteCode()) : null;
+        if (challenge != null) {
+            challenges.redeem(challenge);
+        }
         Account account;
         try {
-            account = accounts.createLocal(AccountId.newId(), registration.username(), name, hasher.hash(registration.password()));
+            account = accounts.createLocal(AccountId.newId(), registration.username(), name, passwordHash);
         } catch (UnableToExecuteStatementException e) {
             // Lost a race with a concurrent registration of the same username.
-            if (e.getCause() instanceof java.sql.SQLException sql && UNIQUE_VIOLATION.equals(sql.getSQLState())) {
-                throw ApiException.conflict("username_taken", "That username is already in use");
+            if (SqlErrors.isUniqueViolation(e)) {
+                throw usernameTaken();
             }
             throw e;
         }
-        if (firstAccount) {
+        if (first) {
             settings.claimOwner(account.id());
         }
         if (invite != null) {
@@ -138,7 +165,11 @@ public class AuthService {
         return openSession(account, ip, userAgent);
     }
 
-    @Transactional
+    private static ApiException usernameTaken() {
+        return ApiException.conflict("username_taken", "That username is already in use");
+    }
+
+    /** Checks the password, which is deliberately slow, before the transaction that opens the session. */
     public Login login(String username, String password, String ip, String userAgent) {
         Optional<Account> account = accounts.findByUsername(username);
         Optional<String> hash = account.flatMap(a -> accounts.findPasswordHash(a.id()));
@@ -171,8 +202,11 @@ public class AuthService {
         return sessions.touch(sessionId, now, now.plus(settings.current().sessionLifetime()));
     }
 
-    /** Resolves a bearer token to its session and account, or empty if unknown or expired. */
-    @Transactional
+    /**
+     * Resolves a bearer token to its session and account, or empty if unknown
+     * or expired. Every request comes through here, so it only reads, and
+     * takes a transaction just for the rare writes.
+     */
     public Optional<Authenticated> authenticate(String token) {
         if (!token.startsWith(TOKEN_PREFIX)) {
             return Optional.empty();
@@ -184,18 +218,19 @@ public class AuthService {
         }
         Session session = found.get();
         if (session.isExpired(now)) {
-            sessions.delete(session.id());
-            sessionEvents.fire(new SessionEvent.Ended(session.id(), session.accountId()));
+            logout(session.accountId(), session.id());
             return Optional.empty();
         }
         // Sessions expire after a period without use, so each use moves the expiry.
         if (session.lastSeenAt().plus(TOUCH_INTERVAL).isBefore(now)) {
-            sessions.touch(session.id(), now, now.plus(settings.current().sessionLifetime()));
+            keepAlive(session.id());
         }
         return accounts.findById(session.accountId()).map(a -> new Authenticated(session, a));
     }
 
-    private Login openSession(Account account, String ip, String userAgent) {
+    /** Opens a session for the account, in the caller's transaction or its own. Not private, so that applies. */
+    @Transactional
+    Login openSession(Account account, String ip, String userAgent) {
         byte[] raw = new byte[TOKEN_BYTES];
         random.nextBytes(raw);
         String token = TOKEN_PREFIX + B64.encodeToString(raw);

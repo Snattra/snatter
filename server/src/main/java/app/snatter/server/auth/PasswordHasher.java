@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.concurrent.Semaphore;
 import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
 import org.bouncycastle.crypto.params.Argon2Parameters;
 
@@ -14,6 +15,11 @@ import org.bouncycastle.crypto.params.Argon2Parameters;
  *
  * <p>The parameters are embedded in each hash, so they can be raised later
  * and old hashes remain verifiable.
+ *
+ * <p>Each hash takes {@link #MEMORY_KB} of memory for as long as it runs, so
+ * no more run at once than there are processors; the rest wait their turn.
+ * More would not finish sooner, as each uses one processor fully, but
+ * together they could exhaust a small server's memory.
  */
 @ApplicationScoped
 public class PasswordHasher {
@@ -27,6 +33,8 @@ public class PasswordHasher {
     private static final Base64.Encoder B64 = Base64.getEncoder().withoutPadding();
     private static final Base64.Decoder B64D = Base64.getDecoder();
     private final SecureRandom random = new SecureRandom();
+    /** Per instance, so a native image counts the processors it runs on rather than those it was built on. */
+    private final Semaphore running = new Semaphore(Runtime.getRuntime().availableProcessors(), true);
 
     public String hash(String password) {
         byte[] salt = new byte[SALT_BYTES];
@@ -69,7 +77,16 @@ public class PasswordHasher {
         return MessageDigest.isEqual(expected, actual);
     }
 
-    private static byte[] argon2(String password, byte[] salt, int memoryKb, int iterations, int parallelism) {
+    private byte[] argon2(String password, byte[] salt, int memoryKb, int iterations, int parallelism) {
+        running.acquireUninterruptibly();
+        try {
+            return generate(password, salt, memoryKb, iterations, parallelism);
+        } finally {
+            running.release();
+        }
+    }
+
+    private static byte[] generate(String password, byte[] salt, int memoryKb, int iterations, int parallelism) {
         Argon2Parameters params = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
             .withVersion(Argon2Parameters.ARGON2_VERSION_13)
             .withMemoryAsKB(memoryKb)

@@ -36,12 +36,32 @@ Planned: `media`.
 - **Plain SQL through [JDBI 3](https://jdbi.org).** No ORM. Each feature
   package has a repository class that injects `Jdbi`, writes SQL in text
   blocks, and maps rows onto records with an explicit `RowMapper`.
-- **Transactions are JTA.** Put `@Transactional` on the service or repository
-  method and use `jdbi.withHandle` / `jdbi.useHandle` inside it. Agroal enlists
-  the connection in the transaction. Do not use `jdbi.inTransaction` or
-  `handle.begin()`.
-- **Timestamps** are `TIMESTAMPTZ` in the database and `Instant` in Java. Use
-  the helpers in `persistence.Rows` to read them.
+- **SQLite, in one file.** `persistence.SqliteDriver` sets up every
+  connection: foreign keys on (SQLite leaves them off), write-ahead logging so
+  reads never wait for writes, and transactions that take the write lock as
+  they begin. The schema's own conventions are at the top of `V1__schema.sql`.
+- **Transactions are JTA, and only for writes.** Put `@Transactional` on the
+  service or repository method and use `jdbi.withHandle` / `jdbi.useHandle`
+  inside it. Do not use `jdbi.inTransaction` or `handle.begin()`.
+- **One writer, many readers.** SQLite runs one write transaction at a time.
+  Transactions therefore share a single connection and queue for it in the
+  pool; statements outside a transaction run on a pool of read-only
+  connections that work side by side (`persistence.JdbiProducer` picks). So:
+  - Every write needs a transaction; a write outside one fails.
+  - A transaction holds the writer from its first statement, reads
+    included, to its end, and every other write waits meanwhile. Keep in it
+    only what must be atomic, including the reads a write depends on (a
+    position computed from the others, say). Password hashing, challenge
+    checks and anything else slow come before it, and reads that decide
+    nothing about a write stay outside.
+  - `ConcurrencyTest` races requests against each other and checks what the
+    database keeps true meanwhile. Extend it when adding a write that others
+    may race.
+- **Constraint violations** are recognised with `persistence.SqlErrors`, for
+  example to turn a lost race for a unique name into a 409.
+- **Instants** are microseconds since the epoch in the database and `Instant`
+  in Java; UUIDs are text; lists of ids are JSON arrays. Binding is automatic;
+  read them with the helpers in `persistence.Rows`.
 - **Ids** are UUID version 7 wrapped in typed records such as `AccountId`;
   see "Typed identifiers" below. `persistence.Ids` makes them strictly
   increasing within the process, so they also order rows such as messages.
@@ -115,8 +135,8 @@ Everything the owner can change at runtime lives in the
 `server_settings` row and is read through `ServerSettingsService`, which
 caches the row in memory and fires a `Changed` event on updates. Request paths
 never query the table. `application.properties` holds only how the server is
-built and wired; environment variables say where it runs (database, storage,
-port), and anything about how the community runs is a server setting.
+built and wired; environment variables say where it runs (data directory,
+database file, port), and anything about how the community runs is a server setting.
 Internal timing, such as the challenge lifetime or the gateway's keep-alive
 interval, is a constant in the class that uses it.
 
@@ -616,13 +636,28 @@ rules are about readable names that are hard to fake rather than injection.
 ## Testing
 
 - `*Test` classes run with `@QuarkusTest` against the application in the same
-  JVM. Dev Services provides PostgreSQL.
+  JVM, on a fresh SQLite database in `target/test-data` each time the
+  application starts. Tests that write to the database directly need a
+  transaction of their own (`QuarkusTransaction.requiringNew()`), like any
+  other write.
 - `*IT` classes extend the HTTP tests with `@QuarkusIntegrationTest` and run
   them against the packaged application. They are skipped by default and
   enabled by the `native` profile, so
   `mvn verify -Dnative -Dquarkus.native.container-build=true` also tests the
   native executable end to end. Run it before merging changes that add
-  dependencies or touch serialisation.
+  dependencies or touch serialisation. On macOS the container build makes a
+  Linux executable the host cannot run, so run it in a container and point
+  the tests at it:
+
+  ```
+  mvn package -Dnative -Dquarkus.native.container-build=true -DskipTests
+  docker build -f src/main/docker/Dockerfile.native-micro -t snatter-server-native .
+  docker run --rm -d -p 8081:8080 -e QUARKUS_PROFILE=test snatter-server-native
+  mvn failsafe:integration-test failsafe:verify -DskipITs=false \
+      -Dquarkus.http.test-host=localhost -Dquarkus.http.test-port=8081
+  ```
+
+  Use a fresh container for each run: the tests expect a fresh database.
 - All tests that need an account register it through `testing.TestUsers`. Its
   first use bootstraps the server: the well-known `owner` account is created
   as the first account, opens registration and disables rate limiting for the

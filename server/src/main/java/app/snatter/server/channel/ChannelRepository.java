@@ -2,6 +2,7 @@ package app.snatter.server.channel;
 
 import static app.snatter.server.persistence.Rows.ids;
 import static app.snatter.server.persistence.Rows.instant;
+import static app.snatter.server.persistence.Rows.integer;
 import static app.snatter.server.persistence.Rows.uuid;
 
 import app.snatter.server.role.RoleId;
@@ -10,6 +11,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import org.jdbi.v3.core.Handle;
@@ -17,9 +19,10 @@ import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
 /**
- * Channels and their required roles. Operations that change positions lock
- * the table against concurrent writers so positions stay contiguous; run them
- * in a transaction.
+ * Channels and their required roles. Operations that change positions read
+ * the current ones and write new ones; run them in a transaction, which holds
+ * SQLite's write lock throughout, so positions stay contiguous when changes
+ * race.
  */
 @ApplicationScoped
 public class ChannelRepository {
@@ -30,14 +33,14 @@ public class ChannelRepository {
         rs.getString("name"),
         rs.getString("topic"),
         rs.getInt("position"),
-        voice(rs.getObject("bitrate", Integer.class), rs.getObject("user_limit", Integer.class)),
+        voice(integer(rs, "bitrate"), integer(rs, "user_limit")),
         new HashSet<>(ids(rs, "required_role_ids", RoleId::new)),
         instant(rs, "created_at"),
         instant(rs, "updated_at"));
 
     private static final String SELECT = """
         SELECT c.id, c.type, c.name, c.topic, c.position, c.bitrate, c.user_limit, c.created_at, c.updated_at,
-               array_remove(array_agg(r.role_id), NULL) AS required_role_ids
+               json_group_array(r.role_id) FILTER (WHERE r.role_id IS NOT NULL) AS required_role_ids
         FROM channel c
         LEFT JOIN channel_required_role r ON r.channel_id = c.id
         """;
@@ -72,15 +75,15 @@ public class ChannelRepository {
      */
     public Channel insertLast(Channel channel) {
         return jdbi.withHandle(h -> {
-            lockOrdering(h);
             int position = h.createQuery("SELECT coalesce(max(position) + 1, 0) FROM channel").mapTo(Integer.class).one();
             h.createUpdate("""
-                INSERT INTO channel (id, type, name, topic, position, bitrate, user_limit, created_at, updated_at)
-                VALUES (:id, :type, :name, :topic, :position, :bitrate, :userLimit, :createdAt, :updatedAt)
+                INSERT INTO channel (id, type, name, name_key, topic, position, bitrate, user_limit, created_at, updated_at)
+                VALUES (:id, :type, :name, :nameKey, :topic, :position, :bitrate, :userLimit, :createdAt, :updatedAt)
                 """)
                 .bind("id", channel.id())
                 .bind("type", channel.type().dbValue())
                 .bind("name", channel.name())
+                .bind("nameKey", nameKey(channel.name()))
                 .bind("topic", channel.topic())
                 .bind("position", position)
                 .bind("bitrate", channel.voice() == null ? null : channel.voice().bitrate())
@@ -99,9 +102,9 @@ public class ChannelRepository {
         return jdbi.withHandle(h -> h
             .createQuery("""
                 SELECT 1 FROM channel
-                WHERE lower(name) = lower(:name) AND (CAST(:except AS uuid) IS NULL OR id <> :except)
+                WHERE name_key = :nameKey AND (:except IS NULL OR id <> :except)
                 """)
-            .bind("name", name)
+            .bind("nameKey", nameKey(name))
             .bind("except", except)
             .mapTo(Integer.class)
             .findOne()
@@ -113,11 +116,13 @@ public class ChannelRepository {
         jdbi.useHandle(h -> {
             h.createUpdate("""
                 UPDATE channel
-                SET name = :name, topic = :topic, bitrate = :bitrate, user_limit = :userLimit, updated_at = :now
+                SET name = :name, name_key = :nameKey, topic = :topic, bitrate = :bitrate, user_limit = :userLimit,
+                    updated_at = :now
                 WHERE id = :id
                 """)
                 .bind("id", channel.id())
                 .bind("name", channel.name())
+                .bind("nameKey", nameKey(channel.name()))
                 .bind("topic", channel.topic())
                 .bind("bitrate", channel.voice() == null ? null : channel.voice().bitrate())
                 .bind("userLimit", channel.voice() == null ? null : channel.voice().userLimit())
@@ -133,7 +138,6 @@ public class ChannelRepository {
     /** Moves a channel to a position, clamped to the end of the list, and renumbers the rest. */
     public void moveTo(ChannelId id, int position) {
         jdbi.useHandle(h -> {
-            lockOrdering(h);
             List<ChannelId> order = new ArrayList<>(h
                 .createQuery("SELECT id FROM channel ORDER BY position, created_at")
                 .map((rs, ctx) -> new ChannelId(uuid(rs, "id")))
@@ -153,7 +157,6 @@ public class ChannelRepository {
     /** Deletes a channel with its required roles and closes the gap it leaves. */
     public boolean delete(ChannelId id) {
         return jdbi.withHandle(h -> {
-            lockOrdering(h);
             Optional<Integer> position = h.createQuery("DELETE FROM channel WHERE id = :id RETURNING position")
                 .bind("id", id)
                 .mapTo(Integer.class)
@@ -176,9 +179,12 @@ public class ChannelRepository {
         batch.execute();
     }
 
-    /** Writers wait for each other so positions are computed from a stable list; readers are not blocked. */
-    private static void lockOrdering(Handle h) {
-        h.execute("LOCK TABLE channel IN SHARE ROW EXCLUSIVE MODE");
+    /**
+     * The name as the unique index compares it: in lower case, folded here
+     * because SQLite's own lower() only folds ASCII.
+     */
+    private static String nameKey(String name) {
+        return name.toLowerCase(Locale.ROOT);
     }
 
     private static VoiceSettings voice(Integer bitrate, Integer userLimit) {

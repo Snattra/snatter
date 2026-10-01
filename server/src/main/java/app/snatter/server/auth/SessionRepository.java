@@ -30,7 +30,7 @@ public class SessionRepository {
         jdbi.useHandle(h -> h
             .createUpdate("""
                 INSERT INTO session (id, account_id, token_hash, created_at, expires_at, last_seen_at, created_ip, user_agent)
-                VALUES (:id, :accountId, :tokenHash, :createdAt, :expiresAt, :lastSeenAt, CAST(:ip AS inet), :userAgent)
+                VALUES (:id, :accountId, :tokenHash, :createdAt, :expiresAt, :lastSeenAt, :ip, :userAgent)
                 """)
             .bind("id", session.id())
             .bind("accountId", session.accountId())

@@ -2,6 +2,7 @@ package app.snatter.server.invite;
 
 import static app.snatter.server.persistence.Rows.id;
 import static app.snatter.server.persistence.Rows.instant;
+import static app.snatter.server.persistence.Rows.integer;
 
 import app.snatter.server.account.AccountId;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -19,7 +20,7 @@ public class InviteRepository {
         id(rs, "created_by", AccountId::new),
         instant(rs, "created_at"),
         instant(rs, "expires_at"),
-        rs.getObject("max_uses", Integer.class),
+        integer(rs, "max_uses"),
         rs.getInt("uses"),
         instant(rs, "revoked_at"));
 
