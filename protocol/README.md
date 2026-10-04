@@ -9,10 +9,10 @@ while the server and official client remain AGPL.
 
 | Path                   | What it is                                       |
 |------------------------|--------------------------------------------------|
-| `openapi/openapi.yaml` | The HTTP API, OpenAPI 3.0. Hand-written; this is the source of truth. |
+| `openapi/openapi.yaml` | The HTTP API and the WebSocket gateway's frames, OpenAPI 3.0. Hand-written; this is the source of truth. |
 | `CHANGELOG.md`         | What changed in each protocol version.           |
 
-Planned: the WebSocket gateway event schema and the media signalling protocol.
+Planned: the media signalling protocol.
 
 ## How the contract is used
 

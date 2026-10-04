@@ -229,17 +229,18 @@ supports, 8 to 510 kbps. New voice channels get the server setting
 is fixed at creation. A fresh server has one text channel,
 `General`.
 
-Names are unique regardless of case (a unique index on `lower(name)`), so a
-message can name a channel and a client can tell which one it means;
+Names are unique regardless of case (a unique index on `name_key`, the name
+in lower case, folded in Java because SQLite's `lower()` only folds ASCII),
+so a message can name a channel and a client can tell which one it means;
 `channel_name_taken` otherwise. This holds across channels the caller cannot
 see, so it reveals that a hidden channel has a name, and nothing else.
 
 Channels form one flat list ordered by `position`, 0 at the top, and
-positions are always contiguous. `ChannelRepository` takes a
-`SHARE ROW EXCLUSIVE` lock on the table for every operation that changes
-positions (create, move, delete), so concurrent writers renumber from the
-same list while readers are not blocked. Categories will group channels
-later.
+positions are always contiguous. Every operation that changes positions
+(create, move, delete) reads them and writes the new ones in one
+transaction, which holds SQLite's write lock throughout, so concurrent
+writers renumber from the same list while readers are not blocked.
+Categories will group channels later.
 
 **Private channels.** A channel's required roles (`channel_required_role`)
 decide who sees it: none means everyone, otherwise only members holding at
@@ -272,7 +273,7 @@ every message operation on a voice-only channel fails with
 content and may reply to another message, a `SystemMessage` carries a
 `SystemNotice`, itself sealed with one record per notice type holding exactly
 that notice's values. In the table the kind is the `kind` column and a
-notice is `system_type` plus its values in `system_data` (JSONB);
+notice is `system_type` plus its values in `system_data`, a JSON object;
 `MessageRepository` is the only place that knows these names. Clients render
 notice text from the type, so it can be translated, and must show unknown
 types generically.
@@ -284,13 +285,14 @@ Mentions are tokens in the text, `<@accountId>`, `<@&roleId>` and
 
 **Mentions.** Sending or editing works out the members the content mentions
 (`message.Mentions`, the `<@accountId>` tokens) and stores them in
-`mentioned_account_ids`, a `uuid[]` with a GIN index, so notifications can
-find a member's mentions (`mentioned_account_ids @> ARRAY[:id]`) without
-reading any text. Each account counts once, in order of first mention, and
-only accounts that exist; a token for anyone else stays in the text as it
-is. A message may mention at most 20 members, counted before that check
-(`too_many_mentions`). Role and channel tokens are not stored: role
-mentions are for later, and a channel is a link, not someone to notify.
+`mentioned_account_ids`, a JSON array read only with its message. Finding a
+member's mentions, for notifications, will need them in a table of their
+own, since SQLite cannot index into the array. Each account counts once,
+in order of first mention, and only accounts that exist; a token for anyone
+else stays in the text as it is. A message may mention at most 20 members,
+counted before that check (`too_many_mentions`). Role and channel tokens are
+not stored: role mentions are for later, and a channel is a link, not
+someone to notify.
 
 **Order and paging.** Message ids are UUID version 7 from `persistence.Ids`,
 which are strictly increasing within the server process (a counter follows
