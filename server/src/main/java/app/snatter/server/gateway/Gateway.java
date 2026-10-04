@@ -22,11 +22,18 @@ import app.snatter.api.model.GatewayServerFrameDto;
 import app.snatter.api.model.GatewayServerUpdatedDto;
 import app.snatter.api.model.GatewayTypingDto;
 import app.snatter.api.model.GatewayTypingStartedDto;
+import app.snatter.api.model.GatewayVoiceEndedDto;
+import app.snatter.api.model.GatewayVoiceRefusedDto;
+import app.snatter.api.model.GatewayVoiceStateDeletedDto;
+import app.snatter.api.model.GatewayVoiceStateDto;
+import app.snatter.api.model.GatewayVoiceStateUpdatedDto;
 import app.snatter.api.model.MessageDto;
 import app.snatter.api.model.PermissionSetDto;
 import app.snatter.api.model.PresenceDto;
 import app.snatter.api.model.PresenceStatusDto;
 import app.snatter.api.model.ServerInfoDto;
+import app.snatter.api.model.VoiceEndReasonDto;
+import app.snatter.api.model.VoiceRefusalDto;
 import app.snatter.server.account.Account;
 import app.snatter.server.account.AccountDtos;
 import app.snatter.server.account.AccountEvent;
@@ -101,9 +108,12 @@ import org.jboss.logging.Logger;
  * required-role edits and role changes that hide or reveal channels need no
  * special handling.
  *
- * <p>Presence and typing live only here, in memory. A member is online while
- * they have at least one identified connection that is not closing; typing
- * is passed on without being remembered, and clients time it out.
+ * <p>Presence, typing and voice live only here, in memory. A member is online
+ * while they have at least one identified connection that is not closing;
+ * typing is passed on without being remembered, and clients time it out. A
+ * member is in at most one voice channel, held by the connection that joined
+ * it, and leaves when that connection goes. Voice states are sent as
+ * differences too, of who is in the channels each client can see.
  */
 @ApplicationScoped
 public class Gateway {
@@ -140,6 +150,13 @@ public class Gateway {
 
     /** A pending refresh for each account whose timeout ends later; dispatcher thread only. */
     private final Map<AccountId, ScheduledFuture<?>> timeoutEnds = new HashMap<>();
+
+    /** Who is in voice, in the order they joined, and through which connection; dispatcher thread only. */
+    private final Map<AccountId, Voice> voice = new LinkedHashMap<>();
+
+    /** A member in voice and the connection that holds it. */
+    private record Voice(Client holder, VoiceState state) {
+    }
 
     public Gateway(Principals principals, AuthService auth, AccountRepository accounts, RoleRepository roles,
                    ChannelRepository channels, ReadStateRepository readStates, ServerSettingsService settings,
@@ -201,6 +218,7 @@ public class Gateway {
             switch (frame) {
                 case GatewayIdentifyDto identify -> identify(client, identify);
                 case GatewayTypingDto typing -> typing(client, typing.getChannelId());
+                case GatewayVoiceStateDto voiceState -> voiceState(client, voiceState);
             }
         });
     }
@@ -210,6 +228,7 @@ public class Gateway {
             Client client = clients.remove(connection.id());
             if (client != null && client.identified()) {
                 wentAway(client.principal.accountId());
+                leaveVoice(client);
             }
         });
     }
@@ -251,6 +270,7 @@ public class Gateway {
         watchTimeout(client.principal);
         client.roles = byId(roles.findAll());
         client.channels = visibleChannels(client.principal, channels.findAll());
+        client.voiceStates = visibleVoice(client.channels);
         List<ReadState> reading = startReading(accountId, client.channels.values());
         List<Account> members = accounts.findAll();
         send(client, seq -> new GatewayReadyDto()
@@ -262,7 +282,8 @@ public class Gateway {
             .members(members.stream().map(AccountDtos::toDto).toList())
             .presences(online.stream().map(id -> presence(id, PresenceStatusDto.ONLINE)).toList())
             .channels(client.channels.values().stream().map(ChannelResource::toDto).toList())
-            .readStates(reading.stream().map(MessageResource::toDto).toList()));
+            .readStates(reading.stream().map(MessageResource::toDto).toList())
+            .voiceStates(client.voiceStates.values().stream().map(VoiceState::toDto).toList()));
     }
 
     /**
@@ -321,13 +342,13 @@ public class Gateway {
             long delay = Math.max(0, Duration.between(Instant.now(), principal.timedOutUntil()).toMillis() + 1);
             timeoutEnds.put(accountId, dispatcher.schedule(guarded(() -> {
                 timeoutEnds.remove(accountId);
-                timeoutChanged(accountId);
+                restrictionChanged(accountId);
             }), delay, TimeUnit.MILLISECONDS));
         }
     }
 
-    /** A timeout started, changed or ended: the member's permissions and everyone's view of them. */
-    private void timeoutChanged(AccountId accountId) {
+    /** A timeout or mute started, changed or ended: the member's permissions and everyone's view of them. */
+    private void restrictionChanged(AccountId accountId) {
         syncAccess(accountId::equals);
         memberUpdated(accountId);
     }
@@ -358,6 +379,146 @@ public class Gateway {
                 closeSession(session);
             }
         }
+    }
+
+    // --- Voice ----------------------------------------------------------------
+
+    /**
+     * Joins, moves, leaves, or changes the member's own mute and deafen,
+     * depending on whether this connection is the one in voice; see the
+     * contract's {@code GatewayVoiceState}.
+     */
+    private void voiceState(Client client, GatewayVoiceStateDto frame) {
+        if (!client.identified()) {
+            close(client, GatewayClose.NOT_IDENTIFIED);
+            return;
+        }
+        AccountId accountId = client.principal.accountId();
+        Voice current = voice.get(accountId);
+        boolean here = current != null && current.holder() == client;
+        ChannelId channelId = frame.getChannelId();
+        if (channelId == null) {
+            if (here) {
+                voice.remove(accountId);
+                syncVoice();
+            }
+            return;
+        }
+        VoiceState state = new VoiceState(accountId, channelId,
+            Boolean.TRUE.equals(frame.getSelfMuted()), Boolean.TRUE.equals(frame.getSelfDeafened()));
+        if (here && channelId.equals(current.state().channelId())) {
+            // Mute or deafen only, so the member keeps their place in the channel.
+            voice.put(accountId, new Voice(client, state));
+            syncVoice();
+            return;
+        }
+        Optional<VoiceRefusalDto> refusal = refusal(client, channelId);
+        if (refusal.isPresent()) {
+            send(client, seq -> new GatewayVoiceRefusedDto().seq(seq).channelId(channelId).reason(refusal.get()));
+            return;
+        }
+        if (current != null && !here) {
+            send(current.holder(), seq -> new GatewayVoiceEndedDto().seq(seq).reason(VoiceEndReasonDto.JOINED_ELSEWHERE));
+        }
+        // Taken out first, so someone who moves is listed last in their new channel.
+        voice.remove(accountId);
+        voice.put(accountId, new Voice(client, state));
+        syncVoice();
+    }
+
+    /** Why the connection may not join the channel, if it may not. */
+    private Optional<VoiceRefusalDto> refusal(Client client, ChannelId channelId) {
+        Channel channel = client.channels.get(channelId);
+        if (channel == null) {
+            return Optional.of(VoiceRefusalDto.CHANNEL_NOT_FOUND);
+        }
+        if (!channel.type().hasVoice()) {
+            return Optional.of(VoiceRefusalDto.NOT_A_VOICE_CHANNEL);
+        }
+        if (!client.principal.has(Permission.CONNECT)) {
+            return Optional.of(VoiceRefusalDto.FORBIDDEN);
+        }
+        int limit = channel.voice().userLimit();
+        if (limit > 0 && !client.principal.has(Permission.MOVE_MEMBERS)) {
+            AccountId self = client.principal.accountId();
+            long others = voice.values().stream()
+                .filter(v -> v.state().channelId().equals(channelId) && !v.state().accountId().equals(self))
+                .count();
+            if (others >= limit) {
+                return Optional.of(VoiceRefusalDto.CHANNEL_FULL);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** After a connection stopped being live: if it was the one in voice, the member leaves. */
+    private void leaveVoice(Client client) {
+        AccountId accountId = client.principal.accountId();
+        Voice current = voice.get(accountId);
+        if (current != null && current.holder() == client) {
+            voice.remove(accountId);
+            syncVoice();
+        }
+    }
+
+    /**
+     * Takes out of voice those whose channel is gone or hidden from them, and
+     * those who no longer hold CONNECT, telling the connection why. Everyone
+     * else learns it from the voice differences sent next.
+     */
+    private void endLostVoice(List<Channel> allChannels) {
+        Map<ChannelId, Channel> byId = new HashMap<>();
+        for (Channel channel : allChannels) {
+            byId.put(channel.id(), channel);
+        }
+        for (Voice held : List.copyOf(voice.values())) {
+            AccountPrincipal member = held.holder().principal;
+            Channel channel = byId.get(held.state().channelId());
+            VoiceEndReasonDto reason = channel == null || !channel.isVisibleTo(member)
+                ? VoiceEndReasonDto.CHANNEL_UNAVAILABLE
+                : member.has(Permission.CONNECT) ? null : VoiceEndReasonDto.FORBIDDEN;
+            if (reason != null) {
+                voice.remove(held.state().accountId());
+                send(held.holder(), seq -> new GatewayVoiceEndedDto().seq(seq).reason(reason));
+            }
+        }
+    }
+
+    /** Tells every client what changed among those in the voice channels it can see. */
+    private void syncVoice() {
+        for (Client client : liveClients()) {
+            Map<AccountId, VoiceState> now = visibleVoice(client.channels);
+            sendVoiceRemovals(client, now);
+            sendVoiceUpdates(client, now);
+        }
+    }
+
+    private void sendVoiceRemovals(Client client, Map<AccountId, VoiceState> now) {
+        for (AccountId gone : client.voiceStates.keySet()) {
+            if (!now.containsKey(gone)) {
+                send(client, seq -> new GatewayVoiceStateDeletedDto().seq(seq).accountId(gone));
+            }
+        }
+    }
+
+    private void sendVoiceUpdates(Client client, Map<AccountId, VoiceState> now) {
+        for (VoiceState state : now.values()) {
+            if (!state.equals(client.voiceStates.get(state.accountId()))) {
+                send(client, seq -> new GatewayVoiceStateUpdatedDto().seq(seq).voiceState(state.toDto()));
+            }
+        }
+        client.voiceStates = now;
+    }
+
+    /** Those in voice in the given channels, in the order they joined. */
+    private Map<AccountId, VoiceState> visibleVoice(Map<ChannelId, Channel> visible) {
+        Map<AccountId, VoiceState> states = new LinkedHashMap<>();
+        for (Voice held : voice.values()) {
+            if (visible.containsKey(held.state().channelId())) {
+                states.put(held.state().accountId(), held.state());
+            }
+        }
+        return states;
     }
 
     // --- Events ---------------------------------------------------------------
@@ -399,7 +560,8 @@ public class Gateway {
                 case AccountEvent.Registered _ -> accounts.findById(event.accountId()).ifPresent(account ->
                     broadcast(seq -> new GatewayMemberJoinedDto().seq(seq).member(AccountDtos.toDto(account))));
                 case AccountEvent.Updated _ -> memberUpdated(event.accountId());
-                case AccountEvent.TimeoutChanged changed -> timeoutChanged(changed.accountId());
+                case AccountEvent.TimeoutChanged changed -> restrictionChanged(changed.accountId());
+                case AccountEvent.MuteChanged changed -> restrictionChanged(changed.accountId());
                 case AccountEvent.Banned banned -> {
                     for (Client client : liveClients()) {
                         if (client.principal.accountId().equals(banned.accountId())) {
@@ -494,6 +656,9 @@ public class Gateway {
                     send(client, seq -> new GatewayPermissionsChangedDto().seq(seq).permissions(permissionSet(client.principal)));
                 }
             }
+        }
+        endLostVoice(allChannels);
+        for (Client client : liveClients()) {
             syncChannels(client, allChannels);
         }
     }
@@ -518,6 +683,9 @@ public class Gateway {
 
     private void syncChannels(Client client, List<Channel> allChannels) {
         Map<ChannelId, Channel> now = visibleChannels(client.principal, allChannels);
+        // Those in voice leave before their channel does, and arrive after it.
+        Map<AccountId, VoiceState> voiceNow = visibleVoice(now);
+        sendVoiceRemovals(client, voiceNow);
         List<Channel> appeared = new ArrayList<>();
         for (Channel channel : now.values()) {
             Channel before = client.channels.get(channel.id());
@@ -534,6 +702,7 @@ public class Gateway {
             }
         }
         client.channels = now;
+        sendVoiceUpdates(client, voiceNow);
         for (ReadState state : startReading(client.principal.accountId(), appeared)) {
             send(client, seq -> new GatewayReadStateUpdatedDto().seq(seq).readState(MessageResource.toDto(state)));
         }
@@ -579,6 +748,7 @@ public class Gateway {
             failure -> LOG.debugf(failure, "Closing gateway connection %s failed", client.connection.id()));
         if (wasLive) {
             wentAway(client.principal.accountId());
+            leaveVoice(client);
         }
     }
 

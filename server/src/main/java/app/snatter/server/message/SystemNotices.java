@@ -62,7 +62,8 @@ public class SystemNotices {
         switch (event) {
             case AccountEvent.Registered registered ->
                 post(settings.current().systemChannelId(), registered.accountId(), new SystemNotice.MemberJoined());
-            case AccountEvent.Updated _, AccountEvent.Banned _, AccountEvent.Unbanned _, AccountEvent.TimeoutChanged _ -> {
+            case AccountEvent.Updated _, AccountEvent.Banned _, AccountEvent.Unbanned _, AccountEvent.TimeoutChanged _,
+                 AccountEvent.MuteChanged _ -> {
             }
         }
     }

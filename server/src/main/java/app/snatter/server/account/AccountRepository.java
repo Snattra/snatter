@@ -30,11 +30,12 @@ public class AccountRepository {
         id(rs, "avatar_blob_id", BlobId::new),
         ids(rs, "role_ids", RoleId::new),
         instant(rs, "timed_out_until"),
+        instant(rs, "muted_at"),
         instant(rs, "banned_at"),
         instant(rs, "created_at"));
 
     private static final String SELECT = """
-        SELECT a.id, a.username, a.display_name, a.avatar_blob_id, a.timed_out_until, a.created_at,
+        SELECT a.id, a.username, a.display_name, a.avatar_blob_id, a.timed_out_until, a.muted_at, a.created_at,
                (SELECT b.created_at FROM ban b WHERE b.account_id = a.id) AS banned_at,
                json_group_array(ar.role_id) FILTER (WHERE ar.role_id IS NOT NULL) AS role_ids
         FROM account a
@@ -132,7 +133,7 @@ public class AccountRepository {
                 .bind("now", now)
                 .execute();
         });
-        return new Account(id, username, displayName, null, List.of(), null, null, now);
+        return new Account(id, username, displayName, null, List.of(), null, null, null, now);
     }
 
     public Optional<String> findPasswordHash(AccountId accountId) {
@@ -171,5 +172,21 @@ public class AccountRepository {
             .bind("until", until)
             .bind("now", Instant.now())
             .execute());
+    }
+
+    /**
+     * Mutes the member in voice from {@code at}, or with null unmutes them;
+     * false when they already were, or were not, muted.
+     */
+    public boolean setMutedAt(AccountId id, Instant at) {
+        return jdbi.withHandle(h -> h
+            .createUpdate("""
+                UPDATE account SET muted_at = :at, updated_at = :now
+                WHERE id = :id AND (muted_at IS NULL) <> (:at IS NULL)
+                """)
+            .bind("id", id)
+            .bind("at", at)
+            .bind("now", Instant.now())
+            .execute()) == 1;
     }
 }

@@ -17,6 +17,7 @@ public final class AccountDtos {
             .avatarId(account.avatarId())
             .roleIds(account.roleIds())
             .timedOutUntil(account.isTimedOut(Instant.now()) ? account.timedOutUntil() : null)
+            .mutedAt(account.mutedAt())
             .bannedAt(account.bannedAt())
             .createdAt(account.createdAt());
     }

@@ -13,7 +13,8 @@ import java.util.Set;
  * only this record, never the database.
  *
  * @param owner         whether this is the server owner, who may do everything
- * @param permissions   the union of the assigned roles, none during a timeout; every permission for the owner
+ * @param permissions   the union of the assigned roles, without SPEAK while muted and none during a timeout;
+ *                      every permission for the owner
  * @param roleIds       assigned roles
  * @param timedOutUntil end of the current timeout, or null if there is none
  */

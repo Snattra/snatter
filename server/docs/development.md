@@ -16,11 +16,11 @@ splitting by technical layer:
 | `auth`        | Passwords, sessions, challenges, HTTP authentication |
 | `blob`        | Binary content: storage, metadata, image detection   |
 | `invite`      | Invite links and their redemption                    |
-| `moderation`  | Bans and timeouts                                    |
+| `moderation`  | Bans, timeouts and voice mutes                       |
 | `role`        | Permissions, roles, assignment rules                 |
 | `channel`     | Channels, ordering, required roles                   |
 | `message`     | Messages, replies, paging, system notices            |
-| `gateway`     | WebSocket gateway: identify, ready, event fan-out    |
+| `gateway`     | WebSocket gateway: identify, ready, events, voice    |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
@@ -186,8 +186,8 @@ else moving up.
 
 ## Moderation
 
-Bans (`BAN_MEMBERS`) and timeouts (`TIMEOUT_MEMBERS`) live in
-`moderation.ModerationService` and share the role rule through
+Bans (`BAN_MEMBERS`), timeouts (`TIMEOUT_MEMBERS`) and mutes
+(`MUTE_MEMBERS`) live in `moderation.ModerationService` and share the role rule through
 `RoleService.requireOutranks`: the actor must hold everything the target's
 roles grant (`member_outranks_you`), the owner can never be targeted, and
 nobody can target themselves (`cannot_moderate_self`). Rank is judged on what
@@ -218,6 +218,16 @@ gateway re-resolves the member (`permissions_changed`) and sends
 schedules the same refresh for the end of each timeout it sees on a
 principal, one per account, replaced whenever the principal is resolved
 again.
+
+**Mutes** (`account.muted_at`) turn someone else's microphone off, for a
+noisy mic or an open one left behind rather than as a punishment: the
+member stays in voice, listens and writes, but `RoleService.resolve` leaves
+out `SPEAK` until a moderator unmutes them. A mute has no end and stays with
+the account, so leaving and joining voice does not lift it.
+`Account.mutedAt` shows it to everyone, and clients draw it like the
+member's own mute. Muting or unmuting fires `AccountEvent.MuteChanged`, which
+the gateway handles like a timeout change; muting someone already muted
+fires nothing and keeps the first time.
 
 ## Channels
 
@@ -438,6 +448,28 @@ connection gets one `typing` per channel through every 5 seconds. Nothing is
 remembered: clients show the indicator for 10 seconds or until a message from
 that member arrives, and keep it alive by sending `typing` every 8 seconds.
 
+**Voice.** Who is in which voice channel lives only here, like presence:
+the map `voice` holds each member's `VoiceState` (channel, own mute and
+deafen) and the connection that holds it. A member is in at most one voice
+channel, through one connection. The client sends `voice_state` with the
+channel it wants to be in: from a connection not in voice that joins,
+taking the member over from any other connection they were in voice on,
+which gets `voice_ended` (`joined_elsewhere`); from the connection in voice
+it changes the mute and deafen, moves, or with no channel leaves. Joining
+needs `CONNECT`, a voice channel the connection can see, and room under the
+channel's user limit unless the member holds `MOVE_MEMBERS`; a refusal
+answers `voice_refused` to that connection only. When the connection in
+voice closes, for whatever reason, the member leaves. After role, channel
+and timeout changes, `endLostVoice` takes out of voice those who can no
+longer see their channel or no longer hold `CONNECT`, with `voice_ended`.
+
+Like channels, voice is sent as differences: each `Client` remembers the
+voice states it was told (`voiceStates`), those in the channels it can see,
+and gets `voice_state_updated` and `voice_state_deleted` for what changed.
+So moving into a channel someone cannot see is leaving, to them. Inside
+`syncChannels` the voice states of a channel leave before its
+`channel_deleted` and arrive after its `channel_created`.
+
 **Read markers.** `ready` carries the member's read state for every visible
 channel with messages, creating markers for channels seen for the first
 time. A channel revealed later is followed by `read_state_updated` with its
@@ -611,6 +643,8 @@ that produces it.
 | DELETE | `/bans/{accountId}`  | BAN_MEMBERS | Lift a ban                        |
 | PUT    | `/timeouts/{accountId}` | TIMEOUT_MEMBERS | Time a member out for up to 28 days |
 | DELETE | `/timeouts/{accountId}` | TIMEOUT_MEMBERS | End a timeout early           |
+| PUT    | `/mutes/{accountId}` | MUTE_MEMBERS | Mute a member in voice              |
+| DELETE | `/mutes/{accountId}` | MUTE_MEMBERS | Unmute a member                     |
 | GET    | `/blobs/{id}`       | no   | Blob bytes, immutable, cache forever      |
 
 Error codes: `validation_failed`, `username_taken`, `registration_closed`,

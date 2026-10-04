@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -26,7 +27,7 @@ public class RoleService {
     /**
      * What an account is allowed to do, derived from its roles.
      *
-     * @param permissions   what the account may do now: none during a timeout
+     * @param permissions   what the account may do now: without SPEAK while muted, none during a timeout
      * @param granted       what its roles grant, timeout or not; every permission for the owner
      * @param roleIds       assigned roles
      * @param timedOutUntil end of the current timeout, or null if there is none
@@ -48,8 +49,9 @@ public class RoleService {
     }
 
     /**
-     * Effective permissions of an account: the union of its roles, none
-     * during a timeout, or everything for the owner, who cannot be timed out.
+     * Effective permissions of an account: the union of its roles, without
+     * SPEAK while muted and none during a timeout, or everything for the
+     * owner, who can be neither.
      */
     public Resolution resolve(AccountId accountId) {
         EnumSet<Permission> granted = EnumSet.noneOf(Permission.class);
@@ -61,11 +63,20 @@ public class RoleService {
         if (settings.current().isOwner(accountId)) {
             return new Resolution(true, Permission.all(), Permission.all(), Set.copyOf(roleIds), null);
         }
-        Instant timedOutUntil = accounts.findById(accountId)
+        Optional<Account> account = accounts.findById(accountId);
+        Instant timedOutUntil = account
             .filter(a -> a.isTimedOut(Instant.now()))
             .map(Account::timedOutUntil)
             .orElse(null);
-        return new Resolution(false, timedOutUntil == null ? granted : Set.of(), granted, Set.copyOf(roleIds), timedOutUntil);
+        Set<Permission> permissions = granted;
+        if (timedOutUntil != null) {
+            permissions = Set.of();
+        } else if (account.filter(Account::isMuted).isPresent()) {
+            EnumSet<Permission> unmuted = EnumSet.copyOf(granted);
+            unmuted.remove(Permission.SPEAK);
+            permissions = unmuted;
+        }
+        return new Resolution(false, permissions, granted, Set.copyOf(roleIds), timedOutUntil);
     }
 
     /**

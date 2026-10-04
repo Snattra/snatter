@@ -15,14 +15,16 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * Bans and timeouts. Both need their permission, checked by the caller, and
- * follow the role rule through {@link RoleService#requireOutranks}: only
- * members whose permissions the actor all holds, never the owner or oneself.
+ * Bans, timeouts and mutes. Each needs its permission, checked by the
+ * caller, and follows the role rule through {@link RoleService#requireOutranks}:
+ * only members whose permissions the actor all holds, never the owner or
+ * oneself.
  *
  * <p>Banning ends the member's sessions in the same transaction, and the
  * session lookup refuses banned accounts, so a ban takes effect at once. A
  * timeout keeps the member's roles and sessions but resolves their
- * permissions to none until it ends.
+ * permissions to none until it ends; a mute resolves them without SPEAK until
+ * it is lifted.
  */
 @ApplicationScoped
 public class ModerationService {
@@ -77,5 +79,23 @@ public class ModerationService {
         roles.requireOutranks(actor, accountId);
         accounts.setTimedOutUntil(accountId, null);
         events.fire(new AccountEvent.TimeoutChanged(accountId, actor.accountId()));
+    }
+
+    /** Mutes the member in voice; muting them again keeps the first time. */
+    @Transactional
+    public Account mute(AccountPrincipal actor, AccountId accountId) {
+        roles.requireOutranks(actor, accountId);
+        if (accounts.setMutedAt(accountId, Instant.now())) {
+            events.fire(new AccountEvent.MuteChanged(accountId, actor.accountId()));
+        }
+        return accounts.findById(accountId).orElseThrow();
+    }
+
+    @Transactional
+    public void unmute(AccountPrincipal actor, AccountId accountId) {
+        roles.requireOutranks(actor, accountId);
+        if (accounts.setMutedAt(accountId, null)) {
+            events.fire(new AccountEvent.MuteChanged(accountId, actor.accountId()));
+        }
     }
 }

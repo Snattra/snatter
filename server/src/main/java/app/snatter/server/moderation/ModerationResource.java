@@ -56,6 +56,19 @@ public class ModerationResource implements ModerationApi {
         return RestResponse.noContent();
     }
 
+    @Override
+    @PermissionsAllowed("MUTE_MEMBERS")
+    public RestResponse<AccountDto> muteMember(AccountId accountId) {
+        return RestResponse.ok(AccountDtos.toDto(moderation.mute(actor(), accountId)));
+    }
+
+    @Override
+    @PermissionsAllowed("MUTE_MEMBERS")
+    public RestResponse<Void> unmuteMember(AccountId accountId) {
+        moderation.unmute(actor(), accountId);
+        return RestResponse.noContent();
+    }
+
     private AccountPrincipal actor() {
         return (AccountPrincipal) identity.getPrincipal();
     }
