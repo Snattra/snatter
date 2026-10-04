@@ -454,6 +454,11 @@ public class Gateway {
         Optional<VoiceRefusalDto> refusal = refusal(client, channelId);
         if (refusal.isPresent()) {
             ChannelId stays = here ? current.state().channelId() : null;
+            if (here) {
+                // The frame's mute and deafen are still the member's latest; it may have replaced a waiting change of them.
+                voice.put(accountId, new Voice(client, new VoiceState(accountId, stays, state.selfMuted(), state.selfDeafened())));
+                syncVoice();
+            }
             send(client, seq -> new GatewayVoiceRefusedDto()
                 .seq(seq).channelId(channelId).reason(refusal.get()).currentChannelId(stays));
             return;

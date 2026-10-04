@@ -204,10 +204,16 @@ class VoiceTest {
             otherGateway.await(GatewayVoiceStateUpdatedDto.class, in(member, small));
             otherGateway.send(join(lounge));
             otherGateway.await(GatewayVoiceStateUpdatedDto.class, in(other, lounge));
-            otherGateway.send(join(small));
+            // The mute comes right after another frame, so it waits its turn, and the move replaces it.
+            otherGateway.send(join(lounge));
+            otherGateway.send(new GatewayVoiceStateDto().channelId(lounge).selfMuted(true).selfDeafened(false));
+            otherGateway.send(new GatewayVoiceStateDto().channelId(small).selfMuted(true).selfDeafened(false));
             GatewayVoiceRefusedDto full = otherGateway.await(GatewayVoiceRefusedDto.class, frame -> frame.getChannelId().equals(small));
             assertEquals(VoiceRefusalDto.CHANNEL_FULL, full.getReason());
             assertEquals(lounge, full.getCurrentChannelId());
+            // Refused, the move still counts its mute.
+            otherGateway.await(GatewayVoiceStateUpdatedDto.class,
+                frame -> in(other, lounge).test(frame) && frame.getVoiceState().getSelfMuted());
 
             // MOVE_MEMBERS goes past the limit.
             modGateway.send(join(small));
