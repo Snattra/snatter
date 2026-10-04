@@ -27,6 +27,17 @@ updates:
           - minor
           - patch
 
+  # The actions in .github/workflows, pinned to commits.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
   # Base images: the build-from-source Dockerfiles that compose.yaml uses, and
   # the Quarkus Dockerfiles for prebuilt server builds.
   - package-ecosystem: docker

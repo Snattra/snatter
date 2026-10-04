@@ -1,0 +1,129 @@
+# Builds and tests what a change touches: the server, the client, the
+# contract. Runs on pull requests and on main.
+#
+# Each part runs only when its files change. Require the "CI result" check
+# rather than the parts: a part skipped for lack of changes counts as passed
+# there, while a required check that never ran would block the merge.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A new push to a pull request supersedes the run before it; on main every
+  # commit gets a result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Find changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+      client: ${{ steps.filter.outputs.client }}
+      protocol: ${{ steps.filter.outputs.protocol }}
+    steps:
+      # Pull requests are compared through the API; pushes need the history.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          # The server and the client are both built from the contract, so a
+          # change to it runs them too.
+          filters: |
+            server:
+              - 'server/**'
+              - 'protocol/openapi/**'
+              - '.github/workflows/ci.yml'
+            client:
+              - 'client/**'
+              - 'protocol/openapi/**'
+              - '.github/workflows/ci.yml'
+            protocol:
+              - 'protocol/**'
+              - '.github/workflows/ci.yml'
+
+  server:
+    name: Server
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The oldest JDK the server supports. Maven comes with the runner.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+          cache-dependency-path: server/pom.xml
+      - run: mvn -B -ntp verify
+
+  client:
+    name: Client
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # Type checks, then builds.
+      - run: npm run build
+
+  protocol:
+    name: Protocol
+    needs: changes
+    if: needs.changes.outputs.protocol == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: protocol
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      # Rules in redocly.yaml. Errors fail the job; warnings show on the diff.
+      - run: npx --yes @redocly/cli@2.57.0 lint --format=github-actions
+
+  result:
+    name: CI result
+    needs: [changes, server, client, protocol]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

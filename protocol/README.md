@@ -62,3 +62,6 @@ older client that ignores it still works.
    type across all its responses, so its error responses carry a description
    only and the success response is declared as `application/octet-stream`.
    See `getBlob` for the pattern.
+5. Lint the contract with `npx @redocly/cli lint` in this directory, as CI
+   does; the rules are in `redocly.yaml`. Operations open to anyone say so
+   with `security: []`.

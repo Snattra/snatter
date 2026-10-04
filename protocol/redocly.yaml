@@ -1,0 +1,19 @@
+# Lint rules for the contract, checked in CI. Run them from this directory:
+#
+#   npx @redocly/cli lint
+#
+# Deliberate exceptions to single places in the contract are listed in
+# .redocly.lint-ignore.yaml beside this file.
+
+apis:
+  snatter:
+    root: openapi/openapi.yaml
+
+extends:
+  - recommended
+
+rules:
+  # A nullable reference is written `allOf: [$ref]` with `nullable: true`,
+  # the usual way in OpenAPI 3.0, and both generators read it as meant. The
+  # rule wants a `type` beside `nullable`, which a reference cannot have.
+  nullable-type-sibling: off
