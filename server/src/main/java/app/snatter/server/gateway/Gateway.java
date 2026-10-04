@@ -123,6 +123,9 @@ public class Gateway {
     /** The least time between two {@code typing} frames passed on for the same channel and connection. */
     private static final long TYPING_INTERVAL_NANOS = Duration.ofSeconds(5).toNanos();
 
+    /** The least time between two {@code voice_state} frames applied for the same connection. */
+    private static final long VOICE_INTERVAL_NANOS = Duration.ofMillis(250).toNanos();
+
     /** How often open connections keep their sessions alive and check they have not ended. */
     private static final Duration KEEP_ALIVE_INTERVAL = Duration.ofMinutes(5);
 
@@ -218,7 +221,7 @@ public class Gateway {
             switch (frame) {
                 case GatewayIdentifyDto identify -> identify(client, identify);
                 case GatewayTypingDto typing -> typing(client, typing.getChannelId());
-                case GatewayVoiceStateDto voiceState -> voiceState(client, voiceState);
+                case GatewayVoiceStateDto voiceState -> voiceStateReceived(client, voiceState);
             }
         });
     }
@@ -384,15 +387,47 @@ public class Gateway {
     // --- Voice ----------------------------------------------------------------
 
     /**
+     * Applies the frame, or one that comes too soon after the last waits for
+     * the connection's turn, so toggling cannot flood everyone who sees the
+     * channel. A waiting frame is replaced by any newer one: unlike typing,
+     * none is dropped without the last one being applied, so the client and
+     * the server end up agreeing.
+     */
+    private void voiceStateReceived(Client client, GatewayVoiceStateDto frame) {
+        if (!client.identified()) {
+            close(client, GatewayClose.NOT_IDENTIFIED);
+            return;
+        }
+        if (client.voicePending != null) {
+            client.voicePending = frame;
+            return;
+        }
+        long now = System.nanoTime();
+        Long last = client.voiceAppliedAt;
+        if (last != null && now - last < VOICE_INTERVAL_NANOS) {
+            client.voicePending = frame;
+            dispatcher.schedule(guarded(() -> applyPendingVoice(client)),
+                VOICE_INTERVAL_NANOS - (now - last), TimeUnit.NANOSECONDS);
+            return;
+        }
+        voiceState(client, frame);
+    }
+
+    private void applyPendingVoice(Client client) {
+        GatewayVoiceStateDto frame = client.voicePending;
+        client.voicePending = null;
+        if (frame != null && client.live()) {
+            voiceState(client, frame);
+        }
+    }
+
+    /**
      * Joins, moves, leaves, or changes the member's own mute and deafen,
      * depending on whether this connection is the one in voice; see the
      * contract's {@code GatewayVoiceState}.
      */
     private void voiceState(Client client, GatewayVoiceStateDto frame) {
-        if (!client.identified()) {
-            close(client, GatewayClose.NOT_IDENTIFIED);
-            return;
-        }
+        client.voiceAppliedAt = System.nanoTime();
         AccountId accountId = client.principal.accountId();
         Voice current = voice.get(accountId);
         boolean here = current != null && current.holder() == client;

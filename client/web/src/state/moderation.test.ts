@@ -67,6 +67,16 @@ describe("outranks", () => {
     const timedOut = account("above", ["admin"], { timedOutUntil: "2026-09-28T00:00:00Z" });
     expect(outranks(mod, timedOut)).toBe(false);
   });
+
+  it("counts the viewer's roles too, so being muted keeps their rank", () => {
+    const talker = role("talker", ["SPEAK"]);
+    const muted: ServerView = {
+      ...viewOf(account("mod", ["mod"])),
+      account: account("mod", ["mod", "talker"], { mutedAt: "2026-09-27T11:00:00Z" }),
+      roles: { ...roles, talker },
+    };
+    expect(outranks(muted, account("member", ["user", "talker"]))).toBe(true);
+  });
 });
 
 describe("canAssign", () => {
@@ -75,6 +85,16 @@ describe("canAssign", () => {
     expect(canAssign(admin, roles.mod)).toBe(true);
     expect(canAssign(admin, role("server", ["MANAGE_SERVER"]))).toBe(false);
     expect(canAssign(boss, role("server", ["MANAGE_SERVER"]))).toBe(true);
+  });
+
+  it("goes by what the viewer's roles grant, which a mute leaves alone", () => {
+    const talker = role("talker", ["SPEAK"]);
+    const muted: ServerView = {
+      ...viewOf(account("admin", ["admin"])),
+      account: account("admin", ["admin", "talker"], { mutedAt: "2026-09-27T11:00:00Z" }),
+      roles: { ...roles, talker },
+    };
+    expect(canAssign(muted, talker)).toBe(true);
   });
 });
 

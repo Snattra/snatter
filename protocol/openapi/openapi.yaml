@@ -2613,6 +2613,10 @@ components:
         `MOVE_MEMBERS`. Otherwise the connection gets `voice_refused` and
         stays where it was. Everyone who can see the channel then gets
         `voice_state_updated`, or `voice_state_deleted` on leaving.
+
+        The server applies one `voice_state` per connection every 250
+        milliseconds. One that comes sooner waits its turn, and a newer one
+        replaces it, so the last one sent is the one that counts.
       required: [type, channelId, selfMuted, selfDeafened]
       properties:
         type:

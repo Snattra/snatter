@@ -169,7 +169,8 @@ that grants it.
 
 `SessionIdentityProvider` resolves the effective permissions once per request
 through `RoleService.resolve` and puts them on the `AccountPrincipal`
-together with an owner flag and the ids of the assigned roles. Every access
+together with what the roles grant before any timeout or mute (`granted`),
+an owner flag and the ids of the assigned roles. Every access
 check reads only the principal, never the database. The provider also
 installs a Quarkus permission checker, so resources guard operations with
 `@PermissionsAllowed("MANAGE_ROLES")` and the like; a denial is rendered as
@@ -179,19 +180,21 @@ services and use the principal.
 One rule keeps role management safe, and `RoleService` enforces it for
 everyone except the owner: you may only create, change, delete, assign or
 take away a role whose permissions you all hold, and only grant permissions
-you hold (`permission_escalation`). So a member with `MANAGE_ROLES` can never
-end up with, or take away, more than they have. Roles have a `position` for
+you hold (`permission_escalation`). What you hold here is what your roles
+grant, so a mute takes nothing off it. So a member with `MANAGE_ROLES` can
+never end up with, or take away, more than they have. Roles have a `position` for
 display only, highest first; new roles are inserted at 0 with everything
 else moving up.
 
 ## Moderation
 
 Bans (`BAN_MEMBERS`), timeouts (`TIMEOUT_MEMBERS`) and mutes
-(`MUTE_MEMBERS`) live in `moderation.ModerationService` and share the role rule through
-`RoleService.requireOutranks`: the actor must hold everything the target's
-roles grant (`member_outranks_you`), the owner can never be targeted, and
-nobody can target themselves (`cannot_moderate_self`). Rank is judged on what
-the roles grant, so a timed-out Admin still outranks a Moderator.
+(`MUTE_MEMBERS`) live in `moderation.ModerationService` and share the role
+rule through `RoleService.requireOutranks`: the actor's roles must grant
+everything the target's roles grant (`member_outranks_you`), the owner can
+never be targeted, and nobody can target themselves (`cannot_moderate_self`).
+Rank is judged on what the roles grant, on both sides, so a timed-out Admin
+still outranks a Moderator, and a muted Moderator still outranks a User.
 
 **Bans** (`ban` table, one row per account, with an optional reason). Banning
 deletes the member's sessions in the same transaction and fires
@@ -458,7 +461,11 @@ which gets `voice_ended` (`joined_elsewhere`); from the connection in voice
 it changes the mute and deafen, moves, or with no channel leaves. Joining
 needs `CONNECT`, a voice channel the connection can see, and room under the
 channel's user limit unless the member holds `MOVE_MEMBERS`; a refusal
-answers `voice_refused` to that connection only. When the connection in
+answers `voice_refused` to that connection only. Each connection gets one
+`voice_state` applied per 250 ms, since each reaches everyone who sees the
+channel. Unlike typing, one that comes sooner is not dropped: it waits in
+`Client.voicePending` for its turn, replaced by any newer one, so the last
+one sent counts and the client and the server agree. When the connection in
 voice closes, for whatever reason, the member leaves. After role, channel
 and timeout changes, `endLostVoice` takes out of voice those who can no
 longer see their channel or no longer hold `CONNECT`, with `voice_ended`.

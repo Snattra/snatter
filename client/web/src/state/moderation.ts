@@ -1,4 +1,4 @@
-import type { Account, Role } from "../api/types";
+import type { Account, Permission, Role } from "../api/types";
 import { type ServerView, can } from "./serverView";
 
 /** How long a timeout can be, up to the 28 days the server allows. */
@@ -51,10 +51,19 @@ export function isTimedOut(member: Pick<Account, "timedOutUntil">, now: number):
 }
 
 /**
- * Whether the viewer may time out or ban the member, as the server decides:
- * never themselves or the owner, and otherwise only someone whose roles grant
- * nothing the viewer lacks. The owner outranks everyone else, and a timeout
- * lowers no one's rank, as it is the roles that count.
+ * What the viewer's roles grant, which rank and role management go by as the
+ * server's do: a timeout or mute takes nothing off it.
+ */
+function granted(view: ServerView): Set<Permission> {
+  return new Set(view.account.roleIds.flatMap((id) => view.roles[id]?.permissions ?? []));
+}
+
+/**
+ * Whether the viewer may time out, mute or ban the member, as the server
+ * decides: never themselves or the owner, and otherwise only someone whose
+ * roles grant nothing the viewer's roles lack. The owner outranks everyone
+ * else, and a timeout or mute lowers no one's rank, as it is the roles that
+ * count.
  */
 export function outranks(view: ServerView, member: Account): boolean {
   if (member.id === view.account.id || isOwner(view, member)) {
@@ -63,17 +72,17 @@ export function outranks(view: ServerView, member: Account): boolean {
   if (view.permissions.owner) {
     return true;
   }
-  const held = new Set(view.permissions.permissions);
+  const held = granted(view);
   return member.roleIds.every((id) => (view.roles[id]?.permissions ?? []).every((permission) => held.has(permission)));
 }
 
-/** Whether the viewer may give or take away the role: with `MANAGE_ROLES`, and holding all it grants unless they are the owner. */
+/** Whether the viewer may give or take away the role: with `MANAGE_ROLES`, and their roles granting all it grants unless they are the owner. */
 export function canAssign(view: ServerView, role: Role): boolean {
-  return (
-    can(view, "MANAGE_ROLES") &&
-    (view.permissions.owner ||
-      role.permissions.every((permission) => view.permissions.permissions.includes(permission)))
-  );
+  if (!can(view, "MANAGE_ROLES")) {
+    return false;
+  }
+  const held = granted(view);
+  return view.permissions.owner || role.permissions.every((permission) => held.has(permission));
 }
 
 /** The actions to offer on a member's profile. {@code now} is in epoch milliseconds. */

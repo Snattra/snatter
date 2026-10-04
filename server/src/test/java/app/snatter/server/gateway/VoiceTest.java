@@ -250,4 +250,25 @@ class VoiceTest {
                 frame -> frame.getChannelId().equals(lounge)).getSeq() > leftSeq);
         }
     }
+
+    @Test
+    void togglingQuicklyReachesOthersAsItsLastState() {
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User watcher = TestUsers.register();
+        try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
+             GatewayTestClient watcherGateway = GatewayTestClient.identified(watcher.token())) {
+            aliceGateway.send(join(lounge));
+            watcherGateway.await(GatewayVoiceStateUpdatedDto.class, in(alice, lounge));
+
+            for (int i = 0; i < 20; i++) {
+                aliceGateway.send(new GatewayVoiceStateDto().channelId(lounge).selfMuted(i % 2 == 0).selfDeafened(false));
+            }
+            aliceGateway.send(new GatewayVoiceStateDto().channelId(lounge).selfMuted(true).selfDeafened(true));
+            int between = 0;
+            while (!watcherGateway.await(GatewayVoiceStateUpdatedDto.class, in(alice, lounge)).getVoiceState().getSelfDeafened()) {
+                between++;
+            }
+            assertTrue(between < 5, "the others got " + between + " states on the way to the last");
+        }
+    }
 }

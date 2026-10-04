@@ -13,8 +13,10 @@ import java.util.Set;
  * only this record, never the database.
  *
  * @param owner         whether this is the server owner, who may do everything
- * @param permissions   the union of the assigned roles, without SPEAK while muted and none during a timeout;
- *                      every permission for the owner
+ * @param permissions   what the account may do now: the union of the assigned roles, without SPEAK while
+ *                      muted and none during a timeout; every permission for the owner
+ * @param granted       what the assigned roles grant, a timeout or mute aside; every permission for the owner.
+ *                      Rank and role management go by this, so restricting a member lowers neither
  * @param roleIds       assigned roles
  * @param timedOutUntil end of the current timeout, or null if there is none
  */
@@ -24,6 +26,7 @@ public record AccountPrincipal(
         SessionId sessionId,
         boolean owner,
         Set<Permission> permissions,
+        Set<Permission> granted,
         Set<RoleId> roleIds,
         Instant timedOutUntil) implements Principal {
 

@@ -257,9 +257,17 @@ class ModerationResourceTest {
         assertApiError(403, "member_outranks_you", () -> asMod.muteMember(owner.id()));
         assertApiError(404, "account_not_found", () -> asMod.muteMember(UUID.randomUUID()));
 
-        // A mute lowers what someone can do, not their rank.
+        // A mute lowers what someone can do, not their rank, on either side.
         moderationApi(owner).muteMember(admin.id());
         assertApiError(403, "member_outranks_you", () -> asMod.muteMember(admin.id()));
         assertApiError(403, "member_outranks_you", () -> asMod.unmuteMember(admin.id()));
+        moderationApi(owner).muteMember(mod.id());
+        asMod.muteMember(member.id());
+        asMod.timeOutMember(member.id(), timeout(60));
+        asMod.endTimeout(member.id());
+
+        // Nor what a muted admin can manage, though the roles grant SPEAK.
+        rolesApi(admin).unassignRole(member.id(), TestDataService.USER_ROLE);
+        rolesApi(admin).assignRole(member.id(), TestDataService.USER_ROLE);
     }
 }

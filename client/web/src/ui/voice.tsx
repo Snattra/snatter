@@ -101,9 +101,9 @@ interface VoicePanelProps {
 
 /**
  * Above the user panel while the member is in voice here: where, with
- * their microphone and sound and the way out. When the server refused them
- * or took them out, it says why until dismissed. While reconnecting it says
- * so; the app joins again once it is back.
+ * their microphone and sound and the way out. When the server refused to
+ * let them join or move, or took them out, it says why until dismissed.
+ * While reconnecting it says so; the app joins again once it is back.
  */
 export function VoicePanel({ connection, view, local, reconnecting }: VoicePanelProps) {
   const collapsed = useCollapsed();
@@ -161,6 +161,14 @@ export function VoicePanel({ connection, view, local, reconnecting }: VoicePanel
           <IconButton icon="call-end" label="Leave voice" className="sn-voice-leave" onClick={() => connection.leaveVoice()} />
         </span>
       </div>
+      {local.notice !== null && (
+        <div className="sn-voice-panel-row sn-collapse-fade">
+          <span className="sn-voice-panel-notice" role="status">
+            {local.notice}
+          </span>
+          <IconButton icon="close" label="Dismiss" onClick={() => connection.dismissVoiceNotice()} />
+        </div>
+      )}
       <div className="sn-voice-panel-controls sn-collapse-fade">
         <VoiceToggle
           icon={muted ? "mic-off" : "mic"}

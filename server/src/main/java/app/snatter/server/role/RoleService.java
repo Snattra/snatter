@@ -19,7 +19,8 @@ import java.util.Set;
 /**
  * Role management with one rule: you may only create, change, delete, assign
  * or take away roles whose permissions you all hold yourself, and only grant
- * permissions you hold. The server owner is exempt.
+ * permissions you hold. What you hold is what your roles grant, so a timeout
+ * or mute takes nothing off it. The server owner is exempt.
  */
 @ApplicationScoped
 public class RoleService {
@@ -81,8 +82,8 @@ public class RoleService {
 
     /**
      * For moderating another member: they must exist, not be the actor or the
-     * owner, and everything their roles grant must be something the actor
-     * holds. A timeout does not lower anyone's rank.
+     * owner, and everything their roles grant must be something the actor's
+     * roles grant too. A timeout or mute lowers no one's rank, on either side.
      */
     public void requireOutranks(AccountPrincipal actor, AccountId target) {
         if (actor.accountId().equals(target)) {
@@ -92,7 +93,7 @@ public class RoleService {
             throw ApiException.notFound("account_not_found", "No such account");
         }
         Resolution resolved = resolve(target);
-        if (resolved.owner() || (!actor.owner() && !actor.permissions().containsAll(resolved.granted()))) {
+        if (resolved.owner() || (!actor.owner() && !actor.granted().containsAll(resolved.granted()))) {
             throw new ApiException(403, "member_outranks_you", "You can only do this to members whose permissions you all hold");
         }
     }
@@ -177,7 +178,7 @@ public class RoleService {
     }
 
     private static void requireHeld(AccountPrincipal actor, Set<Permission> permissions) {
-        if (!actor.owner() && !actor.permissions().containsAll(permissions)) {
+        if (!actor.owner() && !actor.granted().containsAll(permissions)) {
             throw new ApiException(403, "permission_escalation", "You can only manage roles and grant permissions you hold yourself");
         }
     }
