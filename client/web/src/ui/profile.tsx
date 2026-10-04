@@ -7,6 +7,7 @@ import {
   TIMEOUT_LENGTHS,
   canAssign,
   isBanned,
+  isMuted,
   isOwner,
   isTimedOut,
   moderationOf,
@@ -126,6 +127,16 @@ export function ProfileModal({ connection, view, member, onClose }: ProfileProps
             {allowed.timeOut && (
               <Button data-autofocus={from === "timeout" || undefined} onClick={() => go("timeout")}>
                 Time out
+              </Button>
+            )}
+            {allowed.mute && (
+              <Button busy={busy === "mute"} onClick={() => void act("mute", () => connection.mute(member.id))}>
+                {busy === "mute" ? "Muting…" : "Mute"}
+              </Button>
+            )}
+            {allowed.unmute && (
+              <Button busy={busy === "unmute"} onClick={() => void act("unmute", () => connection.unmute(member.id))}>
+                {busy === "unmute" ? "Unmuting…" : "Unmute"}
               </Button>
             )}
             {allowed.endTimeout && (
@@ -323,7 +334,7 @@ export function ProfileModal({ connection, view, member, onClose }: ProfileProps
   );
 }
 
-/** What everyone sees: a ban or timeout, when they joined, and their roles. */
+/** What everyone sees: a ban, timeout or mute, when they joined, and their roles. */
 function Details({ view, member, ban, now }: { view: ServerView; member: Account; ban: Ban | null; now: number }) {
   const roles = sortedRoles(view).filter((role) => member.roleIds.includes(role.id));
   const today = new Date(now);
@@ -340,6 +351,12 @@ function Details({ view, member, ban, now }: { view: ServerView; member: Account
       {member.timedOutUntil != null && isTimedOut(member, now) && (
         <Callout tone="warning" title="Timed out">
           Until {aheadTime(new Date(member.timedOutUntil), today)}. They can read, but not write or do anything else.
+        </Callout>
+      )}
+      {member.mutedAt != null && isMuted(member) && (
+        <Callout tone="warning" title="Muted">
+          Since {dayText(new Date(member.mutedAt), today)}. They can listen in voice and write, but not speak until
+          they're unmuted.
         </Callout>
       )}
       <dl className="sn-profile-facts">

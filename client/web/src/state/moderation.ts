@@ -18,6 +18,9 @@ export interface Moderation {
   endTimeout: boolean;
   ban: boolean;
   liftBan: boolean;
+  /** Turn their microphone off for everyone, or back on. */
+  mute: boolean;
+  unmute: boolean;
   /** Delete what they sent recently, in the channels the viewer sees. Anyone's, as deleting a single message is. */
   deleteMessages: boolean;
 }
@@ -35,6 +38,11 @@ export function isOwner(view: ServerView, member: Account): boolean {
 
 export function isBanned(member: Pick<Account, "bannedAt">): boolean {
   return member.bannedAt != null;
+}
+
+/** Whether a moderator turned the member's microphone off. */
+export function isMuted(member: Pick<Account, "mutedAt">): boolean {
+  return member.mutedAt != null;
 }
 
 /** Whether a timeout is running; the view keeps its end after it passes. {@code now} is in epoch milliseconds. */
@@ -74,12 +82,15 @@ export function moderationOf(view: ServerView, member: Account, now: number): Mo
   const banned = isBanned(member);
   const timedOut = isTimedOut(member, now);
   const timeouts = rank && can(view, "TIMEOUT_MEMBERS") && !banned;
+  const mutes = rank && can(view, "MUTE_MEMBERS") && !banned;
   return {
     editRoles: Object.values(view.roles).some((role) => canAssign(view, role)),
     timeOut: timeouts && !timedOut,
     endTimeout: timeouts && timedOut,
     ban: rank && can(view, "BAN_MEMBERS") && !banned,
     liftBan: can(view, "BAN_MEMBERS") && banned,
+    mute: mutes && !isMuted(member),
+    unmute: mutes && isMuted(member),
     deleteMessages: can(view, "MANAGE_MESSAGES"),
   };
 }

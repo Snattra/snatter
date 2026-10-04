@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-export type IconName = "hash" | "speaker" | "members" | "chevron-left" | "chevron-right" | "plus" | "close" | "send" | "arrow-right" | "arrow-up" | "person-add" | "settings" | "chevron-down" | "check" | "ban" | "edit" | "delete";
+export type IconName = "hash" | "speaker" | "members" | "chevron-left" | "chevron-right" | "plus" | "close" | "send" | "arrow-right" | "arrow-up" | "person-add" | "settings" | "chevron-down" | "check" | "ban" | "edit" | "delete" | "mic" | "mic-off" | "headset" | "headset-off" | "call-end";
 export type ChannelType = "text" | "voice" | "voice_text";
 export type Presence = "online" | "offline";
 

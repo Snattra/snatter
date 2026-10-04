@@ -9,6 +9,7 @@ import {
   sortedChannels,
   sortedRoles,
   typingIn,
+  voiceIn,
 } from "./serverView";
 
 type Ready = Extract<GatewayServerFrame, { type: "ready" }>;
@@ -56,7 +57,12 @@ function ready(): Ready {
       { channelId: "a", lastReadMessageId: messageId(2), lastMessageId: messageId(2) },
       { channelId: "b", lastReadMessageId: messageId(1), lastMessageId: messageId(3) },
     ],
+    voiceStates: [{ accountId: "bob", channelId: "lounge", selfMuted: false, selfDeafened: false }],
   };
+}
+
+function inVoice(accountId: string, channelId: string, selfMuted = false) {
+  return { accountId, channelId, selfMuted, selfDeafened: false };
 }
 
 function apply(...frames: Event[]) {
@@ -163,6 +169,34 @@ describe("serverView", () => {
       { type: "message_created", seq: 4, message: message(5, "c", "bob") },
     );
     expect(hasUnread(view, "c")).toBe(true);
+  });
+
+  it("follows who is in voice, each listed last in a channel they move to", () => {
+    expect(voiceIn(fromReady(ready()), "lounge").map((s) => s.accountId)).toEqual(["bob"]);
+
+    const joined = apply({ type: "voice_state_updated", seq: 2, voiceState: inVoice("me", "lounge") });
+    expect(voiceIn(joined, "lounge").map((s) => s.accountId)).toEqual(["bob", "me"]);
+
+    const muted = applyFrame(joined, { type: "voice_state_updated", seq: 3, voiceState: inVoice("bob", "lounge", true) }, 1_000);
+    expect(voiceIn(muted, "lounge").map((s) => [s.accountId, s.selfMuted])).toEqual([
+      ["bob", true],
+      ["me", false],
+    ]);
+
+    const moved = applyFrame(
+      applyFrame(muted, { type: "voice_state_updated", seq: 4, voiceState: inVoice("bob", "den") }, 1_000),
+      { type: "voice_state_updated", seq: 5, voiceState: inVoice("bob", "lounge") },
+      1_000,
+    );
+    expect(voiceIn(moved, "lounge").map((s) => s.accountId)).toEqual(["me", "bob"]);
+
+    const left = applyFrame(moved, { type: "voice_state_deleted", seq: 6, accountId: "bob" }, 1_000);
+    expect(voiceIn(left, "lounge").map((s) => s.accountId)).toEqual(["me"]);
+  });
+
+  it("drops those in voice in a channel that goes", () => {
+    const view = apply({ type: "channel_deleted", seq: 2, channelId: "lounge" });
+    expect(view.voice).toEqual({});
   });
 
   it("offers invites only while registration is invite only, to members allowed to create them", () => {

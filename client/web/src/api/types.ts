@@ -28,6 +28,9 @@ export type ServerSettings = Schemas["ServerSettings"];
 export type ServerSettingsUpdate = Schemas["ServerSettingsUpdate"];
 export type SystemMessage = Schemas["SystemMessage"];
 export type UserMessage = Schemas["UserMessage"];
+export type VoiceEndReason = Schemas["VoiceEndReason"];
+export type VoiceRefusal = Schemas["VoiceRefusal"];
+export type VoiceState = Schemas["VoiceState"];
 
 export type GatewayClientFrame = Schemas["GatewayClientFrame"];
 export type GatewayServerFrame = Schemas["GatewayServerFrame"];

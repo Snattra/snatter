@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Account, Permission, Role } from "../api/types";
-import { canAssign, isTimedOut, moderationOf, outranks, roleChanges } from "./moderation";
+import { canAssign, isMuted, isTimedOut, moderationOf, outranks, roleChanges } from "./moderation";
 import type { ServerView } from "./serverView";
 
 const now = Date.parse("2026-09-27T12:00:00Z");
@@ -11,8 +11,8 @@ function role(id: string, permissions: Permission[]): Role {
 
 const roles = {
   user: role("user", ["SEND_MESSAGES", "CREATE_INVITE"]),
-  mod: role("mod", ["SEND_MESSAGES", "CREATE_INVITE", "TIMEOUT_MEMBERS", "BAN_MEMBERS"]),
-  admin: role("admin", ["SEND_MESSAGES", "CREATE_INVITE", "TIMEOUT_MEMBERS", "BAN_MEMBERS", "MANAGE_ROLES"]),
+  mod: role("mod", ["SEND_MESSAGES", "CREATE_INVITE", "TIMEOUT_MEMBERS", "BAN_MEMBERS", "MUTE_MEMBERS"]),
+  admin: role("admin", ["SEND_MESSAGES", "CREATE_INVITE", "TIMEOUT_MEMBERS", "BAN_MEMBERS", "MUTE_MEMBERS", "MANAGE_ROLES"]),
 };
 
 function account(id: string, roleIds: string[], changes: Partial<Account> = {}): Account {
@@ -40,6 +40,7 @@ function viewOf(me: Account, owner = false): ServerView {
     channels: {},
     typing: {},
     reading: {},
+    voice: {},
   };
 }
 
@@ -95,6 +96,8 @@ describe("moderationOf", () => {
       endTimeout: false,
       ban: true,
       liftBan: false,
+      mute: true,
+      unmute: false,
       deleteMessages: false,
     });
     expect(moderationOf(viewOf(account("plain", ["user"])), account("member", ["user"]), now)).toEqual({
@@ -103,8 +106,17 @@ describe("moderationOf", () => {
       endTimeout: false,
       ban: false,
       liftBan: false,
+      mute: false,
+      unmute: false,
       deleteMessages: false,
     });
+  });
+
+  it("offers unmuting a muted member instead of muting them, within rank", () => {
+    const muted = account("member", ["user"], { mutedAt: "2026-09-27T11:00:00Z" });
+    expect(moderationOf(mod, muted, now)).toMatchObject({ mute: false, unmute: true });
+    const mutedAbove = account("above", ["admin"], { mutedAt: "2026-09-27T11:00:00Z" });
+    expect(moderationOf(mod, mutedAbove, now)).toMatchObject({ mute: false, unmute: false });
   });
 
   it("offers ending a running timeout instead of starting one", () => {
@@ -124,7 +136,17 @@ describe("moderationOf", () => {
       endTimeout: false,
       ban: false,
       liftBan: true,
+      mute: false,
+      unmute: false,
     });
+  });
+});
+
+describe("isMuted", () => {
+  it("lasts until a moderator lifts it", () => {
+    expect(isMuted(account("m", [], { mutedAt: "2026-01-01T00:00:00Z" }))).toBe(true);
+    expect(isMuted(account("m", [], { mutedAt: null }))).toBe(false);
+    expect(isMuted(account("m", []))).toBe(false);
   });
 });
 
