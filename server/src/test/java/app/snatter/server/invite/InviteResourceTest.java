@@ -1,192 +1,184 @@
 package app.snatter.server.invite;
 
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.matchesPattern;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
-import static org.hamcrest.Matchers.startsWith;
+import static app.snatter.server.testing.ApiAssertions.assertApiError;
+import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
+import static app.snatter.server.testing.ApiClientFactory.authApi;
+import static app.snatter.server.testing.ApiClientFactory.invitesApi;
+import static app.snatter.server.testing.TestUsers.DEFAULT_PASSWORD;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.client.api.InvitesApi;
+import app.snatter.client.model.InviteCreateDto;
+import app.snatter.client.model.InviteDto;
+import app.snatter.client.model.InvitePreviewDto;
+import app.snatter.client.model.PermissionDto;
+import app.snatter.client.model.RegisterRequestDto;
+import app.snatter.client.model.RegistrationModeDto;
+import app.snatter.client.model.ServerSettingsUpdateDto;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
-import io.restassured.http.ContentType;
-import io.restassured.response.Response;
-import java.util.Map;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class InviteResourceTest {
 
-    private static Response createInvite(String token, Map<String, Object> body) {
-        return given()
-            .header("Authorization", "Bearer " + token)
-            .contentType(ContentType.JSON)
-            .body(body)
-            .post("/api/v1/invites");
+    private final TestDataService data = new TestDataService();
+
+    @BeforeEach
+    void setUpServer() {
+        data.setUpServer();
     }
 
-    private static String newCode(String token, Map<String, Object> body) {
-        return createInvite(token, body).then().statusCode(201).extract().path("code");
+    private static String newCode(TestUsers.User creator, InviteCreateDto invite) {
+        return invitesApi(creator).createInvite(invite).getCode();
     }
 
-    private static Response registerWithInvite(String code) {
-        Map<String, Object> body = TestUsers.registration("invited_" + UUID.randomUUID().toString().substring(0, 8),
-            TestUsers.DEFAULT_PASSWORD, null);
-        body.put("inviteCode", code);
-        return TestUsers.registerRaw(body);
+    /** A registration with the invite, under a fresh username. */
+    private static RegisterRequestDto invited(String code) {
+        return TestUsers.registration("invited_" + UUID.randomUUID().toString().substring(0, 8), DEFAULT_PASSWORD, null)
+            .inviteCode(code);
+    }
+
+    private static List<String> codes(List<InviteDto> invites) {
+        return invites.stream().map(InviteDto::getCode).toList();
+    }
+
+    private static InviteDto find(List<InviteDto> invites, String code) {
+        return invites.stream().filter(invite -> invite.getCode().equals(code)).findFirst().orElseThrow();
     }
 
     @Test
     void memberCreatesAnInviteWithALinkAndDefaults() {
         TestUsers.User member = TestUsers.register();
-        createInvite(member.token(), Map.of())
-            .then()
-            .statusCode(201)
-            .body("code", matchesPattern("[A-Za-z0-9]{8}"))
-            .body("url", matchesPattern("http://[^/]+/invite/[A-Za-z0-9]{8}"))
-            .body("createdBy", equalTo(member.id()))
-            .body("createdAt", notNullValue())
-            .body("expiresAt", nullValue())
-            .body("maxUses", nullValue())
-            .body("uses", equalTo(0))
-            .body("revoked", equalTo(false));
+        InviteDto invite = invitesApi(member).createInvite(new InviteCreateDto());
+        assertTrue(invite.getCode().matches("[A-Za-z0-9]{8}"), invite.getCode());
+        assertTrue(invite.getUrl().matches("http://[^/]+/invite/[A-Za-z0-9]{8}"), invite.getUrl());
+        assertEquals(member.id(), invite.getCreatedBy());
+        assertNotNull(invite.getCreatedAt());
+        assertNull(invite.getExpiresAt());
+        assertNull(invite.getMaxUses());
+        assertEquals(0, invite.getUses());
+        assertFalse(invite.getRevoked());
     }
 
     @Test
     void linkUsesThePublicUrlWhenConfigured() {
         TestUsers.User member = TestUsers.register();
-        try {
-            TestUsers.patchSettings(Map.of("publicUrl", "https://chat.example.com/"))
-                .then().statusCode(200).body("publicUrl", equalTo("https://chat.example.com"));
-            createInvite(member.token(), Map.of())
-                .then().statusCode(201)
-                .body("url", matchesPattern("https://chat\\.example\\.com/invite/[A-Za-z0-9]{8}"));
-        } finally {
-            TestUsers.patchSettings(Map.of("publicUrl", "")).then().statusCode(200).body("publicUrl", nullValue());
-        }
-        TestUsers.patchSettings(Map.of("publicUrl", "not a url")).then().statusCode(400).body("error", equalTo("validation_failed"));
+        assertEquals("https://chat.example.com",
+            data.updateSettings(new ServerSettingsUpdateDto().publicUrl("https://chat.example.com/")).getPublicUrl());
+        String url = invitesApi(member).createInvite(new InviteCreateDto()).getUrl();
+        assertTrue(url.matches("https://chat\\.example\\.com/invite/[A-Za-z0-9]{8}"), url);
+        assertNull(data.updateSettings(new ServerSettingsUpdateDto().publicUrl("")).getPublicUrl());
+        assertApiError(400, "validation_failed", () -> data.updateSettings(new ServerSettingsUpdateDto().publicUrl("not a url")));
     }
 
     @Test
     void previewIsPublicAndShowsCommunityAndInviter() {
         TestUsers.User member = TestUsers.register();
-        String code = newCode(member.token(), Map.of("expiresInSeconds", 3600, "maxUses", 5));
+        String code = newCode(member, new InviteCreateDto().expiresInSeconds(3600L).maxUses(5));
 
-        given().get("/api/v1/invites/" + code)
-            .then()
-            .statusCode(200)
-            .body("code", equalTo(code))
-            .body("community.name", notNullValue())
-            .body("inviter.id", equalTo(member.id()))
-            .body("inviter.username", equalTo(member.username()))
-            .body("expiresAt", notNullValue());
+        InvitePreviewDto preview = invitesApi().previewInvite(code);
+        assertEquals(code, preview.getCode());
+        assertNotNull(preview.getCommunity().getName());
+        assertEquals(member.id(), preview.getInviter().getId());
+        assertEquals(member.username(), preview.getInviter().getUsername());
+        assertNotNull(preview.getExpiresAt());
 
-        given().get("/api/v1/invites/ZZZZZZZZ").then().statusCode(404).body("error", equalTo("invite_not_found"));
-        given().get("/api/v1/invites/not-valid").then().statusCode(404);
+        assertApiError(404, "invite_not_found", () -> invitesApi().previewInvite("ZZZZZZZZ"));
+        assertApiStatus(404, () -> invitesApi().previewInvite("not-valid"));
     }
 
     @Test
     void ownerSeesAllInvitesMembersOnlyTheirOwn() {
         TestUsers.User a = TestUsers.register();
         TestUsers.User b = TestUsers.register();
-        String codeA = newCode(a.token(), Map.of());
-        String codeB = newCode(b.token(), Map.of());
+        String codeA = newCode(a, new InviteCreateDto());
+        String codeB = newCode(b, new InviteCreateDto());
 
-        given().header("Authorization", "Bearer " + a.token()).get("/api/v1/invites")
-            .then().statusCode(200)
-            .body("code", hasItem(codeA))
-            .body("code", not(hasItem(codeB)))
-            .body("", hasSize(1));
-
-        given().header("Authorization", "Bearer " + TestUsers.ownerToken()).get("/api/v1/invites")
-            .then().statusCode(200)
-            .body("code", hasItem(codeA))
-            .body("code", hasItem(codeB));
-
-        given().get("/api/v1/invites").then().statusCode(401);
+        assertEquals(List.of(codeA), codes(invitesApi(a).listInvites()));
+        assertEquals(Set.of(codeA, codeB), Set.copyOf(codes(invitesApi(data.owner()).listInvites())));
+        assertApiStatus(401, () -> invitesApi().listInvites());
     }
 
     @Test
     void revocationRights() {
         TestUsers.User creator = TestUsers.register();
-        TestUsers.User other = TestUsers.register();
-        String code = newCode(creator.token(), Map.of());
+        InvitesApi asCreator = invitesApi(creator);
+        InvitesApi asOther = invitesApi(TestUsers.register());
+        InvitesApi asOwner = invitesApi(data.owner());
+        String code = newCode(creator, new InviteCreateDto());
 
-        given().header("Authorization", "Bearer " + other.token()).delete("/api/v1/invites/" + code)
-            .then().statusCode(403).body("error", equalTo("forbidden"));
-        given().header("Authorization", "Bearer " + creator.token()).delete("/api/v1/invites/" + code)
-            .then().statusCode(204);
-        given().get("/api/v1/invites/" + code).then().statusCode(404);
-        given().header("Authorization", "Bearer " + creator.token()).get("/api/v1/invites")
-            .then().body("find { it.code == '" + code + "' }.revoked", equalTo(true));
+        assertApiError(403, "forbidden", () -> asOther.revokeInvite(code));
+        asCreator.revokeInvite(code);
+        assertApiError(404, "invite_not_found", () -> invitesApi().previewInvite(code));
+        assertTrue(find(asCreator.listInvites(), code).getRevoked());
 
-        String another = newCode(creator.token(), Map.of());
-        given().header("Authorization", "Bearer " + TestUsers.ownerToken()).delete("/api/v1/invites/" + another)
-            .then().statusCode(204);
-        given().header("Authorization", "Bearer " + TestUsers.ownerToken()).delete("/api/v1/invites/ZZZZZZZZ")
-            .then().statusCode(404).body("error", equalTo("invite_not_found"));
+        asOwner.revokeInvite(newCode(creator, new InviteCreateDto()));
+        assertApiError(404, "invite_not_found", () -> asOwner.revokeInvite("ZZZZZZZZ"));
     }
 
     @Test
     void invitingRequiresTheCreateInvitePermission() {
         TestUsers.User member = TestUsers.register();
-        createInvite(member.token(), Map.of()).then().statusCode(201);
-        TestUsers.unassignRole(member.id(), TestUsers.USER_ROLE);
+        InvitesApi asMember = invitesApi(member);
+        asMember.createInvite(new InviteCreateDto());
+        data.unassignRole(member.id(), TestDataService.USER_ROLE);
 
-        createInvite(member.token(), Map.of()).then().statusCode(403).body("error", equalTo("forbidden"));
-        createInvite(TestUsers.ownerToken(), Map.of()).then().statusCode(201);
-        createInvite(TestUsers.registerWithPermissions("CREATE_INVITE").token(), Map.of()).then().statusCode(201);
+        assertApiError(403, "forbidden", () -> asMember.createInvite(new InviteCreateDto()));
+        invitesApi(data.owner()).createInvite(new InviteCreateDto());
+        invitesApi(data.registerWithPermissions(PermissionDto.CREATE_INVITE)).createInvite(new InviteCreateDto());
     }
 
     @Test
     void inviteOnlyRegistrationNeedsAUsableInvite() {
         TestUsers.User member = TestUsers.register();
-        String singleUse = newCode(member.token(), Map.of("maxUses", 1));
-        String revoked = newCode(member.token(), Map.of());
-        given().header("Authorization", "Bearer " + member.token()).delete("/api/v1/invites/" + revoked).then().statusCode(204);
-        try {
-            TestUsers.patchSettings(Map.of("registrationMode", "invite_only")).then().statusCode(200);
+        InvitesApi asMember = invitesApi(member);
+        String singleUse = newCode(member, new InviteCreateDto().maxUses(1));
+        String revoked = newCode(member, new InviteCreateDto());
+        asMember.revokeInvite(revoked);
+        data.updateSettings(new ServerSettingsUpdateDto().registrationMode(RegistrationModeDto.INVITE_ONLY));
 
-            TestUsers.registerRaw(TestUsers.registration("uninvited_" + System.nanoTime() % 100000, TestUsers.DEFAULT_PASSWORD, null))
-                .then().statusCode(403).body("error", equalTo("registration_closed"));
+        RegisterRequestDto uninvited = TestUsers.registration("uninvited", DEFAULT_PASSWORD, null);
+        assertApiError(403, "registration_closed", () -> authApi().register(uninvited));
 
-            registerWithInvite(revoked).then().statusCode(403).body("error", equalTo("invite_invalid"));
-            registerWithInvite("ZZZZZZZZ").then().statusCode(403).body("error", equalTo("invite_invalid"));
+        RegisterRequestDto withRevoked = invited(revoked);
+        RegisterRequestDto withUnknown = invited("ZZZZZZZZ");
+        assertApiError(403, "invite_invalid", () -> authApi().register(withRevoked));
+        assertApiError(403, "invite_invalid", () -> authApi().register(withUnknown));
 
-            registerWithInvite(singleUse).then().statusCode(201).body("token", startsWith("snt_"));
-            given().header("Authorization", "Bearer " + member.token()).get("/api/v1/invites")
-                .then().body("find { it.code == '" + singleUse + "' }.uses", equalTo(1));
-            given().get("/api/v1/invites/" + singleUse).then().statusCode(410).body("error", equalTo("invite_unusable"));
+        assertTrue(authApi().register(invited(singleUse)).getToken().startsWith("snt_"));
+        assertEquals(1, find(asMember.listInvites(), singleUse).getUses());
+        assertApiError(410, "invite_unusable", () -> invitesApi().previewInvite(singleUse));
 
-            registerWithInvite(singleUse).then().statusCode(403).body("error", equalTo("invite_invalid"));
-        } finally {
-            TestUsers.patchSettings(Map.of("registrationMode", "open")).then().statusCode(200);
-        }
+        RegisterRequestDto withUsedUp = invited(singleUse);
+        assertApiError(403, "invite_invalid", () -> authApi().register(withUsedUp));
     }
 
     @Test
     void aFailedRegistrationDoesNotConsumeTheInvite() {
         TestUsers.User member = TestUsers.register();
         TestUsers.User existing = TestUsers.register();
-        String code = newCode(member.token(), Map.of("maxUses", 1));
+        String code = newCode(member, new InviteCreateDto().maxUses(1));
 
-        Map<String, Object> clash = TestUsers.registration(existing.username(), TestUsers.DEFAULT_PASSWORD, null);
-        clash.put("inviteCode", code);
-        TestUsers.registerRaw(clash).then().statusCode(409).body("error", equalTo("username_taken"));
+        RegisterRequestDto clash = TestUsers.registration(existing.username(), DEFAULT_PASSWORD, null).inviteCode(code);
+        assertApiError(409, "username_taken", () -> authApi().register(clash));
 
-        registerWithInvite(code).then().statusCode(201);
+        authApi().register(invited(code));
     }
 
     @Test
     void rejectsLimitsOutsideTheContract() {
-        TestUsers.User member = TestUsers.register();
-        createInvite(member.token(), Map.of("expiresInSeconds", 5))
-            .then().statusCode(400).body("error", equalTo("validation_failed"));
-        createInvite(member.token(), Map.of("maxUses", 0))
-            .then().statusCode(400).body("error", equalTo("validation_failed"));
+        InvitesApi asMember = invitesApi(TestUsers.register());
+        assertApiError(400, "validation_failed", () -> asMember.createInvite(new InviteCreateDto().expiresInSeconds(5L)));
+        assertApiError(400, "validation_failed", () -> asMember.createInvite(new InviteCreateDto().maxUses(0)));
     }
 }

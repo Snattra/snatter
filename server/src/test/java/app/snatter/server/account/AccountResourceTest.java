@@ -1,28 +1,41 @@
 package app.snatter.server.account;
 
+import static app.snatter.server.testing.ApiAssertions.assertApiError;
+import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
+import static app.snatter.server.testing.ApiClientFactory.accountsApi;
+import static app.snatter.server.testing.ApiClientFactory.blobsApi;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
-import io.quarkus.test.junit.QuarkusTest;
+import app.snatter.client.api.AccountsApi;
+import app.snatter.client.model.AccountDto;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
+import io.quarkus.test.junit.QuarkusTest;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.UUID;
 import javax.imageio.ImageIO;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class AccountResourceTest {
 
-    record User(String token, String id) {
-    }
+    private final TestDataService data = new TestDataService();
 
-    static User register() {
-        TestUsers.User u = TestUsers.register();
-        return new User(u.token(), u.id());
+    @BeforeEach
+    void setUpServer() {
+        data.setUpServer();
     }
 
     static byte[] png(int width, int height) throws IOException {
@@ -31,126 +44,93 @@ class AccountResourceTest {
         return out.toByteArray();
     }
 
+    /** The content in a temporary file, which is how the generated client uploads it. */
+    private static File file(byte[] content) throws IOException {
+        Path file = Files.createTempFile("upload", null);
+        file.toFile().deleteOnExit();
+        return Files.write(file, content).toFile();
+    }
+
     @Test
     void newAccountHasNoAvatarAndIsVisibleToOthers() {
-        User a = register();
-        User b = register();
-
-        given()
-            .header("Authorization", "Bearer " + b.token())
-            .get("/api/v1/accounts/" + a.id())
-            .then()
-            .statusCode(200)
-            .body("id", equalTo(a.id()))
-            .body("avatarId", nullValue());
+        TestUsers.User a = TestUsers.register();
+        AccountDto seen = accountsApi(TestUsers.register()).getAccount(a.id());
+        assertEquals(a.id(), seen.getId());
+        assertNull(seen.getAvatarId());
     }
 
     @Test
     void unknownAccountIs404() {
-        User a = register();
-        given()
-            .header("Authorization", "Bearer " + a.token())
-            .get("/api/v1/accounts/" + UUID.randomUUID())
-            .then()
-            .statusCode(404)
-            .body("error", equalTo("account_not_found"));
+        AccountsApi accounts = accountsApi(TestUsers.register());
+        assertApiError(404, "account_not_found", () -> accounts.getAccount(UUID.randomUUID()));
     }
 
     @Test
     void uploadReplaceAndClearAvatar() throws IOException {
-        User u = register();
+        TestUsers.User u = TestUsers.register();
+        AccountsApi accounts = accountsApi(u);
 
-        String first = given()
+        // Declared as anything but an image, which does not matter: the bytes decide.
+        UUID first = UUID.fromString(given()
             .header("Authorization", "Bearer " + u.token())
-            .contentType("application/octet-stream")   // deliberately wrong; bytes decide
+            .contentType("application/octet-stream")
             .body(png(128, 128))
             .put("/api/v1/accounts/me/avatar")
             .then()
             .statusCode(200)
-            .body("avatarId", notNullValue())
-            .extract().path("avatarId");
+            .extract().path("avatarId"));
 
+        // Public, cacheable for good, and never sniffed.
         byte[] served = given()
-            .get("/api/v1/blobs/" + first)             // public, no token
+            .get("/api/v1/blobs/" + first)
             .then()
             .statusCode(200)
             .contentType("image/png")
             .header("Cache-Control", equalTo("public, max-age=31536000, immutable"))
             .header("X-Content-Type-Options", equalTo("nosniff"))
             .extract().asByteArray();
-        org.junit.jupiter.api.Assertions.assertEquals(128, ImageIO.read(new java.io.ByteArrayInputStream(served)).getWidth());
+        assertEquals(128, ImageIO.read(new ByteArrayInputStream(served)).getWidth());
 
-        String second = given()
-            .header("Authorization", "Bearer " + u.token())
-            .body(png(64, 64))
-            .put("/api/v1/accounts/me/avatar")
-            .then()
-            .statusCode(200)
-            .extract().path("avatarId");
-        org.junit.jupiter.api.Assertions.assertNotEquals(first, second);
+        UUID second = accounts.setAvatar(file(png(64, 64))).getAvatarId();
+        assertNotNull(second);
+        assertNotEquals(first, second);
 
-        given().get("/api/v1/blobs/" + first).then().statusCode(404).body("error", equalTo("blob_not_found"));
-        given().get("/api/v1/blobs/" + second).then().statusCode(200);
+        assertApiError(404, "blob_not_found", () -> blobsApi().getBlob(first));
+        blobsApi().getBlob(second);
 
-        given()
-            .header("Authorization", "Bearer " + u.token())
-            .delete("/api/v1/accounts/me/avatar")
-            .then()
-            .statusCode(200)
-            .body("avatarId", nullValue());
-        given().get("/api/v1/blobs/" + second).then().statusCode(404);
+        assertNull(accounts.clearAvatar().getAvatarId());
+        assertApiError(404, "blob_not_found", () -> blobsApi().getBlob(second));
     }
 
     @Test
-    void rejectsNonImageUploads() {
-        User u = register();
-        given()
-            .header("Authorization", "Bearer " + u.token())
-            .contentType("image/png")                  // lies about the content
-            .body("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>".getBytes())
-            .put("/api/v1/accounts/me/avatar")
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("unsupported_image"));
+    void rejectsNonImageUploads() throws IOException {
+        // The client declares it an image, which it is not.
+        File svg = file("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>".getBytes());
+        assertApiError(400, "unsupported_image", () -> accountsApi(TestUsers.register()).setAvatar(svg));
     }
 
     @Test
     void rejectsWrongDimensions() throws IOException {
-        User u = register();
-        given()
-            .header("Authorization", "Bearer " + u.token())
-            .body(png(AvatarService.MAX_DIMENSION + 1, 64))
-            .put("/api/v1/accounts/me/avatar")
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("image_dimensions"));
-        given()
-            .header("Authorization", "Bearer " + u.token())
-            .body(png(16, 16))
-            .put("/api/v1/accounts/me/avatar")
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("image_dimensions"));
+        AccountsApi accounts = accountsApi(TestUsers.register());
+        File tooWide = file(png(AvatarService.MAX_DIMENSION + 1, 64));
+        File tooSmall = file(png(16, 16));
+        assertApiError(400, "image_dimensions", () -> accounts.setAvatar(tooWide));
+        assertApiError(400, "image_dimensions", () -> accounts.setAvatar(tooSmall));
     }
 
     @Test
-    void rejectsOversizedUploads() {
-        User u = register();
-        byte[] big = new byte[AvatarService.MAX_BYTES + 1];
-        given()
-            .header("Authorization", "Bearer " + u.token())
-            .body(big)
-            .put("/api/v1/accounts/me/avatar")
-            .then()
-            .statusCode(413)
-            .body("error", equalTo("image_too_large"));
+    void rejectsOversizedUploads() throws IOException {
+        File big = file(new byte[AvatarService.MAX_BYTES + 1]);
+        assertApiError(413, "image_too_large", () -> accountsApi(TestUsers.register()).setAvatar(big));
     }
 
     @Test
-    void accountEndpointsRequireAuth() {
-        given().get("/api/v1/accounts/me").then().statusCode(401);
-        given().get("/api/v1/accounts/" + UUID.randomUUID()).then().statusCode(401);
-        given().body(new byte[10]).put("/api/v1/accounts/me/avatar").then().statusCode(401);
-        given().delete("/api/v1/accounts/me/avatar").then().statusCode(401);
+    void accountEndpointsRequireAuth() throws IOException {
+        AccountsApi anonymous = accountsApi();
+        File small = file(new byte[10]);
+        assertApiStatus(401, anonymous::getCurrentAccount);
+        assertApiStatus(401, () -> anonymous.getAccount(UUID.randomUUID()));
+        assertApiStatus(401, () -> anonymous.setAvatar(small));
+        assertApiStatus(401, anonymous::clearAvatar);
     }
 }

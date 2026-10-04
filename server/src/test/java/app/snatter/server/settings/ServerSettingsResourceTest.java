@@ -1,221 +1,154 @@
 package app.snatter.server.settings;
 
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
-import static org.hamcrest.Matchers.hasKey;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
+import static app.snatter.server.testing.ApiAssertions.assertApiError;
+import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
+import static app.snatter.server.testing.ApiAssertions.errorOf;
+import static app.snatter.server.testing.ApiAssertions.header;
+import static app.snatter.server.testing.ApiClientFactory.authApi;
+import static app.snatter.server.testing.ApiClientFactory.channelsApi;
+import static app.snatter.server.testing.ApiClientFactory.serverApi;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.client.ApiException;
+import app.snatter.client.api.ServerApi;
+import app.snatter.client.model.ChallengeDto;
+import app.snatter.client.model.ChannelTypeDto;
+import app.snatter.client.model.CommunityDto;
+import app.snatter.client.model.PermissionDto;
+import app.snatter.client.model.RegisterRequestDto;
+import app.snatter.client.model.RegistrationModeDto;
+import app.snatter.client.model.ServerSettingsDto;
+import app.snatter.client.model.ServerSettingsUpdateDto;
+import app.snatter.client.model.VoiceInfoDto;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
-import io.restassured.http.ContentType;
-import io.restassured.specification.RequestSpecification;
-import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class ServerSettingsResourceTest {
 
+    private final TestDataService data = new TestDataService();
+    private TestUsers.User owner;
+
+    @BeforeEach
+    void setUpServer() {
+        owner = data.setUpServer();
+    }
+
+    private static ServerSettingsUpdateDto update() {
+        return new ServerSettingsUpdateDto();
+    }
+
     @Test
     void settingsRequireTheManageServerPermission() {
-        TestUsers.User member = TestUsers.register();
-        TestUsers.User admin = TestUsers.registerWithPermissions("MANAGE_SERVER");
+        ServerApi asMember = serverApi(TestUsers.register());
+        ServerApi asAdmin = serverApi(data.registerWithPermissions(PermissionDto.MANAGE_SERVER));
 
-        given().get("/api/v1/server-settings").then().statusCode(401);
+        assertApiStatus(401, () -> serverApi().getServerSettings());
+        assertApiError(403, "forbidden", asMember::getServerSettings);
+        assertApiError(403, "forbidden", () -> asMember.updateServerSettings(update().name("hijacked")));
+        asAdmin.getServerSettings();
 
-        given()
-            .header("Authorization", "Bearer " + member.token())
-            .get("/api/v1/server-settings")
-            .then()
-            .statusCode(403)
-            .body("error", equalTo("forbidden"));
-
-        given()
-            .header("Authorization", "Bearer " + member.token())
-            .contentType(ContentType.JSON)
-            .body(Map.of("name", "hijacked"))
-            .patch("/api/v1/server-settings")
-            .then()
-            .statusCode(403);
-
-        given()
-            .header("Authorization", "Bearer " + admin.token())
-            .get("/api/v1/server-settings")
-            .then()
-            .statusCode(200);
-
-        given()
-            .header("Authorization", "Bearer " + TestUsers.ownerToken())
-            .get("/api/v1/server-settings")
-            .then()
-            .statusCode(200)
-            .body("name", notNullValue())
-            .body("registrationMode", equalTo("open"))
-            .body("rateLimits.enabled", equalTo(false))
-            .body("rateLimits.login.limit", equalTo(10));
+        ServerSettingsDto settings = serverApi(owner).getServerSettings();
+        assertNotNull(settings.getName());
+        assertEquals(RegistrationModeDto.OPEN, settings.getRegistrationMode());
+        assertFalse(settings.getRateLimits().getEnabled());
+        assertEquals(10, settings.getRateLimits().getLogin().getLimit());
     }
 
     @Test
     void ownerCanRenameAndDescribeTheCommunity() {
-        String originalName = given()
-            .header("Authorization", "Bearer " + TestUsers.ownerToken())
-            .get("/api/v1/server-settings").then().statusCode(200).extract().path("name");
-        try {
-            TestUsers.patchSettings(Map.of("name", "  Snattra HQ  ", "description", "Where the ducks quack"))
-                .then()
-                .statusCode(200)
-                .body("name", equalTo("Snattra HQ"))
-                .body("description", equalTo("Where the ducks quack"));
+        ServerSettingsDto renamed = data.updateSettings(update().name("  Snattra HQ  ").description("Where the ducks quack"));
+        assertEquals("Snattra HQ", renamed.getName());
+        assertEquals("Where the ducks quack", renamed.getDescription());
 
-            given().get("/api/v1/server-info").then()
-                .body("community.name", equalTo("Snattra HQ"))
-                .body("community.description", equalTo("Where the ducks quack"));
+        CommunityDto community = serverApi().getServerInfo().getCommunity();
+        assertEquals("Snattra HQ", community.getName());
+        assertEquals("Where the ducks quack", community.getDescription());
 
-            TestUsers.patchSettings(Map.of("description", ""))
-                .then()
-                .statusCode(200)
-                .body("description", nullValue());
-        } finally {
-            TestUsers.patchSettings(Map.of("name", originalName, "description", "")).then().statusCode(200);
-        }
+        assertNull(data.updateSettings(update().description("")).getDescription());
     }
 
     @Test
     void rejectsInvalidSettings() {
-        TestUsers.patchSettings(Map.of("name", ""))
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("validation_failed"))
-            .body("fields", hasKey("name"));
-
-        TestUsers.patchSettings(Map.of("rateLimits", TestUsers.rateLimits(true, 0, 60, 5, 3600, 30, 60)))
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("validation_failed"))
-            .body("fields", hasKey("limit"));
+        assertTrue(assertApiError(400, "validation_failed", () -> data.updateSettings(update().name("")))
+            .getFields().containsKey("name"));
+        assertTrue(assertApiError(400, "validation_failed",
+                () -> data.updateSettings(update().rateLimits(TestDataService.rateLimits(true, 0, 60, 5, 3600, 30, 60))))
+            .getFields().containsKey("limit"));
     }
 
     @Test
     void rateLimitsApplyImmediatelyAndReturn429() {
         TestUsers.User u = TestUsers.register();
-        try {
-            TestUsers.patchSettings(Map.of("rateLimits", TestUsers.rateLimits(true, 2, 60, 5, 3600, 30, 60)))
-                .then().statusCode(200).body("rateLimits.enabled", equalTo(true));
+        assertTrue(data.updateSettings(update().rateLimits(TestDataService.rateLimits(true, 2, 60, 5, 3600, 30, 60)))
+            .getRateLimits().getEnabled());
 
-            for (int i = 0; i < 2; i++) {
-                login(u.username(), "wrong password").then().statusCode(401);
-            }
-            login(u.username(), "wrong password")
-                .then()
-                .statusCode(429)
-                .header("Retry-After", notNullValue())
-                .body("error", equalTo("rate_limited"));
-            given().get("/api/v1/server-info").then().statusCode(200); // unrelated endpoints unaffected
-        } finally {
-            TestUsers.patchSettings(Map.of("rateLimits", TestUsers.rateLimits(false, 10, 60, 5, 3600, 30, 60)))
-                .then().statusCode(200);
+        for (int i = 0; i < 2; i++) {
+            assertApiError(401, "invalid_credentials", () -> TestUsers.login(u.username(), "wrong password"));
         }
-        login(u.username(), TestUsers.DEFAULT_PASSWORD).then().statusCode(200);
+        ApiException limited = assertApiStatus(429, () -> TestUsers.login(u.username(), "wrong password"));
+        assertEquals("rate_limited", errorOf(limited).getError());
+        assertNotNull(header(limited, "Retry-After"));
+        serverApi().getServerInfo(); // unrelated endpoints unaffected
+
+        // Switching them off applies as immediately.
+        data.updateSettings(update().rateLimits(TestDataService.rateLimits(false, 10, 60, 5, 3600, 30, 60)));
+        TestUsers.login(u.username(), TestUsers.DEFAULT_PASSWORD);
     }
 
     @Test
     void challengeRequirementCanBeSwitchedOff() {
-        try {
-            TestUsers.patchSettings(Map.of("challengeRequired", false)).then().statusCode(200);
-            given().get("/api/v1/server-info").then().body("registration.challengeRequired", equalTo(false));
+        data.updateSettings(update().challengeRequired(false));
+        assertFalse(serverApi().getServerInfo().getRegistration().getChallengeRequired());
 
-            TestUsers.registerRaw(Map.of("username", "nochallenge_" + System.nanoTime() % 100000,
-                    "password", TestUsers.DEFAULT_PASSWORD))
-                .then().statusCode(201);
-        } finally {
-            TestUsers.patchSettings(Map.of("challengeRequired", true)).then().statusCode(200);
-        }
+        authApi().register(new RegisterRequestDto().username("nochallenge").password(TestUsers.DEFAULT_PASSWORD));
     }
 
     @Test
     void challengesHaveTheAdvertisedShape() {
-        given().get("/api/v1/auth/challenge")
-            .then()
-            .statusCode(200)
-            .body("algorithm", equalTo("SHA-256"))
-            .body("challenge", notNullValue())
-            .body("salt", org.hamcrest.Matchers.containsString("?expires="))
-            .body("signature", notNullValue())
-            .body("maxnumber", greaterThanOrEqualTo(1));
+        ChallengeDto challenge = authApi().getChallenge();
+        assertEquals(ChallengeDto.AlgorithmEnum.SHA_256, challenge.getAlgorithm());
+        assertNotNull(challenge.getChallenge());
+        assertTrue(challenge.getSalt().contains("?expires="), challenge.getSalt());
+        assertNotNull(challenge.getSignature());
+        assertTrue(challenge.getMaxnumber() >= 1);
     }
 
     @Test
     void defaultsMatchWhatConfigurationUsedToSet() {
-        given()
-            .header("Authorization", "Bearer " + TestUsers.ownerToken())
-            .get("/api/v1/server-settings")
-            .then()
-            .statusCode(200)
-            .body("sessionLifetimeDays", equalTo(30))
-            .body("challengeMaxNumber", equalTo(100000))
-            .body("voice.defaultBitrate", equalTo(64000));
+        ServerSettingsDto settings = serverApi(owner).getServerSettings();
+        assertEquals(30, settings.getSessionLifetimeDays());
+        assertEquals(100000, settings.getChallengeMaxNumber());
+        assertEquals(64000, settings.getVoice().getDefaultBitrate());
     }
 
     @Test
     void challengeDifficultyAppliesToTheNextChallenge() {
-        try {
-            TestUsers.patchSettings(Map.of("challengeMaxNumber", 20000))
-                .then().statusCode(200).body("challengeMaxNumber", equalTo(20000));
-            given().get("/api/v1/auth/challenge").then().statusCode(200).body("maxnumber", equalTo(20000));
-        } finally {
-            TestUsers.patchSettings(Map.of("challengeMaxNumber", 100000)).then().statusCode(200);
-        }
+        assertEquals(20000, data.updateSettings(update().challengeMaxNumber(20000)).getChallengeMaxNumber());
+        assertEquals(20000, authApi().getChallenge().getMaxnumber());
     }
 
     @Test
     void newVoiceChannelsGetTheDefaultBitrate() {
-        try {
-            TestUsers.patchSettings(Map.of("voice", Map.of("defaultBitrate", 32000)))
-                .then().statusCode(200).body("voice.defaultBitrate", equalTo(32000));
-            given().get("/api/v1/server-info").then().body("voice.defaultBitrate", equalTo(32000));
+        assertEquals(32000, data.updateSettings(update().voice(new VoiceInfoDto().defaultBitrate(32000))).getVoice().getDefaultBitrate());
+        assertEquals(32000, serverApi().getServerInfo().getVoice().getDefaultBitrate());
 
-            String fresh = createChannel(Map.of("type", "voice", "name", "fresh"));
-            try {
-                channel(fresh).then().body("bitrate", equalTo(32000));
-            } finally {
-                deleteChannel(fresh);
-            }
-        } finally {
-            TestUsers.patchSettings(Map.of("voice", Map.of("defaultBitrate", 64000))).then().statusCode(200);
-        }
+        UUID fresh = data.createChannel(ChannelTypeDto.VOICE, "fresh");
+        assertEquals(32000, channelsApi(owner).getChannel(fresh).getBitrate());
     }
 
     @Test
     void rejectsSettingsOutOfRange() {
-        TestUsers.patchSettings(Map.of("voice", Map.of("defaultBitrate", 600000)))
-            .then().statusCode(400).body("error", equalTo("validation_failed"));
-        TestUsers.patchSettings(Map.of("sessionLifetimeDays", 0))
-            .then().statusCode(400).body("error", equalTo("validation_failed"));
-        TestUsers.patchSettings(Map.of("challengeMaxNumber", 10))
-            .then().statusCode(400).body("error", equalTo("validation_failed"));
-    }
-
-    private static RequestSpecification asOwner() {
-        return given().header("Authorization", "Bearer " + TestUsers.ownerToken()).contentType(ContentType.JSON);
-    }
-
-    private static String createChannel(Map<String, Object> body) {
-        return asOwner().body(body).post("/api/v1/channels").then().statusCode(201).extract().path("id");
-    }
-
-    private static io.restassured.response.Response channel(String id) {
-        return asOwner().get("/api/v1/channels/" + id);
-    }
-
-    private static void deleteChannel(String id) {
-        asOwner().delete("/api/v1/channels/" + id).then().statusCode(204);
-    }
-
-    private static io.restassured.response.Response login(String username, String password) {
-        return given()
-            .contentType(ContentType.JSON)
-            .body(Map.of("username", username, "password", password))
-            .post("/api/v1/auth/login");
+        assertApiError(400, "validation_failed", () -> data.updateSettings(update().voice(new VoiceInfoDto().defaultBitrate(600000))));
+        assertApiError(400, "validation_failed", () -> data.updateSettings(update().sessionLifetimeDays(0)));
+        assertApiError(400, "validation_failed", () -> data.updateSettings(update().challengeMaxNumber(10)));
     }
 }

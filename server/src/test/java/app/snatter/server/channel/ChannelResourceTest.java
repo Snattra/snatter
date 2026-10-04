@@ -1,305 +1,247 @@
 package app.snatter.server.channel;
 
+import static app.snatter.client.model.PermissionDto.BAN_MEMBERS;
+import static app.snatter.client.model.PermissionDto.MANAGE_CHANNELS;
+import static app.snatter.client.model.PermissionDto.MANAGE_MESSAGES;
+import static app.snatter.client.model.PermissionDto.MANAGE_ROLES;
+import static app.snatter.client.model.PermissionDto.MANAGE_SERVER;
+import static app.snatter.client.model.PermissionDto.TIMEOUT_MEMBERS;
+import static app.snatter.server.testing.ApiAssertions.assertApiError;
+import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
+import static app.snatter.server.testing.ApiClientFactory.channelsApi;
+import static app.snatter.server.testing.ApiClientFactory.rolesApi;
+import static app.snatter.server.testing.ApiClientFactory.serverApi;
 import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasItems;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.client.api.ChannelsApi;
+import app.snatter.client.model.ChannelCreateDto;
+import app.snatter.client.model.ChannelDto;
+import app.snatter.client.model.ChannelTypeDto;
+import app.snatter.client.model.ChannelUpdateDto;
+import app.snatter.client.model.PermissionSetDto;
+import app.snatter.client.model.RoleCreateDto;
+import app.snatter.client.model.ServerSettingsUpdateDto;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
-import io.restassured.response.Response;
-import io.restassured.specification.RequestSpecification;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class ChannelResourceTest {
 
-    private static final String GENERAL_TEXT = "00000000-0000-7000-8000-000000000101";
-    /** The voice channel older versions seeded; a fresh server no longer has it. */
-    private static final String SEEDED_BEFORE_V11_VOICE = "00000000-0000-7000-8000-000000000102";
+    private static final UUID GENERAL_TEXT = UUID.fromString("00000000-0000-7000-8000-000000000101");
 
-    private static RequestSpecification as(String token) {
-        return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON);
+    private final TestDataService data = new TestDataService();
+    private TestUsers.User owner;
+
+    @BeforeEach
+    void setUpServer() {
+        owner = data.setUpServer();
     }
 
-    private static Response create(String token, Map<String, Object> body) {
-        return as(token).body(body).post("/api/v1/channels");
+    private static ChannelCreateDto newChannel(ChannelTypeDto type, String name) {
+        return new ChannelCreateDto().type(type).name(name);
     }
 
-    private static String createChannel(String type, String name) {
-        return create(TestUsers.ownerToken(), Map.of("type", type, "name", name))
-            .then().statusCode(201).extract().path("id");
-    }
-
-    private static void deleteChannel(String id) {
-        as(TestUsers.ownerToken()).delete("/api/v1/channels/" + id).then().statusCode(204);
-    }
-
-    private static Response patch(String token, String channel, Map<String, Object> body) {
-        return as(token).body(body).patch("/api/v1/channels/" + channel);
-    }
-
-    private static List<String> visibleIds(String token) {
-        return as(token).get("/api/v1/channels").then().statusCode(200).extract().path("id");
+    private static List<UUID> visibleIds(TestUsers.User user) {
+        return channelsApi(user).listChannels().stream().map(ChannelDto::getId).toList();
     }
 
     @Test
     void freshServerHasOneGeneralTextChannel() {
-        TestUsers.User member = TestUsers.register();
-        as(member.token()).get("/api/v1/channels").then().statusCode(200)
-            .body("find { it.id == '" + GENERAL_TEXT + "' }.type", equalTo("text"))
-            .body("find { it.id == '" + GENERAL_TEXT + "' }.name", equalTo("General"))
-            .body("find { it.id == '" + GENERAL_TEXT + "' }.position", equalTo(0))
-            .body("find { it.id == '" + GENERAL_TEXT + "' }.bitrate", nullValue())
-            .body("id", not(hasItem(SEEDED_BEFORE_V11_VOICE)));
-        given().get("/api/v1/channels").then().statusCode(401);
+        List<ChannelDto> channels = channelsApi(TestUsers.register()).listChannels();
+        assertEquals(List.of(GENERAL_TEXT), channels.stream().map(ChannelDto::getId).toList());
+        ChannelDto general = channels.getFirst();
+        assertEquals(ChannelTypeDto.TEXT, general.getType());
+        assertEquals("General", general.getName());
+        assertEquals(0, general.getPosition());
+        assertNull(general.getBitrate());
+        assertApiStatus(401, () -> channelsApi().listChannels());
     }
 
     @Test
     void channelNamesAreUniqueRegardlessOfCase() {
-        String owner = TestUsers.ownerToken();
-        String lobby = createChannel("text", "Lobby");
-        String other = createChannel("voice", "Lobby two");
-        try {
-            create(owner, Map.of("type", "voice", "name", "  lobby "))
-                .then().statusCode(409).body("error", equalTo("channel_name_taken"));
-            patch(owner, other, Map.of("name", "LOBBY"))
-                .then().statusCode(409).body("error", equalTo("channel_name_taken"));
-            // A channel may change the case of its own name.
-            patch(owner, lobby, Map.of("name", "lobby")).then().statusCode(200).body("name", equalTo("lobby"));
-            // Other changes to a channel are not held up by its own name.
-            patch(owner, lobby, Map.of("topic", "hello")).then().statusCode(200);
-        } finally {
-            deleteChannel(lobby);
-            deleteChannel(other);
-        }
+        ChannelsApi channels = channelsApi(owner);
+        UUID lobby = data.createChannel(ChannelTypeDto.TEXT, "Lobby");
+        UUID other = data.createChannel(ChannelTypeDto.VOICE, "Lobby two");
+        assertApiError(409, "channel_name_taken", () -> channels.createChannel(newChannel(ChannelTypeDto.VOICE, "  lobby ")));
+        assertApiError(409, "channel_name_taken", () -> channels.updateChannel(other, new ChannelUpdateDto().name("LOBBY")));
+        // A channel may change the case of its own name.
+        assertEquals("lobby", channels.updateChannel(lobby, new ChannelUpdateDto().name("lobby")).getName());
+        // Other changes to a channel are not held up by its own name.
+        channels.updateChannel(lobby, new ChannelUpdateDto().topic("hello"));
         // Deleting a channel frees its name.
-        deleteChannel(createChannel("text", "Lobby"));
+        channels.deleteChannel(lobby);
+        data.createChannel(ChannelTypeDto.TEXT, "Lobby");
     }
 
     @Test
     void createsChannelsLastWithVoiceDefaults() {
-        String owner = TestUsers.ownerToken();
-        int defaultBitrate = given().get("/api/v1/server-info").then().extract().path("voice.defaultBitrate");
-        String voice = create(owner, Map.of("type", "voice_text", "name", "  Lounge  ", "topic", "hang out"))
-            .then().statusCode(201)
-            .body("name", equalTo("Lounge"))
-            .body("topic", equalTo("hang out"))
-            .body("bitrate", equalTo(defaultBitrate))
-            .body("userLimit", equalTo(0))
-            .body("requiredRoleIds", equalTo(List.of()))
-            .extract().path("id");
-        String text = null;
-        try {
-            List<String> ids = visibleIds(owner);
-            assertEquals(voice, ids.get(ids.size() - 1), "new channels go last");
-            text = create(owner, Map.of("type", "text", "name", "notes"))
-                .then().statusCode(201).body("bitrate", nullValue()).body("userLimit", nullValue())
-                .body("position", equalTo(ids.size())).extract().path("id");
-            String hifi = create(owner, Map.of("type", "voice", "name", "hifi", "bitrate", 128000, "userLimit", 5))
-                .then().statusCode(201).body("bitrate", equalTo(128000)).body("userLimit", equalTo(5))
-                .extract().path("id");
-            deleteChannel(hifi);
+        ChannelsApi channels = channelsApi(owner);
+        int defaultBitrate = serverApi().getServerInfo().getVoice().getDefaultBitrate();
+        ChannelDto lounge = channels.createChannel(newChannel(ChannelTypeDto.VOICE_TEXT, "  Lounge  ").topic("hang out"));
+        assertEquals("Lounge", lounge.getName());
+        assertEquals("hang out", lounge.getTopic());
+        assertEquals(defaultBitrate, lounge.getBitrate());
+        assertEquals(0, lounge.getUserLimit());
+        assertEquals(List.of(), lounge.getRequiredRoleIds());
+        List<UUID> ids = visibleIds(owner);
+        assertEquals(lounge.getId(), ids.getLast(), "new channels go last");
+        ChannelDto notes = channels.createChannel(newChannel(ChannelTypeDto.TEXT, "notes"));
+        assertNull(notes.getBitrate());
+        assertNull(notes.getUserLimit());
+        assertEquals(ids.size(), notes.getPosition());
+        ChannelDto hifi = channels.createChannel(newChannel(ChannelTypeDto.VOICE, "hifi").bitrate(128000).userLimit(5));
+        assertEquals(128000, hifi.getBitrate());
+        assertEquals(5, hifi.getUserLimit());
 
-            create(owner, Map.of("type", "text", "name", "x", "bitrate", 64000))
-                .then().statusCode(400).body("error", equalTo("not_a_voice_channel"));
-            create(owner, Map.of("type", "voice", "name", "x", "bitrate", 600000))
-                .then().statusCode(400).body("error", equalTo("validation_failed"));
-            create(owner, Map.of("type", "voice", "name", "x", "bitrate", 7000))
-                .then().statusCode(400).body("error", equalTo("validation_failed"));
-            create(owner, Map.of("type", "text", "name", "   "))
-                .then().statusCode(400).body("error", equalTo("validation_failed"));
-            create(owner, Map.of("type", "stage", "name", "x"))
-                .then().statusCode(400);
-            create(TestUsers.register().token(), Map.of("type", "text", "name", "nope"))
-                .then().statusCode(403).body("error", equalTo("forbidden"));
-        } finally {
-            deleteChannel(voice);
-            if (text != null) {
-                deleteChannel(text);
-            }
-        }
+        assertApiError(400, "not_a_voice_channel", () -> channels.createChannel(newChannel(ChannelTypeDto.TEXT, "x").bitrate(64000)));
+        assertApiError(400, "validation_failed", () -> channels.createChannel(newChannel(ChannelTypeDto.VOICE, "x").bitrate(600000)));
+        assertApiError(400, "validation_failed", () -> channels.createChannel(newChannel(ChannelTypeDto.VOICE, "x").bitrate(7000)));
+        assertApiError(400, "validation_failed", () -> channels.createChannel(newChannel(ChannelTypeDto.TEXT, "   ")));
+        // A type the contract does not have can only be sent as plain JSON.
+        given().header("Authorization", "Bearer " + owner.token()).contentType(ContentType.JSON)
+            .body(Map.of("type", "stage", "name", "x")).post("/api/v1/channels")
+            .then().statusCode(400);
+        ChannelsApi asMember = channelsApi(TestUsers.register());
+        assertApiError(403, "forbidden", () -> asMember.createChannel(newChannel(ChannelTypeDto.TEXT, "nope")));
     }
 
     @Test
     void updatesMovesAndDeletesKeepingPositionsContiguous() {
-        String owner = TestUsers.ownerToken();
-        String a = createChannel("text", "a " + UUID.randomUUID());
-        String b = createChannel("voice", "b");
-        String c = createChannel("text", "c");
-        try {
-            patch(owner, a, Map.of("name", "renamed", "topic", "about a")).then().statusCode(200)
-                .body("name", equalTo("renamed")).body("topic", equalTo("about a"));
-            patch(owner, a, Map.of("topic", "")).then().statusCode(200)
-                .body("name", equalTo("renamed")).body("topic", nullValue());
-            patch(owner, b, Map.of("bitrate", 96000, "userLimit", 10)).then().statusCode(200)
-                .body("bitrate", equalTo(96000)).body("userLimit", equalTo(10));
-            patch(owner, a, Map.of("bitrate", 96000)).then().statusCode(400).body("error", equalTo("not_a_voice_channel"));
-            patch(owner, b, Map.of("bitrate", 510000)).then().statusCode(200).body("bitrate", equalTo(510000));
-            patch(owner, b, Map.of("bitrate", 600000)).then().statusCode(400).body("error", equalTo("validation_failed"));
+        ChannelsApi channels = channelsApi(owner);
+        UUID a = data.createChannel(ChannelTypeDto.TEXT, "a");
+        UUID b = data.createChannel(ChannelTypeDto.VOICE, "b");
+        UUID c = data.createChannel(ChannelTypeDto.TEXT, "c");
+        ChannelDto renamed = channels.updateChannel(a, new ChannelUpdateDto().name("renamed").topic("about a"));
+        assertEquals("renamed", renamed.getName());
+        assertEquals("about a", renamed.getTopic());
+        ChannelDto withoutTopic = channels.updateChannel(a, new ChannelUpdateDto().topic(""));
+        assertEquals("renamed", withoutTopic.getName());
+        assertNull(withoutTopic.getTopic());
+        ChannelDto limited = channels.updateChannel(b, new ChannelUpdateDto().bitrate(96000).userLimit(10));
+        assertEquals(96000, limited.getBitrate());
+        assertEquals(10, limited.getUserLimit());
+        assertApiError(400, "not_a_voice_channel", () -> channels.updateChannel(a, new ChannelUpdateDto().bitrate(96000)));
+        assertEquals(510000, channels.updateChannel(b, new ChannelUpdateDto().bitrate(510000)).getBitrate());
+        assertApiError(400, "validation_failed", () -> channels.updateChannel(b, new ChannelUpdateDto().bitrate(600000)));
 
-            int aPosition = as(owner).get("/api/v1/channels/" + a).then().extract().path("position");
-            patch(owner, c, Map.of("position", aPosition)).then().statusCode(200).body("position", equalTo(aPosition));
-            List<String> ids = visibleIds(owner);
-            assertEquals(List.of(c, a, b), ids.subList(aPosition, aPosition + 3));
-            assertContiguous(owner);
+        int aPosition = channels.getChannel(a).getPosition();
+        assertEquals(aPosition, channels.updateChannel(c, new ChannelUpdateDto().position(aPosition)).getPosition());
+        List<UUID> ids = visibleIds(owner);
+        assertEquals(List.of(c, a, b), ids.subList(aPosition, aPosition + 3));
+        assertContiguous(channels);
 
-            patch(owner, c, Map.of("position", 10_000)).then().statusCode(200).body("position", equalTo(ids.size() - 1));
-            assertContiguous(owner);
+        assertEquals(ids.size() - 1, channels.updateChannel(c, new ChannelUpdateDto().position(10_000)).getPosition());
+        assertContiguous(channels);
 
-            deleteChannel(b);
-            b = null;
-            as(owner).get("/api/v1/channels/" + UUID.randomUUID()).then().statusCode(404).body("error", equalTo("channel_not_found"));
-            assertContiguous(owner);
-        } finally {
-            deleteChannel(a);
-            deleteChannel(c);
-            if (b != null) {
-                deleteChannel(b);
-            }
-        }
+        channels.deleteChannel(b);
+        assertApiError(404, "channel_not_found", () -> channels.getChannel(UUID.randomUUID()));
+        assertContiguous(channels);
     }
 
-    private static void assertContiguous(String token) {
-        List<Integer> positions = as(token).get("/api/v1/channels").then().extract().path("position");
+    private static void assertContiguous(ChannelsApi channels) {
+        List<Integer> positions = channels.listChannels().stream().map(ChannelDto::getPosition).toList();
         assertEquals(IntStream.range(0, positions.size()).boxed().toList(), positions);
     }
 
     @Test
     void privateChannelsAreVisibleOnlyToTheirRoles() {
-        String owner = TestUsers.ownerToken();
-        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
-        String guests = TestUsers.createRole("Guests " + UUID.randomUUID());
-        String channel = create(owner, Map.of("type", "text", "name", "crew only", "requiredRoleIds", List.of(crew, guests)))
-            .then().statusCode(201)
-            .body("requiredRoleIds", containsInAnyOrder(crew, guests))
-            .extract().path("id");
-        try {
-            TestUsers.User outsider = TestUsers.register();
-            assertEquals(false, visibleIds(outsider.token()).contains(channel));
-            as(outsider.token()).get("/api/v1/channels/" + channel).then().statusCode(404).body("error", equalTo("channel_not_found"));
+        ChannelsApi channels = channelsApi(owner);
+        UUID crew = data.createRole("Crew");
+        UUID guests = data.createRole("Guests");
+        ChannelDto created = channels.createChannel(newChannel(ChannelTypeDto.TEXT, "crew only").requiredRoleIds(List.of(crew, guests)));
+        assertEquals(Set.of(crew, guests), Set.copyOf(created.getRequiredRoleIds()));
+        UUID channel = created.getId();
+        TestUsers.User outsider = TestUsers.register();
+        assertFalse(visibleIds(outsider).contains(channel));
+        assertApiError(404, "channel_not_found", () -> channelsApi(outsider).getChannel(channel));
 
-            TestUsers.User crewMember = TestUsers.register();
-            TestUsers.assignRole(crewMember.id(), crew);
-            assertEquals(true, visibleIds(crewMember.token()).contains(channel));
-            TestUsers.User guest = TestUsers.register();
-            TestUsers.assignRole(guest.id(), guests);
-            assertEquals(true, visibleIds(guest.token()).contains(channel), "any one of the required roles is enough");
-            assertEquals(true, visibleIds(owner).contains(channel), "the owner sees every channel");
+        TestUsers.User crewMember = TestUsers.register();
+        data.assignRole(crewMember.id(), crew);
+        assertTrue(visibleIds(crewMember).contains(channel));
+        TestUsers.User guest = TestUsers.register();
+        data.assignRole(guest.id(), guests);
+        assertTrue(visibleIds(guest).contains(channel), "any one of the required roles is enough");
+        assertTrue(visibleIds(owner).contains(channel), "the owner sees every channel");
 
-            // Administrators manage the channels they see, but do not see every channel.
-            TestUsers.User admin = TestUsers.register();
-            TestUsers.assignRole(admin.id(), TestUsers.ADMIN_ROLE);
-            assertEquals(false, visibleIds(admin.token()).contains(channel));
-            patch(admin.token(), channel, Map.of("name", "x")).then().statusCode(404);
-            as(admin.token()).delete("/api/v1/channels/" + channel).then().statusCode(404);
+        // Administrators manage the channels they see, but do not see every channel.
+        TestUsers.User admin = TestUsers.register();
+        data.assignRole(admin.id(), TestDataService.ADMIN_ROLE);
+        ChannelsApi asAdmin = channelsApi(admin);
+        assertFalse(visibleIds(admin).contains(channel));
+        assertApiError(404, "channel_not_found", () -> asAdmin.updateChannel(channel, new ChannelUpdateDto().name("x")));
+        assertApiError(404, "channel_not_found", () -> asAdmin.deleteChannel(channel));
 
-            patch(owner, channel, Map.of("requiredRoleIds", List.of())).then().statusCode(200).body("requiredRoleIds", equalTo(List.of()));
-            assertEquals(true, visibleIds(outsider.token()).contains(channel));
-        } finally {
-            deleteChannel(channel);
-            TestUsers.deleteRole(crew);
-            TestUsers.deleteRole(guests);
-        }
+        assertEquals(List.of(), channels.updateChannel(channel, new ChannelUpdateDto().requiredRoleIds(List.of())).getRequiredRoleIds());
+        assertTrue(visibleIds(outsider).contains(channel));
     }
 
     @Test
     void requiredRolesMustExistAndIncludeOneOfTheCallers() {
-        String owner = TestUsers.ownerToken();
-        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
-        String builders = TestUsers.createRole("Builders " + UUID.randomUUID(), "MANAGE_CHANNELS");
+        ChannelsApi channels = channelsApi(owner);
+        UUID crew = data.createRole("Crew");
+        UUID builders = data.createRole("Builders", MANAGE_CHANNELS);
         TestUsers.User builder = TestUsers.register();
-        TestUsers.assignRole(builder.id(), builders);
+        data.assignRole(builder.id(), builders);
+        ChannelsApi asBuilder = channelsApi(builder);
         int before = visibleIds(owner).size();
-        String channel = null;
-        try {
-            create(owner, Map.of("type", "text", "name", "x", "requiredRoleIds", List.of(UUID.randomUUID().toString())))
-                .then().statusCode(400).body("error", equalTo("invalid_required_role"));
-            // Nobody but the owner can lock themselves out.
-            create(builder.token(), Map.of("type", "text", "name", "x", "requiredRoleIds", List.of(crew)))
-                .then().statusCode(400).body("error", equalTo("required_role_not_held"));
-            assertEquals(before, visibleIds(owner).size(), "rejected creations leave no channel behind");
+        assertApiError(400, "invalid_required_role",
+            () -> channels.createChannel(newChannel(ChannelTypeDto.TEXT, "x").requiredRoleIds(List.of(UUID.randomUUID()))));
+        // Nobody but the owner can lock themselves out.
+        assertApiError(400, "required_role_not_held",
+            () -> asBuilder.createChannel(newChannel(ChannelTypeDto.TEXT, "x").requiredRoleIds(List.of(crew))));
+        assertEquals(before, visibleIds(owner).size(), "rejected creations leave no channel behind");
 
-            channel = create(builder.token(), Map.of("type", "text", "name", "builders", "requiredRoleIds", List.of(builders)))
-                .then().statusCode(201).extract().path("id");
-            patch(builder.token(), channel, Map.of("requiredRoleIds", List.of(crew)))
-                .then().statusCode(400).body("error", equalTo("required_role_not_held"));
-            patch(builder.token(), channel, Map.of("requiredRoleIds", List.of(crew, builders)))
-                .then().statusCode(200).body("requiredRoleIds", containsInAnyOrder(crew, builders));
+        UUID channel = asBuilder.createChannel(newChannel(ChannelTypeDto.TEXT, "builders").requiredRoleIds(List.of(builders))).getId();
+        assertApiError(400, "required_role_not_held",
+            () -> asBuilder.updateChannel(channel, new ChannelUpdateDto().requiredRoleIds(List.of(crew))));
+        ChannelDto shared = asBuilder.updateChannel(channel, new ChannelUpdateDto().requiredRoleIds(List.of(crew, builders)));
+        assertEquals(Set.of(crew, builders), Set.copyOf(shared.getRequiredRoleIds()));
 
-            // Changing channels needs MANAGE_CHANNELS.
-            TestUsers.User member = TestUsers.register();
-            patch(member.token(), GENERAL_TEXT, Map.of("topic", "nope")).then().statusCode(403).body("error", equalTo("forbidden"));
-            as(member.token()).delete("/api/v1/channels/" + GENERAL_TEXT).then().statusCode(403);
-        } finally {
-            if (channel != null) {
-                deleteChannel(channel);
-            }
-            TestUsers.deleteRole(crew);
-            TestUsers.deleteRole(builders);
-        }
+        // Changing channels needs MANAGE_CHANNELS.
+        ChannelsApi asMember = channelsApi(TestUsers.register());
+        assertApiError(403, "forbidden", () -> asMember.updateChannel(GENERAL_TEXT, new ChannelUpdateDto().topic("nope")));
+        assertApiError(403, "forbidden", () -> asMember.deleteChannel(GENERAL_TEXT));
     }
 
     @Test
     void rolesThatChannelsRequireCannotBeDeleted() {
-        String owner = TestUsers.ownerToken();
-        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
-        String channel = create(owner, Map.of("type", "text", "name", "crew", "requiredRoleIds", List.of(crew)))
-            .then().statusCode(201).extract().path("id");
-        try {
-            as(owner).delete("/api/v1/roles/" + crew).then().statusCode(409).body("error", equalTo("role_in_use"));
-            patch(owner, channel, Map.of("requiredRoleIds", List.of())).then().statusCode(200);
-            TestUsers.deleteRole(crew);
-        } finally {
-            deleteChannel(channel);
-        }
+        UUID crew = data.createRole("Crew");
+        UUID channel = channelsApi(owner).createChannel(newChannel(ChannelTypeDto.TEXT, "crew").requiredRoleIds(List.of(crew))).getId();
+        assertApiError(409, "role_in_use", () -> data.deleteRole(crew));
+        channelsApi(owner).updateChannel(channel, new ChannelUpdateDto().requiredRoleIds(List.of()));
+        data.deleteRole(crew);
     }
 
     @Test
     void administratorsHoldEverythingButServerSettings() {
         TestUsers.User admin = TestUsers.register();
-        String adminRole = TestUsers.ADMIN_ROLE;
-        TestUsers.assignRole(admin.id(), adminRole);
-        String channel = null;
-        String deputy = null;
-        try {
-            as(admin.token()).get("/api/v1/accounts/me/permissions").then().statusCode(200)
-                .body("owner", equalTo(false))
-                .body("permissions", hasItems("MANAGE_ROLES", "MANAGE_CHANNELS", "MANAGE_MESSAGES", "TIMEOUT_MEMBERS", "BAN_MEMBERS"))
-                .body("permissions", not(hasItem("MANAGE_SERVER")));
-            as(admin.token()).get("/api/v1/server-settings").then().statusCode(403);
-            Map<String, Object> rename = new HashMap<>();
-            rename.put("name", "taken over");
-            as(admin.token()).body(rename).patch("/api/v1/server-settings").then().statusCode(403);
+        data.assignRole(admin.id(), TestDataService.ADMIN_ROLE);
+        PermissionSetDto permissions = rolesApi(admin).getMyPermissions();
+        assertFalse(permissions.getOwner());
+        assertTrue(permissions.getPermissions().containsAll(
+            List.of(MANAGE_ROLES, MANAGE_CHANNELS, MANAGE_MESSAGES, TIMEOUT_MEMBERS, BAN_MEMBERS)));
+        assertFalse(permissions.getPermissions().contains(MANAGE_SERVER));
+        assertApiError(403, "forbidden", () -> serverApi(admin).getServerSettings());
+        assertApiError(403, "forbidden", () -> serverApi(admin).updateServerSettings(new ServerSettingsUpdateDto().name("taken over")));
 
-            channel = create(admin.token(), Map.of("type", "text", "name", "admin made"))
-                .then().statusCode(201).extract().path("id");
+        channelsApi(admin).createChannel(newChannel(ChannelTypeDto.TEXT, "admin made"));
 
-            // Admins may create further admin-level roles, but not hand out server settings.
-            List<String> adminPermissions = as(admin.token()).get("/api/v1/accounts/me/permissions").then().extract().path("permissions");
-            deputy = as(admin.token()).body(Map.of("name", "Deputy", "permissions", adminPermissions))
-                .post("/api/v1/roles").then().statusCode(201).extract().path("id");
-            as(admin.token()).body(Map.of("name", "Settings", "permissions", List.of("MANAGE_SERVER")))
-                .post("/api/v1/roles").then().statusCode(403).body("error", equalTo("permission_escalation"));
-        } finally {
-            if (channel != null) {
-                deleteChannel(channel);
-            }
-            if (deputy != null) {
-                TestUsers.deleteRole(deputy);
-            }
-            given().header("Authorization", "Bearer " + TestUsers.ownerToken())
-                .delete("/api/v1/accounts/" + admin.id() + "/roles/" + adminRole).then().statusCode(204);
-        }
+        // Admins may create further admin-level roles, but not hand out server settings.
+        rolesApi(admin).createRole(new RoleCreateDto().name("Deputy").permissions(permissions.getPermissions()));
+        assertApiError(403, "permission_escalation",
+            () -> rolesApi(admin).createRole(new RoleCreateDto().name("Settings").permissions(List.of(MANAGE_SERVER))));
     }
 }

@@ -1,223 +1,170 @@
 package app.snatter.server.auth;
 
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasKey;
-import static org.hamcrest.Matchers.matchesPattern;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.startsWith;
+import static app.snatter.server.testing.ApiAssertions.assertApiError;
+import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
+import static app.snatter.server.testing.ApiAssertions.header;
+import static app.snatter.server.testing.ApiClientFactory.accountsApi;
+import static app.snatter.server.testing.ApiClientFactory.authApi;
+import static app.snatter.server.testing.ApiClientFactory.serverApi;
+import static app.snatter.server.testing.TestUsers.DEFAULT_PASSWORD;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.client.ApiException;
+import app.snatter.client.api.AuthApi;
+import app.snatter.client.model.AccountDto;
+import app.snatter.client.model.ApiErrorDto;
+import app.snatter.client.model.AuthResponseDto;
+import app.snatter.client.model.ChallengeDto;
+import app.snatter.client.model.RegisterRequestDto;
+import app.snatter.client.model.RegistrationModeDto;
+import app.snatter.client.model.ServerSettingsUpdateDto;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
-import io.restassured.http.ContentType;
-import java.util.Map;
+import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class AuthResourceTest {
 
+    private final TestDataService data = new TestDataService();
+    private AuthApi auth;
+
+    @BeforeEach
+    void setUpServer() {
+        data.setUpServer();
+        auth = authApi();
+    }
+
     private static String uniqueUsername() {
         return "user_" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /** A registration with the given challenge solution, or none. */
+    private static RegisterRequestDto withAltcha(String altcha) {
+        return new RegisterRequestDto().username(uniqueUsername()).password(DEFAULT_PASSWORD).altcha(altcha);
     }
 
     @Test
     void registerThenReadOwnAccount() {
         String username = uniqueUsername();
-        TestUsers.registerRaw(TestUsers.registration(username, TestUsers.DEFAULT_PASSWORD, null))
-            .then()
-            .statusCode(201)
-            .body("token", startsWith("snt_"))
-            .body("expiresAt", notNullValue())
-            .body("account.id", matchesPattern("[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"))
-            .body("account.username", equalTo(username))
-            .body("account.displayName", equalTo(username));
+        AuthResponseDto registered = auth.register(TestUsers.registration(username, DEFAULT_PASSWORD, null));
+        assertTrue(registered.getToken().startsWith("snt_"));
+        assertNotNull(registered.getExpiresAt());
+        AccountDto account = registered.getAccount();
+        assertEquals(7, account.getId().version(), "a version 7 UUID");
+        assertEquals(2, account.getId().variant(), "of the standard variant");
+        assertEquals(username, account.getUsername());
+        assertEquals(username, account.getDisplayName());
 
         TestUsers.User u = TestUsers.register();
-        given()
-            .header("Authorization", "Bearer " + u.token())
-            .get("/api/v1/accounts/me")
-            .then()
-            .statusCode(200)
-            .body("username", equalTo(u.username()));
+        assertEquals(u.username(), accountsApi(u).getCurrentAccount().getUsername());
     }
 
     @Test
     void registerUsesDisplayNameWhenGiven() {
-        TestUsers.registerRaw(TestUsers.registration(uniqueUsername(), TestUsers.DEFAULT_PASSWORD, "Quacky"))
-            .then()
-            .statusCode(201)
-            .body("account.displayName", equalTo("Quacky"));
+        AuthResponseDto registered = auth.register(TestUsers.registration(uniqueUsername(), DEFAULT_PASSWORD, "Quacky"));
+        assertEquals("Quacky", registered.getAccount().getDisplayName());
     }
 
     @Test
     void displayNamesAreTrimmedAndCheckedBeforeAnythingElse() {
-        TestUsers.registerRaw(TestUsers.registration(uniqueUsername(), TestUsers.DEFAULT_PASSWORD, "  Robin    J\u00f6nsson "))
-            .then()
-            .statusCode(201)
-            .body("account.displayName", equalTo("Robin J\u00f6nsson"));
+        AuthResponseDto trimmed = auth.register(TestUsers.registration(uniqueUsername(), DEFAULT_PASSWORD, "  Robin    Jönsson "));
+        assertEquals("Robin Jönsson", trimmed.getAccount().getDisplayName());
         String username = uniqueUsername();
-        TestUsers.registerRaw(TestUsers.registration(username, TestUsers.DEFAULT_PASSWORD, "Mallard \ud83e\udd86"))
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("invalid_display_name"));
+        RegisterRequestDto duck = TestUsers.registration(username, DEFAULT_PASSWORD, "Mallard 🦆");
+        assertApiError(400, "invalid_display_name", () -> auth.register(duck));
         // Nothing was created, so the username is still free; a blank name falls back to it.
-        TestUsers.registerRaw(TestUsers.registration(username, TestUsers.DEFAULT_PASSWORD, "   "))
-            .then()
-            .statusCode(201)
-            .body("account.displayName", equalTo(username));
+        AuthResponseDto blank = auth.register(TestUsers.registration(username, DEFAULT_PASSWORD, "   "));
+        assertEquals(username, blank.getAccount().getDisplayName());
     }
 
     @Test
     void usernameIsUniqueIgnoringCase() {
         TestUsers.User u = TestUsers.register();
-        TestUsers.registerRaw(TestUsers.registration(u.username().toUpperCase(), TestUsers.DEFAULT_PASSWORD, null))
-            .then()
-            .statusCode(409)
-            .body("error", equalTo("username_taken"));
+        RegisterRequestDto shouted = TestUsers.registration(u.username().toUpperCase(), DEFAULT_PASSWORD, null);
+        assertApiError(409, "username_taken", () -> auth.register(shouted));
     }
 
     @Test
     void rejectsInvalidRegistration() {
-        TestUsers.registerRaw(TestUsers.registration("no spaces allowed", "short", null))
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("validation_failed"))
-            .body("fields", hasKey("username"))
-            .body("fields", hasKey("password"));
+        RegisterRequestDto invalid = TestUsers.registration("no spaces allowed", "short", null);
+        ApiErrorDto error = assertApiError(400, "validation_failed", () -> auth.register(invalid));
+        assertTrue(error.getFields().keySet().containsAll(List.of("username", "password")), error.getFields().toString());
         String suffix = UUID.randomUUID().toString().substring(0, 4);
-        for (String username : new String[] {"dotted.name" + suffix, "dashed-name" + suffix, "\u00e5sa_" + suffix}) {
-            TestUsers.registerRaw(TestUsers.registration(username, TestUsers.DEFAULT_PASSWORD, null))
-                .then()
-                .statusCode(400)
-                .body("error", equalTo("validation_failed"))
-                .body("fields", hasKey("username"));
+        for (String username : new String[] {"dotted.name" + suffix, "dashed-name" + suffix, "åsa_" + suffix}) {
+            RegisterRequestDto registration = TestUsers.registration(username, DEFAULT_PASSWORD, null);
+            assertTrue(assertApiError(400, "validation_failed", () -> auth.register(registration)).getFields().containsKey("username"));
         }
     }
 
     @Test
     void registrationRequiresASolvedChallenge() {
-        TestUsers.ownerToken();
-        Map<String, Object> withoutChallenge = Map.of("username", uniqueUsername(), "password", TestUsers.DEFAULT_PASSWORD);
-        TestUsers.registerRaw(withoutChallenge)
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("challenge_required"));
-
-        Map<String, Object> garbage = Map.of("username", uniqueUsername(), "password", TestUsers.DEFAULT_PASSWORD,
-            "altcha", "bm90IGEgY2hhbGxlbmdl");
-        TestUsers.registerRaw(garbage)
-            .then()
-            .statusCode(400)
-            .body("error", equalTo("challenge_invalid"));
+        assertApiError(400, "challenge_required", () -> auth.register(withAltcha(null)));
+        assertApiError(400, "challenge_invalid", () -> auth.register(withAltcha("bm90IGEgY2hhbGxlbmdl")));
     }
 
     @Test
     void rejectsWrongSolutionsAndReplays() {
-        TestUsers.ownerToken();
-        var c = given().get("/api/v1/auth/challenge").then().statusCode(200)
-            .body("algorithm", equalTo("SHA-256"))
-            .extract();
-        String challenge = c.path("challenge");
-        String salt = c.path("salt");
-        String signature = c.path("signature");
+        ChallengeDto c = auth.getChallenge();
+        assertEquals(ChallengeDto.AlgorithmEnum.SHA_256, c.getAlgorithm());
 
         // A number that is (almost certainly) not the solution.
-        String wrong = TestUsers.payload(challenge, salt, signature, -1 + 0);
-        TestUsers.registerRaw(Map.of("username", uniqueUsername(), "password", TestUsers.DEFAULT_PASSWORD, "altcha", wrong))
-            .then().statusCode(400).body("error", equalTo("challenge_invalid"));
+        String wrong = TestUsers.payload(c.getChallenge(), c.getSalt(), c.getSignature(), -1);
+        assertApiError(400, "challenge_invalid", () -> auth.register(withAltcha(wrong)));
 
         // A forged signature.
-        String forged = TestUsers.payload(challenge, salt, "00" + signature.substring(2), 1);
-        TestUsers.registerRaw(Map.of("username", uniqueUsername(), "password", TestUsers.DEFAULT_PASSWORD, "altcha", forged))
-            .then().statusCode(400).body("error", equalTo("challenge_invalid"));
+        String forged = TestUsers.payload(c.getChallenge(), c.getSalt(), "00" + c.getSignature().substring(2), 1);
+        assertApiError(400, "challenge_invalid", () -> auth.register(withAltcha(forged)));
 
         // A real solution works once and only once.
         String solved = TestUsers.solveChallenge();
-        TestUsers.registerRaw(Map.of("username", uniqueUsername(), "password", TestUsers.DEFAULT_PASSWORD, "altcha", solved))
-            .then().statusCode(201);
-        TestUsers.registerRaw(Map.of("username", uniqueUsername(), "password", TestUsers.DEFAULT_PASSWORD, "altcha", solved))
-            .then().statusCode(400).body("error", equalTo("challenge_invalid"));
+        auth.register(withAltcha(solved));
+        assertApiError(400, "challenge_invalid", () -> auth.register(withAltcha(solved)));
     }
 
     @Test
     void registrationCanBeClosedByTheOwner() {
-        TestUsers.ownerToken();
-        try {
-            TestUsers.patchSettings(Map.of("registrationMode", "invite_only")).then().statusCode(200);
-            given().get("/api/v1/server-info").then().body("registration.mode", equalTo("invite_only"));
+        data.updateSettings(new ServerSettingsUpdateDto().registrationMode(RegistrationModeDto.INVITE_ONLY));
+        assertEquals(RegistrationModeDto.INVITE_ONLY, serverApi().getServerInfo().getRegistration().getMode());
 
-            TestUsers.registerRaw(TestUsers.registration(uniqueUsername(), TestUsers.DEFAULT_PASSWORD, null))
-                .then()
-                .statusCode(403)
-                .body("error", equalTo("registration_closed"));
-        } finally {
-            TestUsers.patchSettings(Map.of("registrationMode", "open")).then().statusCode(200);
-        }
+        RegisterRequestDto registration = TestUsers.registration(uniqueUsername(), DEFAULT_PASSWORD, null);
+        assertApiError(403, "registration_closed", () -> auth.register(registration));
     }
 
     @Test
     void loginWithCorrectAndWrongPassword() {
         TestUsers.User u = TestUsers.register();
 
-        given()
-            .contentType(ContentType.JSON)
-            .body(Map.of("username", u.username(), "password", TestUsers.DEFAULT_PASSWORD))
-            .post("/api/v1/auth/login")
-            .then()
-            .statusCode(200)
-            .body("token", startsWith("snt_"))
-            .body("account.username", equalTo(u.username()));
+        AuthResponseDto session = TestUsers.login(u.username(), DEFAULT_PASSWORD);
+        assertTrue(session.getToken().startsWith("snt_"));
+        assertEquals(u.username(), session.getAccount().getUsername());
 
-        given()
-            .contentType(ContentType.JSON)
-            .body(Map.of("username", u.username(), "password", "wrong password"))
-            .post("/api/v1/auth/login")
-            .then()
-            .statusCode(401)
-            .body("error", equalTo("invalid_credentials"));
+        assertApiError(401, "invalid_credentials", () -> TestUsers.login(u.username(), "wrong password"));
     }
 
     @Test
     void loginWithUnknownUserLooksLikeWrongPassword() {
-        given()
-            .contentType(ContentType.JSON)
-            .body(Map.of("username", "nobody_" + UUID.randomUUID(), "password", "whatever it is"))
-            .post("/api/v1/auth/login")
-            .then()
-            .statusCode(401)
-            .body("error", equalTo("invalid_credentials"));
+        assertApiError(401, "invalid_credentials", () -> TestUsers.login("nobody_" + UUID.randomUUID(), "whatever it is"));
     }
 
     @Test
     void logoutRevokesTheToken() {
         TestUsers.User u = TestUsers.register();
-
-        given()
-            .header("Authorization", "Bearer " + u.token())
-            .post("/api/v1/auth/logout")
-            .then()
-            .statusCode(204);
-
-        given()
-            .header("Authorization", "Bearer " + u.token())
-            .get("/api/v1/accounts/me")
-            .then()
-            .statusCode(401);
+        authApi(u).logout();
+        assertApiStatus(401, () -> accountsApi(u).getCurrentAccount());
     }
 
     @Test
     void protectedEndpointsRequireAValidToken() {
-        given()
-            .get("/api/v1/accounts/me")
-            .then()
-            .statusCode(401)
-            .header("WWW-Authenticate", equalTo("Bearer"));
+        ApiException missing = assertApiStatus(401, () -> accountsApi().getCurrentAccount());
+        assertEquals("Bearer", header(missing, "WWW-Authenticate"));
 
-        given()
-            .header("Authorization", "Bearer snt_not_a_real_token")
-            .get("/api/v1/accounts/me")
-            .then()
-            .statusCode(401);
+        TestUsers.User forged = new TestUsers.User("snt_not_a_real_token", UUID.randomUUID(), "nobody");
+        assertApiStatus(401, () -> accountsApi(forged).getCurrentAccount());
     }
 }

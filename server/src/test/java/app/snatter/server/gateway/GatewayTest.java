@@ -1,65 +1,139 @@
 package app.snatter.server.gateway;
 
-import static io.restassured.RestAssured.given;
+import static app.snatter.client.model.GatewayCloseReasonDto.ALREADY_IDENTIFIED;
+import static app.snatter.client.model.GatewayCloseReasonDto.AUTHENTICATION_FAILED;
+import static app.snatter.client.model.GatewayCloseReasonDto.CLIENT_OUTDATED;
+import static app.snatter.client.model.GatewayCloseReasonDto.IDENTIFY_TIMEOUT;
+import static app.snatter.client.model.GatewayCloseReasonDto.INVALID_FRAME;
+import static app.snatter.client.model.GatewayCloseReasonDto.NOT_IDENTIFIED;
+import static app.snatter.client.model.GatewayCloseReasonDto.SESSION_ENDED;
+import static app.snatter.client.model.PermissionDto.SEND_MESSAGES;
+import static app.snatter.client.model.PermissionDto.TIMEOUT_MEMBERS;
+import static app.snatter.client.model.PresenceStatusDto.OFFLINE;
+import static app.snatter.client.model.PresenceStatusDto.ONLINE;
+import static app.snatter.server.testing.ApiClientFactory.authApi;
+import static app.snatter.server.testing.ApiClientFactory.channelsApi;
+import static app.snatter.server.testing.ApiClientFactory.messagesApi;
+import static app.snatter.server.testing.ApiClientFactory.rolesApi;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.client.api.ChannelsApi;
+import app.snatter.client.model.ChannelCreatedNoticeDto;
+import app.snatter.client.model.ChannelDto;
+import app.snatter.client.model.ChannelRenamedNoticeDto;
+import app.snatter.client.model.ChannelTypeDto;
+import app.snatter.client.model.ChannelUpdateDto;
+import app.snatter.client.model.DeletedMessageDto;
+import app.snatter.client.model.GatewayChannelCreatedDto;
+import app.snatter.client.model.GatewayChannelDeletedDto;
+import app.snatter.client.model.GatewayChannelUpdatedDto;
+import app.snatter.client.model.GatewayIdentifyDto;
+import app.snatter.client.model.GatewayMemberJoinedDto;
+import app.snatter.client.model.GatewayMemberUpdatedDto;
+import app.snatter.client.model.GatewayMessageCreatedDto;
+import app.snatter.client.model.GatewayMessageUpdatedDto;
+import app.snatter.client.model.GatewayMessagesPurgedDto;
+import app.snatter.client.model.GatewayPermissionsChangedDto;
+import app.snatter.client.model.GatewayPresenceUpdatedDto;
+import app.snatter.client.model.GatewayReadStateUpdatedDto;
+import app.snatter.client.model.GatewayReadyDto;
+import app.snatter.client.model.GatewayRoleDeletedDto;
+import app.snatter.client.model.GatewayRoleUpdatedDto;
+import app.snatter.client.model.GatewayServerUpdatedDto;
+import app.snatter.client.model.GatewayTypingDto;
+import app.snatter.client.model.GatewayTypingStartedDto;
+import app.snatter.client.model.MemberJoinedNoticeDto;
+import app.snatter.client.model.MessageCreateDto;
+import app.snatter.client.model.MessageUpdateDto;
+import app.snatter.client.model.PresenceDto;
+import app.snatter.client.model.PresenceStatusDto;
+import app.snatter.client.model.ReadStateDto;
+import app.snatter.client.model.ReadStateUpdateDto;
+import app.snatter.client.model.RoleDto;
+import app.snatter.client.model.RoleUpdateDto;
+import app.snatter.client.model.ServerSettingsUpdateDto;
+import app.snatter.client.model.SystemMessageDto;
+import app.snatter.client.model.SystemNoticeDto;
+import app.snatter.client.model.UserMessageDto;
 import app.snatter.server.protocol.Protocol;
 import app.snatter.server.protocol.ProtocolVersion;
 import app.snatter.server.testing.GatewayTestClient;
 import app.snatter.server.testing.GatewayTestClient.Closed;
+import app.snatter.server.testing.Messages;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
-import io.restassured.http.ContentType;
-import io.restassured.path.json.JsonPath;
-import io.restassured.response.Response;
-import io.restassured.specification.RequestSpecification;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.Predicate;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class GatewayTest {
 
-    private static final String GENERAL_TEXT = "00000000-0000-7000-8000-000000000101";
+    private static final UUID GENERAL_TEXT = UUID.fromString("00000000-0000-7000-8000-000000000101");
 
-    private static RequestSpecification as(String token) {
-        return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON);
+    private final TestDataService data = new TestDataService();
+    private TestUsers.User owner;
+
+    @BeforeEach
+    void setUpServer() {
+        owner = data.setUpServer();
     }
 
-    private static Response send(String token, String channel, Map<String, Object> body) {
-        return as(token).body(body).post("/api/v1/channels/" + channel + "/messages");
+    private static GatewayTypingDto typing(UUID channel) {
+        return new GatewayTypingDto().channelId(channel);
     }
 
-    private static String createChannel(Map<String, Object> body) {
-        return as(TestUsers.ownerToken()).body(body).post("/api/v1/channels").then().statusCode(201).extract().path("id");
+    private static Predicate<GatewayChannelCreatedDto> created(UUID channel) {
+        return frame -> frame.getChannel().getId().equals(channel);
     }
 
-    private static void deleteChannel(String id) {
-        as(TestUsers.ownerToken()).delete("/api/v1/channels/" + id).then().statusCode(204);
+    private static Predicate<GatewayMessageCreatedDto> messageCreated(UUID message) {
+        return frame -> Messages.id(frame.getMessage()).equals(message);
     }
 
-    private static Predicate<JsonPath> channel(String id) {
-        return frame -> id.equals(frame.getString("channel.id"));
+    /** A new system message with a notice of the kind. */
+    private static Predicate<GatewayMessageCreatedDto> carrying(Class<? extends SystemNoticeDto> notice) {
+        return frame -> frame.getMessage() instanceof SystemMessageDto message && notice.isInstance(message.getNotice());
+    }
+
+    private static Predicate<GatewayPresenceUpdatedDto> presence(UUID account, PresenceStatusDto status) {
+        return frame -> frame.getPresence().getAccountId().equals(account) && frame.getPresence().getStatus() == status;
+    }
+
+    private static Predicate<GatewayReadStateUpdatedDto> readState(UUID channel) {
+        return frame -> frame.getReadState().getChannelId().equals(channel);
+    }
+
+    private static List<UUID> present(GatewayReadyDto ready) {
+        return ready.getPresences().stream().map(PresenceDto::getAccountId).toList();
+    }
+
+    /** Frames arrive in order, so anything sent before this marker has arrived once it has. */
+    private static void awaitMarker(GatewayTestClient gateway, TestUsers.User sender) {
+        gateway.await(GatewayMessageCreatedDto.class, messageCreated(Messages.send(sender, GENERAL_TEXT, "marker").getId()));
     }
 
     @Test
     void readyDescribesTheMembersWorld() {
         TestUsers.User member = TestUsers.register();
         try (GatewayTestClient gateway = GatewayTestClient.identified(member.token())) {
-            JsonPath ready = gateway.ready();
-            assertEquals(1, ready.getInt("seq"));
-            assertEquals(member.id(), ready.getString("account.id"));
-            assertFalse(ready.getBoolean("permissions.owner"));
-            assertTrue(ready.getList("permissions.permissions").contains("SEND_MESSAGES"));
-            assertEquals("Snatter", ready.getString("server.name"));
-            assertTrue(ready.getList("roles.name").containsAll(List.of("User", "Moderator", "Admin")));
-            assertTrue(ready.getList("members.id").contains(member.id()));
-            assertEquals("General", ready.getString("channels.find { it.id == '" + GENERAL_TEXT + "' }.name"));
+            GatewayReadyDto ready = gateway.ready();
+            assertEquals(1L, ready.getSeq());
+            assertEquals(member.id(), ready.getAccount().getId());
+            assertFalse(ready.getPermissions().getOwner());
+            assertTrue(ready.getPermissions().getPermissions().contains(SEND_MESSAGES));
+            assertEquals("Snatter", ready.getServer().getName());
+            assertTrue(ready.getRoles().stream().map(RoleDto::getName).toList().containsAll(List.of("User", "Moderator", "Admin")));
+            assertTrue(ready.getMembers().stream().anyMatch(m -> m.getId().equals(member.id())));
+            assertEquals("General", ready.getChannels().stream()
+                .filter(c -> c.getId().equals(GENERAL_TEXT)).findFirst().orElseThrow().getName());
         }
     }
 
@@ -68,31 +142,31 @@ class GatewayTest {
         String token = TestUsers.register().token();
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.send("not json");
-            assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
+            assertEquals(new Closed(4000, INVALID_FRAME), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.send("{\"token\":\"" + token + "\"}");
-            assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
+            assertEquals(new Closed(4000, INVALID_FRAME), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.send(typing(GENERAL_TEXT));
-            assertEquals(new Closed(4001, "not_identified"), gateway.awaitClose());
+            assertEquals(new Closed(4001, NOT_IDENTIFIED), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.identified(token)) {
-            gateway.send(typing("not-a-channel-id"));
-            assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
+            gateway.send("{\"type\":\"typing\",\"channelId\":\"not-a-channel-id\"}");
+            assertEquals(new Closed(4000, INVALID_FRAME), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.identify("snt_not-a-real-token");
-            assertEquals(new Closed(4002, "authentication_failed"), gateway.awaitClose());
+            assertEquals(new Closed(4002, AUTHENTICATION_FAILED), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.identified(token)) {
             gateway.identify(token);
-            assertEquals(new Closed(4003, "already_identified"), gateway.awaitClose());
+            assertEquals(new Closed(4003, ALREADY_IDENTIFIED), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             // The test profile gives connections one second to identify.
-            assertEquals(new Closed(4500, "identify_timeout"), gateway.awaitClose());
+            assertEquals(new Closed(4500, IDENTIFY_TIMEOUT), gateway.awaitClose());
         }
     }
 
@@ -102,11 +176,11 @@ class GatewayTest {
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.send("{\"type\":\"dance\",\"style\":\"waltz\"}");
             gateway.identify(member.token());
-            assertEquals(member.id(), gateway.await("ready").getString("account.id"));
+            assertEquals(member.id(), gateway.await(GatewayReadyDto.class).getAccount().getId());
             // Frames are handled in order, so this answer shows the one before did not close the connection.
             gateway.send("{\"type\":\"dance\"}");
             gateway.identify(member.token());
-            assertEquals(new Closed(4003, "already_identified"), gateway.awaitClose());
+            assertEquals(new Closed(4003, ALREADY_IDENTIFIED), gateway.awaitClose());
         }
     }
 
@@ -114,23 +188,23 @@ class GatewayTest {
     void clientsStateTheirProtocolVersion() {
         String token = TestUsers.register().token();
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
-            gateway.send("{\"type\":\"identify\",\"token\":\"" + token + "\"}");
-            assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
+            gateway.send(new GatewayIdentifyDto().token(token));
+            assertEquals(new Closed(4000, INVALID_FRAME), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.identify(token, "one");
-            assertEquals(new Closed(4000, "invalid_frame"), gateway.awaitClose());
+            assertEquals(new Closed(4000, INVALID_FRAME), gateway.awaitClose());
         }
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.identify(token, "0.9");
-            assertEquals(new Closed(4006, "client_outdated"), gateway.awaitClose());
+            assertEquals(new Closed(4006, CLIENT_OUTDATED), gateway.awaitClose());
         }
         // Newer clients get in; whether they can work with this server is theirs to decide.
         ProtocolVersion current = Protocol.CURRENT;
         for (String newer : List.of(current.major() + "." + (current.minor() + 1), (current.major() + 1) + ".0")) {
             try (GatewayTestClient gateway = GatewayTestClient.connect()) {
                 gateway.identify(token, newer);
-                assertEquals(current.toString(), gateway.await("ready").getString("server.protocol.version"));
+                assertEquals(current.toString(), gateway.await(GatewayReadyDto.class).getServer().getProtocol().getVersion());
             }
         }
     }
@@ -139,23 +213,23 @@ class GatewayTest {
     void membersAreOnlineWhileAnyConnectionIsOpen() {
         TestUsers.User watcher = TestUsers.register();
         TestUsers.User member = TestUsers.register();
-        Predicate<JsonPath> memberOnline = presence(member.id(), "online");
+        Predicate<GatewayPresenceUpdatedDto> memberOnline = presence(member.id(), ONLINE);
         try (GatewayTestClient watcherGateway = GatewayTestClient.identified(watcher.token())) {
-            assertFalse(watcherGateway.ready().getList("presences.accountId").contains(member.id()));
-            assertTrue(watcherGateway.ready().getList("presences.accountId").contains(watcher.id()), "ready includes the caller");
+            assertFalse(present(watcherGateway.ready()).contains(member.id()));
+            assertTrue(present(watcherGateway.ready()).contains(watcher.id()), "ready includes the caller");
 
             GatewayTestClient first = GatewayTestClient.identified(member.token());
-            watcherGateway.await("presence_updated", memberOnline);
-            assertTrue(first.ready().getList("presences.accountId").containsAll(List.of(member.id(), watcher.id())));
-            first.assertNone("presence_updated", memberOnline);
+            watcherGateway.await(GatewayPresenceUpdatedDto.class, memberOnline);
+            assertTrue(present(first.ready()).containsAll(List.of(member.id(), watcher.id())));
+            first.assertNone(GatewayPresenceUpdatedDto.class, memberOnline);
 
             // A second connection changes nothing, and neither does closing one of two.
             try (GatewayTestClient second = GatewayTestClient.identified(member.token())) {
                 first.close();
                 awaitMarker(watcherGateway, watcher);
-                watcherGateway.assertNone("presence_updated", f -> member.id().equals(f.getString("presence.accountId")));
+                watcherGateway.assertNone(GatewayPresenceUpdatedDto.class, f -> f.getPresence().getAccountId().equals(member.id()));
             }
-            watcherGateway.await("presence_updated", presence(member.id(), "offline"));
+            watcherGateway.await(GatewayPresenceUpdatedDto.class, presence(member.id(), OFFLINE));
         }
     }
 
@@ -163,52 +237,33 @@ class GatewayTest {
     void typingReachesTheOthersWhoCanSeeTheChannel() {
         TestUsers.User alice = TestUsers.register();
         TestUsers.User bob = TestUsers.register();
-        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
-        TestUsers.assignRole(alice.id(), crew);
-        String crewOnly = createChannel(Map.of("type", "text", "name", "crew", "requiredRoleIds", List.of(crew)));
-        String other = createChannel(Map.of("type", "text", "name", "other"));
-        String voice = createChannel(Map.of("type", "voice", "name", "voice only"));
+        UUID crew = data.createRole("Crew");
+        data.assignRole(alice.id(), crew);
+        UUID crewOnly = data.createChannel(ChannelTypeDto.TEXT, "crew", crew);
+        UUID other = data.createChannel(ChannelTypeDto.TEXT, "other");
+        UUID voice = data.createChannel(ChannelTypeDto.VOICE, "voice only");
         try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
              GatewayTestClient aliceElsewhere = GatewayTestClient.identified(alice.token());
              GatewayTestClient bobGateway = GatewayTestClient.identified(bob.token())) {
             aliceGateway.send(typing(GENERAL_TEXT));
-            JsonPath started = bobGateway.await("typing_started", f -> alice.id().equals(f.getString("accountId")));
-            assertEquals(GENERAL_TEXT, started.getString("channelId"));
+            GatewayTypingStartedDto started = bobGateway.await(GatewayTypingStartedDto.class, f -> f.getAccountId().equals(alice.id()));
+            assertEquals(GENERAL_TEXT, started.getChannelId());
 
             // Too soon after the first, in a voice-only channel, or where bob cannot see: nothing is passed on.
             aliceGateway.send(typing(GENERAL_TEXT));
             aliceGateway.send(typing(voice));
             aliceGateway.send(typing(crewOnly));
-            aliceGateway.send(typing(UUID.randomUUID().toString()));
+            aliceGateway.send(typing(UUID.randomUUID()));
             // A connection's frames are handled in order, so once this one is through, so are those above.
             aliceGateway.send(typing(other));
-            bobGateway.await("typing_started", f -> other.equals(f.getString("channelId")));
-            bobGateway.assertNone("typing_started", f -> alice.id().equals(f.getString("accountId")));
+            bobGateway.await(GatewayTypingStartedDto.class, f -> f.getChannelId().equals(other));
+            bobGateway.assertNone(GatewayTypingStartedDto.class, f -> f.getAccountId().equals(alice.id()));
 
             // Alice's own connections never hear about her typing.
             bobGateway.send(typing(other));
-            aliceElsewhere.await("typing_started", f -> bob.id().equals(f.getString("accountId")));
-            aliceElsewhere.assertNone("typing_started", f -> alice.id().equals(f.getString("accountId")));
-        } finally {
-            deleteChannel(crewOnly);
-            deleteChannel(other);
-            deleteChannel(voice);
-            TestUsers.deleteRole(crew);
+            aliceElsewhere.await(GatewayTypingStartedDto.class, f -> f.getAccountId().equals(bob.id()));
+            aliceElsewhere.assertNone(GatewayTypingStartedDto.class, f -> f.getAccountId().equals(alice.id()));
         }
-    }
-
-    /** Frames arrive in order, so anything sent before this marker has arrived once it has. */
-    private static void awaitMarker(GatewayTestClient gateway, TestUsers.User sender) {
-        String marker = send(sender.token(), GENERAL_TEXT, Map.of("content", "marker")).then().statusCode(201).extract().path("id");
-        gateway.await("message_created", f -> marker.equals(f.getString("message.id")));
-    }
-
-    private static Predicate<JsonPath> presence(String accountId, String status) {
-        return f -> accountId.equals(f.getString("presence.accountId")) && status.equals(f.getString("presence.status"));
-    }
-
-    private static String typing(String channelId) {
-        return "{\"type\":\"typing\",\"channelId\":\"" + channelId + "\"}";
     }
 
     @Test
@@ -217,234 +272,197 @@ class GatewayTest {
         TestUsers.User bob = TestUsers.register();
         try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
              GatewayTestClient bobGateway = GatewayTestClient.identified(bob.token())) {
-            String id = send(alice.token(), GENERAL_TEXT, Map.of("content", "live!", "nonce", "pending-1"))
-                .then().statusCode(201).extract().path("id");
+            UUID id = Messages.send(alice, GENERAL_TEXT, new MessageCreateDto().content("live!").nonce("pending-1")).getId();
 
-            JsonPath own = aliceGateway.await("message_created", f -> id.equals(f.getString("message.id")));
-            assertEquals("user", own.getString("message.kind"));
-            assertEquals("live!", own.getString("message.content"));
-            assertEquals("pending-1", own.getString("message.nonce"));
-            JsonPath other = bobGateway.await("message_created", f -> id.equals(f.getString("message.id")));
-            assertNull(other.getString("message.nonce"));
+            UserMessageDto own = assertInstanceOf(UserMessageDto.class,
+                aliceGateway.await(GatewayMessageCreatedDto.class, messageCreated(id)).getMessage());
+            assertEquals("live!", own.getContent());
+            assertEquals("pending-1", own.getNonce());
+            UserMessageDto theirs = assertInstanceOf(UserMessageDto.class,
+                bobGateway.await(GatewayMessageCreatedDto.class, messageCreated(id)).getMessage());
+            assertNull(theirs.getNonce());
 
-            as(alice.token()).body(Map.of("content", "edited")).patch("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + id)
-                .then().statusCode(200);
-            assertEquals("edited", bobGateway.await("message_updated", f -> id.equals(f.getString("message.id"))).getString("message.content"));
+            messagesApi(alice).editMessage(GENERAL_TEXT, id, new MessageUpdateDto().content("edited"));
+            UserMessageDto edited = assertInstanceOf(UserMessageDto.class,
+                bobGateway.await(GatewayMessageUpdatedDto.class, f -> Messages.id(f.getMessage()).equals(id)).getMessage());
+            assertEquals("edited", edited.getContent());
 
-            as(alice.token()).delete("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + id).then().statusCode(204);
-            JsonPath deleted = bobGateway.await("message_updated",
-                f -> id.equals(f.getString("message.id")) && "deleted".equals(f.getString("message.kind")));
-            assertEquals(false, deleted.getBoolean("message.removedByModerator"));
-            assertNull(deleted.getString("message.content"));
+            messagesApi(alice).deleteMessage(GENERAL_TEXT, id);
+            DeletedMessageDto deleted = (DeletedMessageDto) bobGateway.await(GatewayMessageUpdatedDto.class,
+                f -> f.getMessage() instanceof DeletedMessageDto d && d.getId().equals(id)).getMessage();
+            assertFalse(deleted.getRemovedByModerator());
 
-            String spam = as(alice.token()).body(Map.of("content", "spam")).post("/api/v1/channels/" + GENERAL_TEXT + "/messages")
-                .then().statusCode(201).extract().path("id");
-            String since = as(alice.token()).get("/api/v1/channels/" + GENERAL_TEXT + "/messages/" + spam).path("createdAt");
-            as(TestUsers.ownerToken()).queryParam("since", since).delete("/api/v1/accounts/" + alice.id() + "/messages")
-                .then().statusCode(200);
-            JsonPath purged = bobGateway.await("messages_purged", f -> spam.equals(f.getString("fromMessageId")));
-            assertEquals(GENERAL_TEXT, purged.getString("channelId"));
-            assertEquals(alice.id(), purged.getString("authorId"));
-            assertEquals(spam, purged.getString("toMessageId"));
-            assertEquals(true, purged.getBoolean("removedByModerator"));
+            UserMessageDto spam = Messages.send(alice, GENERAL_TEXT, "spam");
+            messagesApi(owner).purgeMessages(alice.id(), spam.getCreatedAt());
+            GatewayMessagesPurgedDto purged = bobGateway.await(GatewayMessagesPurgedDto.class,
+                f -> f.getFromMessageId().equals(spam.getId()));
+            assertEquals(GENERAL_TEXT, purged.getChannelId());
+            assertEquals(alice.id(), purged.getAuthorId());
+            assertEquals(spam.getId(), purged.getToMessageId());
+            assertTrue(purged.getRemovedByModerator());
         }
     }
 
     @Test
     void privateChannelsAndTheirMessagesStayHidden() {
-        String owner = TestUsers.ownerToken();
         TestUsers.User insider = TestUsers.register();
         TestUsers.User outsider = TestUsers.register();
-        String insiders = TestUsers.createRole("Insiders " + UUID.randomUUID());
-        TestUsers.assignRole(insider.id(), insiders);
+        UUID insiders = data.createRole("Insiders");
+        data.assignRole(insider.id(), insiders);
         try (GatewayTestClient insiderGateway = GatewayTestClient.identified(insider.token());
              GatewayTestClient outsiderGateway = GatewayTestClient.identified(outsider.token())) {
-            String secret = createChannel(Map.of("type", "text", "name", "secret", "requiredRoleIds", List.of(insiders)));
-            try {
-                insiderGateway.await("channel_created", channel(secret));
-                String whisper = send(owner, secret, Map.of("content", "psst")).then().statusCode(201).extract().path("id");
-                insiderGateway.await("message_created", f -> whisper.equals(f.getString("message.id")));
+            UUID secret = data.createChannel(ChannelTypeDto.TEXT, "secret", insiders);
+            insiderGateway.await(GatewayChannelCreatedDto.class, created(secret));
+            UUID whisper = Messages.send(owner, secret, "psst").getId();
+            insiderGateway.await(GatewayMessageCreatedDto.class, messageCreated(whisper));
 
-                // Frames reach a connection in order, so once the marker arrives the secret would have too.
-                String marker = send(owner, GENERAL_TEXT, Map.of("content", "marker")).then().statusCode(201).extract().path("id");
-                outsiderGateway.await("message_created", f -> marker.equals(f.getString("message.id")));
-                outsiderGateway.assertNone("channel_created", channel(secret));
-                outsiderGateway.assertNone("message_created", f -> secret.equals(f.getString("message.channelId")));
-            } finally {
-                deleteChannel(secret);
-            }
-            insiderGateway.await("channel_deleted", f -> secret.equals(f.getString("channelId")));
-        } finally {
-            TestUsers.deleteRole(insiders);
+            // Frames reach a connection in order, so once the marker arrives the secret would have too.
+            awaitMarker(outsiderGateway, owner);
+            outsiderGateway.assertNone(GatewayChannelCreatedDto.class, created(secret));
+            outsiderGateway.assertNone(GatewayMessageCreatedDto.class, f -> Messages.channelId(f.getMessage()).equals(secret));
+
+            channelsApi(owner).deleteChannel(secret);
+            insiderGateway.await(GatewayChannelDeletedDto.class, f -> f.getChannelId().equals(secret));
         }
     }
 
     @Test
     void readMarkersStartAtWhatIsThereAndFollowTheMember() {
-        String owner = TestUsers.ownerToken();
         TestUsers.User alice = TestUsers.register();
         TestUsers.User bob = TestUsers.register();
-        String crew = TestUsers.createRole("Crew " + UUID.randomUUID());
-        String reading = createChannel(Map.of("type", "text", "name", "reading"));
-        String voice = createChannel(Map.of("type", "voice", "name", "voice only"));
-        String secret = createChannel(Map.of("type", "text", "name", "secret", "requiredRoleIds", List.of(crew)));
-        try {
-            String before = send(owner, reading, Map.of("content", "before alice looked")).then().statusCode(201).extract().path("id");
-            String hiddenBefore = send(owner, secret, Map.of("content", "before alice could see")).then().statusCode(201).extract().path("id");
-            try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
-                 GatewayTestClient aliceElsewhere = GatewayTestClient.identified(alice.token());
-                 GatewayTestClient bobGateway = GatewayTestClient.identified(bob.token())) {
-                // What was there before she first saw the channel counts as read; voice channels have no state.
-                String state = "readStates.find { it.channelId == '" + reading + "' }";
-                assertEquals(before, aliceGateway.ready().getString(state + ".lastReadMessageId"));
-                assertEquals(before, aliceGateway.ready().getString(state + ".lastMessageId"));
-                assertFalse(aliceGateway.ready().getList("readStates.channelId").contains(voice));
-                assertFalse(aliceGateway.ready().getList("readStates.channelId").contains(secret));
+        UUID crew = data.createRole("Crew");
+        UUID reading = data.createChannel(ChannelTypeDto.TEXT, "reading");
+        UUID voice = data.createChannel(ChannelTypeDto.VOICE, "voice only");
+        UUID secret = data.createChannel(ChannelTypeDto.TEXT, "secret", crew);
+        UUID before = Messages.send(owner, reading, "before alice looked").getId();
+        UUID hiddenBefore = Messages.send(owner, secret, "before alice could see").getId();
+        try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
+             GatewayTestClient aliceElsewhere = GatewayTestClient.identified(alice.token());
+             GatewayTestClient bobGateway = GatewayTestClient.identified(bob.token())) {
+            // What was there before she first saw the channel counts as read; voice channels have no state.
+            List<ReadStateDto> states = aliceGateway.ready().getReadStates();
+            ReadStateDto state = states.stream().filter(s -> s.getChannelId().equals(reading)).findFirst().orElseThrow();
+            assertEquals(before, state.getLastReadMessageId());
+            assertEquals(before, state.getLastMessageId());
+            List<UUID> withState = states.stream().map(ReadStateDto::getChannelId).toList();
+            assertFalse(withState.contains(voice));
+            assertFalse(withState.contains(secret));
 
-                String unread = send(bob.token(), reading, Map.of("content", "for alice")).then().statusCode(201).extract().path("id");
-                as(alice.token()).body(Map.of("lastReadMessageId", unread)).put("/api/v1/channels/" + reading + "/read-state")
-                    .then().statusCode(200);
-                for (GatewayTestClient gateway : List.of(aliceGateway, aliceElsewhere)) {
-                    JsonPath moved = gateway.await("read_state_updated", readState(reading));
-                    assertEquals(unread, moved.getString("readState.lastReadMessageId"));
-                }
-
-                // Sending reads up to the message sent; marking an older message read changes nothing.
-                String own = send(alice.token(), reading, Map.of("content", "mine")).then().statusCode(201).extract().path("id");
-                for (GatewayTestClient gateway : List.of(aliceGateway, aliceElsewhere)) {
-                    assertEquals(own, gateway.await("read_state_updated", readState(reading)).getString("readState.lastReadMessageId"));
-                }
-                as(alice.token()).body(Map.of("lastReadMessageId", before)).put("/api/v1/channels/" + reading + "/read-state")
-                    .then().statusCode(200);
-
-                // A channel that becomes visible starts out read.
-                TestUsers.assignRole(alice.id(), crew);
-                aliceGateway.await("channel_created", channel(secret));
-                JsonPath revealed = aliceGateway.await("read_state_updated", readState(secret));
-                assertEquals(hiddenBefore, revealed.getString("readState.lastReadMessageId"));
-
-                // Nobody else hears about Alice's reading.
-                awaitMarker(aliceGateway, bob);
-                aliceGateway.assertNone("read_state_updated", readState(reading));
-                awaitMarker(bobGateway, bob);
-                bobGateway.assertNone("read_state_updated", f -> own.equals(f.getString("readState.lastReadMessageId")));
+            UUID unread = Messages.send(bob, reading, "for alice").getId();
+            messagesApi(alice).markRead(reading, new ReadStateUpdateDto().lastReadMessageId(unread));
+            for (GatewayTestClient gateway : List.of(aliceGateway, aliceElsewhere)) {
+                assertEquals(unread, gateway.await(GatewayReadStateUpdatedDto.class, readState(reading)).getReadState().getLastReadMessageId());
             }
-        } finally {
-            deleteChannel(reading);
-            deleteChannel(voice);
-            deleteChannel(secret);
-            TestUsers.deleteRole(crew);
-        }
-    }
 
-    private static Predicate<JsonPath> readState(String channelId) {
-        return frame -> channelId.equals(frame.getString("readState.channelId"));
+            // Sending reads up to the message sent; marking an older message read changes nothing.
+            UUID own = Messages.send(alice, reading, "mine").getId();
+            for (GatewayTestClient gateway : List.of(aliceGateway, aliceElsewhere)) {
+                assertEquals(own, gateway.await(GatewayReadStateUpdatedDto.class, readState(reading)).getReadState().getLastReadMessageId());
+            }
+            messagesApi(alice).markRead(reading, new ReadStateUpdateDto().lastReadMessageId(before));
+
+            // A channel that becomes visible starts out read.
+            data.assignRole(alice.id(), crew);
+            aliceGateway.await(GatewayChannelCreatedDto.class, created(secret));
+            assertEquals(hiddenBefore,
+                aliceGateway.await(GatewayReadStateUpdatedDto.class, readState(secret)).getReadState().getLastReadMessageId());
+
+            // Nobody else hears about Alice's reading.
+            awaitMarker(aliceGateway, bob);
+            aliceGateway.assertNone(GatewayReadStateUpdatedDto.class, readState(reading));
+            awaitMarker(bobGateway, bob);
+            bobGateway.assertNone(GatewayReadStateUpdatedDto.class, f -> own.equals(f.getReadState().getLastReadMessageId()));
+        }
     }
 
     @Test
     void roleAndChannelAccessChangesArriveAsDifferences() {
-        String owner = TestUsers.ownerToken();
         TestUsers.User member = TestUsers.register();
-        String seers = TestUsers.createRole("Seers " + UUID.randomUUID(), "TIMEOUT_MEMBERS");
-        String hidden = createChannel(Map.of("type", "text", "name", "for seers", "requiredRoleIds", List.of(seers)));
-        boolean roleDeleted = false;
+        UUID seers = data.createRole("Seers", TIMEOUT_MEMBERS);
+        UUID hidden = data.createChannel(ChannelTypeDto.TEXT, "for seers", seers);
         try (GatewayTestClient gateway = GatewayTestClient.identified(member.token())) {
-            assertFalse(gateway.ready().getList("channels.id").contains(hidden));
-            assertTrue(gateway.ready().getList("roles.id").contains(seers));
+            assertFalse(gateway.ready().getChannels().stream().anyMatch(c -> c.getId().equals(hidden)));
+            assertTrue(gateway.ready().getRoles().stream().anyMatch(r -> r.getId().equals(seers)));
 
-            TestUsers.assignRole(member.id(), seers);
-            gateway.await("member_updated", f -> member.id().equals(f.getString("member.id")) && f.getList("member.roleIds").contains(seers));
-            assertTrue(gateway.await("permissions_changed").getList("permissions.permissions").contains("TIMEOUT_MEMBERS"));
-            gateway.await("channel_created", channel(hidden));
+            data.assignRole(member.id(), seers);
+            gateway.await(GatewayMemberUpdatedDto.class,
+                f -> f.getMember().getId().equals(member.id()) && f.getMember().getRoleIds().contains(seers));
+            assertTrue(gateway.await(GatewayPermissionsChangedDto.class).getPermissions().getPermissions().contains(TIMEOUT_MEMBERS));
+            gateway.await(GatewayChannelCreatedDto.class, created(hidden));
 
-            TestUsers.patchRole(owner, seers, Map.of("name", "Renamed seers")).then().statusCode(200);
-            assertEquals("Renamed seers", gateway.await("role_updated", f -> seers.equals(f.getString("role.id"))).getString("role.name"));
+            rolesApi(owner).updateRole(seers, new RoleUpdateDto().name("Renamed seers"));
+            assertEquals("Renamed seers",
+                gateway.await(GatewayRoleUpdatedDto.class, f -> f.getRole().getId().equals(seers)).getRole().getName());
 
-            given().header("Authorization", "Bearer " + owner).delete("/api/v1/accounts/" + member.id() + "/roles/" + seers)
-                .then().statusCode(204);
-            gateway.await("channel_deleted", f -> hidden.equals(f.getString("channelId")));
-            assertFalse(gateway.await("permissions_changed").getList("permissions.permissions").contains("TIMEOUT_MEMBERS"));
+            data.unassignRole(member.id(), seers);
+            gateway.await(GatewayChannelDeletedDto.class, f -> f.getChannelId().equals(hidden));
+            assertFalse(gateway.await(GatewayPermissionsChangedDto.class).getPermissions().getPermissions().contains(TIMEOUT_MEMBERS));
 
             // Making the channel public reveals it.
-            as(owner).body(Map.of("requiredRoleIds", List.of())).patch("/api/v1/channels/" + hidden).then().statusCode(200);
-            assertEquals(List.of(), gateway.await("channel_created", channel(hidden)).getList("channel.requiredRoleIds"));
+            channelsApi(owner).updateChannel(hidden, new ChannelUpdateDto().requiredRoleIds(List.of()));
+            assertEquals(List.of(), gateway.await(GatewayChannelCreatedDto.class, created(hidden)).getChannel().getRequiredRoleIds());
 
-            TestUsers.deleteRole(seers);
-            roleDeleted = true;
-            gateway.await("role_deleted", f -> seers.equals(f.getString("roleId")));
-        } finally {
-            deleteChannel(hidden);
-            if (!roleDeleted) {
-                TestUsers.deleteRole(seers);
-            }
+            data.deleteRole(seers);
+            gateway.await(GatewayRoleDeletedDto.class, f -> f.getRoleId().equals(seers));
         }
     }
 
     @Test
     void channelChangesArriveWithTheirNotices() {
-        String owner = TestUsers.ownerToken();
         TestUsers.User member = TestUsers.register();
+        ChannelsApi channels = channelsApi(owner);
         try (GatewayTestClient gateway = GatewayTestClient.identified(member.token())) {
-            String channel = createChannel(Map.of("type", "voice_text", "name", "lounge"));
-            try {
-                gateway.await("channel_created", channel(channel));
-                gateway.await("message_created", f -> channel.equals(f.getString("message.channelId"))
-                    && "channel_created".equals(f.getString("message.notice.type")));
+            UUID channel = data.createChannel(ChannelTypeDto.VOICE_TEXT, "lounge");
+            gateway.await(GatewayChannelCreatedDto.class, created(channel));
+            gateway.await(GatewayMessageCreatedDto.class,
+                carrying(ChannelCreatedNoticeDto.class).and(f -> Messages.channelId(f.getMessage()).equals(channel)));
 
-                as(owner).body(Map.of("name", "big lounge", "bitrate", 96000)).patch("/api/v1/channels/" + channel).then().statusCode(200);
-                JsonPath updated = gateway.await("channel_updated", f -> channel.equals(f.getString("channel.id"))
-                    && "big lounge".equals(f.getString("channel.name")));
-                assertEquals(96000, updated.getInt("channel.bitrate"));
-                JsonPath notice = gateway.await("message_created", f -> "channel_renamed".equals(f.getString("message.notice.type")));
-                assertEquals("big lounge", notice.getString("message.notice.to"));
+            channels.updateChannel(channel, new ChannelUpdateDto().name("big lounge").bitrate(96000));
+            ChannelDto updated = gateway.await(GatewayChannelUpdatedDto.class,
+                f -> f.getChannel().getId().equals(channel) && "big lounge".equals(f.getChannel().getName())).getChannel();
+            assertEquals(96000, updated.getBitrate());
+            SystemMessageDto notice = (SystemMessageDto) gateway.await(GatewayMessageCreatedDto.class,
+                carrying(ChannelRenamedNoticeDto.class)).getMessage();
+            assertEquals("big lounge", ((ChannelRenamedNoticeDto) notice.getNotice()).getTo());
 
-                // Moving a channel to the top shifts the others; each moved channel is updated.
-                as(owner).body(Map.of("position", 0)).patch("/api/v1/channels/" + channel).then().statusCode(200);
-                gateway.await("channel_updated", f -> channel.equals(f.getString("channel.id"))
-                    && f.getInt("channel.position") == 0);
-                gateway.await("channel_updated", f -> GENERAL_TEXT.equals(f.getString("channel.id"))
-                    && f.getInt("channel.position") == 1);
-            } finally {
-                deleteChannel(channel);
-            }
-            gateway.await("channel_deleted", f -> channel.equals(f.getString("channelId")));
-            gateway.await("channel_updated", f -> GENERAL_TEXT.equals(f.getString("channel.id"))
-                && f.getInt("channel.position") == 0);
+            // Moving a channel to the top shifts the others; each moved channel is updated.
+            channels.updateChannel(channel, new ChannelUpdateDto().position(0));
+            gateway.await(GatewayChannelUpdatedDto.class, f -> f.getChannel().getId().equals(channel) && f.getChannel().getPosition() == 0);
+            gateway.await(GatewayChannelUpdatedDto.class, f -> f.getChannel().getId().equals(GENERAL_TEXT) && f.getChannel().getPosition() == 1);
+
+            channels.deleteChannel(channel);
+            gateway.await(GatewayChannelDeletedDto.class, f -> f.getChannelId().equals(channel));
+            gateway.await(GatewayChannelUpdatedDto.class, f -> f.getChannel().getId().equals(GENERAL_TEXT) && f.getChannel().getPosition() == 0);
         }
     }
 
     @Test
     void membersJoiningAndServerChangesAreBroadcast() {
         TestUsers.User member = TestUsers.register();
-        String originalName = as(TestUsers.ownerToken()).get("/api/v1/server-settings").then().extract().path("name");
         try (GatewayTestClient gateway = GatewayTestClient.identified(member.token())) {
             TestUsers.User joined = TestUsers.register();
-            gateway.await("member_joined", f -> joined.id().equals(f.getString("member.id")));
-            gateway.await("message_created", f -> "member_joined".equals(f.getString("message.notice.type"))
-                && joined.id().equals(f.getString("message.authorId")));
+            gateway.await(GatewayMemberJoinedDto.class, f -> f.getMember().getId().equals(joined.id()));
+            gateway.await(GatewayMessageCreatedDto.class, carrying(MemberJoinedNoticeDto.class)
+                .and(f -> joined.id().equals(((SystemMessageDto) f.getMessage()).getAuthorId())));
 
-            TestUsers.patchSettings(Map.of("name", "Live community")).then().statusCode(200);
-            assertEquals("Live community", gateway.await("server_updated").getString("server.community.name"));
-        } finally {
-            TestUsers.patchSettings(Map.of("name", originalName)).then().statusCode(200);
+            data.updateSettings(new ServerSettingsUpdateDto().name("Live community"));
+            assertEquals("Live community", gateway.await(GatewayServerUpdatedDto.class).getServer().getCommunity().getName());
         }
     }
 
     @Test
     void loggingOutClosesTheSessionsConnectionsOnly() {
         TestUsers.User member = TestUsers.register();
-        String otherSession = given().contentType(ContentType.JSON)
-            .body(Map.of("username", member.username(), "password", TestUsers.DEFAULT_PASSWORD))
-            .post("/api/v1/auth/login").then().statusCode(200).extract().path("token");
+        TestUsers.User otherSession = TestUsers.newSession(member);
         try (GatewayTestClient first = GatewayTestClient.identified(member.token());
              GatewayTestClient second = GatewayTestClient.identified(member.token());
-             GatewayTestClient elsewhere = GatewayTestClient.identified(otherSession)) {
-            as(member.token()).post("/api/v1/auth/logout").then().statusCode(204);
-            assertEquals(new Closed(4004, "session_ended"), first.awaitClose());
-            assertEquals(new Closed(4004, "session_ended"), second.awaitClose());
+             GatewayTestClient elsewhere = GatewayTestClient.identified(otherSession.token())) {
+            authApi(member).logout();
+            assertEquals(new Closed(4004, SESSION_ENDED), first.awaitClose());
+            assertEquals(new Closed(4004, SESSION_ENDED), second.awaitClose());
 
-            String id = send(otherSession, GENERAL_TEXT, Map.of("content", "still here")).then().statusCode(201).extract().path("id");
-            elsewhere.await("message_created", f -> id.equals(f.getString("message.id")));
+            UUID id = Messages.send(otherSession, GENERAL_TEXT, "still here").getId();
+            elsewhere.await(GatewayMessageCreatedDto.class, messageCreated(id));
         }
     }
 }

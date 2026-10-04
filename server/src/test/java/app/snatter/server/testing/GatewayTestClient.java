@@ -3,9 +3,16 @@ package app.snatter.server.testing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import app.snatter.client.model.GatewayClientFrameDto;
+import app.snatter.client.model.GatewayCloseReasonDto;
+import app.snatter.client.model.GatewayIdentifyDto;
+import app.snatter.client.model.GatewayReadyDto;
+import app.snatter.client.model.GatewayServerFrameDto;
 import app.snatter.server.protocol.Protocol;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.restassured.RestAssured;
-import io.restassured.path.json.JsonPath;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
@@ -20,25 +27,29 @@ import java.util.function.Predicate;
 
 /**
  * A gateway connection as a client would make it, over the JDK's WebSocket
- * client so it works in-process and against the packaged application.
- * Received frames are buffered; {@link #await} takes the first matching one
- * wherever it is in the buffer, so tests do not depend on the order of
- * unrelated frames. Every frame's {@code seq} is checked to follow the one
- * before.
+ * client, with frames as the generated models. Received frames are
+ * buffered; {@link #await} takes the first matching one wherever it is in
+ * the buffer, so tests do not depend on the order of unrelated frames.
+ *
+ * <p>Like the API clients, it is strict: a frame of a type, or with a field,
+ * the contract does not have fails the test, and so does a frame whose
+ * {@code seq} does not follow the one before.
  */
 public final class GatewayTestClient implements AutoCloseable {
 
     public static final Duration TIMEOUT = Duration.ofSeconds(5);
 
-    public record Closed(int code, String reason) {
+    public record Closed(int code, GatewayCloseReasonDto reason) {
     }
 
-    private final List<JsonPath> buffer = new ArrayList<>();
+    private static final ObjectMapper JSON = ApiClientFactory.json();
+
+    private final List<GatewayServerFrameDto> buffer = new ArrayList<>();
     private final List<String> errors = new ArrayList<>();
     private final CompletableFuture<Closed> closed = new CompletableFuture<>();
     private final WebSocket socket;
     private long lastSeq;
-    private JsonPath ready;
+    private GatewayReadyDto ready;
 
     private GatewayTestClient() {
         URI uri = URI.create("ws://localhost:" + RestAssured.port + "/api/v1/gateway");
@@ -56,14 +67,23 @@ public final class GatewayTestClient implements AutoCloseable {
     public static GatewayTestClient identified(String token) {
         GatewayTestClient client = connect();
         client.identify(token);
-        client.ready = client.await("ready");
+        client.ready = client.await(GatewayReadyDto.class);
         return client;
     }
 
-    public JsonPath ready() {
+    public GatewayReadyDto ready() {
         return ready;
     }
 
+    public void send(GatewayClientFrameDto frame) {
+        try {
+            send(JSON.writerFor(GatewayClientFrameDto.class).writeValueAsString(frame));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    /** Sends the text as it is, for frames the contract does not allow. */
     public void send(String text) {
         socket.sendText(text, true).join();
     }
@@ -73,29 +93,30 @@ public final class GatewayTestClient implements AutoCloseable {
     }
 
     public void identify(String token, String protocol) {
-        send("{\"type\":\"identify\",\"token\":\"" + token + "\",\"protocol\":\"" + protocol + "\"}");
+        send(new GatewayIdentifyDto().token(token).protocol(protocol));
     }
 
     /** Takes the first buffered or arriving frame of the type. */
-    public JsonPath await(String type) {
+    public <T extends GatewayServerFrameDto> T await(Class<T> type) {
         return await(type, frame -> true);
     }
 
     /** Takes the first buffered or arriving frame of the type that matches. */
-    public JsonPath await(String type, Predicate<JsonPath> matching) {
+    public <T extends GatewayServerFrameDto> T await(Class<T> type, Predicate<? super T> matching) {
         long deadline = System.nanoTime() + TIMEOUT.toNanos();
         synchronized (buffer) {
             while (true) {
-                for (Iterator<JsonPath> it = buffer.iterator(); it.hasNext(); ) {
-                    JsonPath frame = it.next();
-                    if (type.equals(frame.getString("type")) && matching.test(frame)) {
+                assertEquals(List.of(), errors, "frames as the contract describes them");
+                for (Iterator<GatewayServerFrameDto> it = buffer.iterator(); it.hasNext(); ) {
+                    GatewayServerFrameDto frame = it.next();
+                    if (type.isInstance(frame) && matching.test(type.cast(frame))) {
                         it.remove();
-                        return frame;
+                        return type.cast(frame);
                     }
                 }
                 long left = deadline - System.nanoTime();
                 if (left <= 0) {
-                    fail("no " + type + " frame arrived; buffered: " + describe());
+                    fail("no matching " + type.getSimpleName() + " arrived; buffered: " + describe());
                 }
                 try {
                     TimeUnit.NANOSECONDS.timedWait(buffer, left);
@@ -108,11 +129,11 @@ public final class GatewayTestClient implements AutoCloseable {
     }
 
     /** Asserts that no buffered frame of the type matches; pair it with an awaited later frame. */
-    public void assertNone(String type, Predicate<JsonPath> matching) {
+    public <T extends GatewayServerFrameDto> void assertNone(Class<T> type, Predicate<? super T> matching) {
         synchronized (buffer) {
-            for (JsonPath frame : buffer) {
-                if (type.equals(frame.getString("type")) && matching.test(frame)) {
-                    fail("unexpected " + type + " frame: " + frame.prettify());
+            for (GatewayServerFrameDto frame : buffer) {
+                if (type.isInstance(frame) && matching.test(type.cast(frame))) {
+                    fail("unexpected frame: " + frame);
                 }
             }
         }
@@ -125,7 +146,7 @@ public final class GatewayTestClient implements AutoCloseable {
     @Override
     public void close() {
         synchronized (buffer) {
-            assertEquals(List.of(), errors, "frames must be numbered 1, 2, 3, ...");
+            assertEquals(List.of(), errors, "frames as the contract describes them");
         }
         if (!closed.isDone()) {
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
@@ -133,7 +154,7 @@ public final class GatewayTestClient implements AutoCloseable {
     }
 
     private String describe() {
-        return buffer.stream().map(f -> f.getString("type")).toList().toString();
+        return buffer.stream().map(GatewayServerFrameDto::getType).toList().toString();
     }
 
     private final class Listener implements WebSocket.Listener {
@@ -144,15 +165,10 @@ public final class GatewayTestClient implements AutoCloseable {
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
             partial.append(data);
             if (last) {
-                JsonPath frame = JsonPath.from(partial.toString());
+                String text = partial.toString();
                 partial.setLength(0);
                 synchronized (buffer) {
-                    long seq = frame.getLong("seq");
-                    if (seq != lastSeq + 1) {
-                        errors.add("seq " + seq + " after " + lastSeq + " (" + frame.getString("type") + ")");
-                    }
-                    lastSeq = seq;
-                    buffer.add(frame);
+                    receive(text);
                     buffer.notifyAll();
                 }
             }
@@ -160,9 +176,31 @@ public final class GatewayTestClient implements AutoCloseable {
             return null;
         }
 
+        private void receive(String text) {
+            try {
+                JsonNode tree = JSON.readTree(text);
+                long seq = tree.path("seq").asLong();
+                if (seq != lastSeq + 1) {
+                    errors.add("seq " + seq + " after " + lastSeq + ": " + text);
+                }
+                lastSeq = seq;
+                buffer.add(JSON.treeToValue(tree, GatewayServerFrameDto.class));
+            } catch (JsonProcessingException e) {
+                errors.add(e.getOriginalMessage() + ": " + text);
+            }
+        }
+
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-            closed.complete(new Closed(statusCode, reason));
+            if (statusCode == WebSocket.NORMAL_CLOSURE) {
+                closed.complete(new Closed(statusCode, null));
+            } else {
+                try {
+                    closed.complete(new Closed(statusCode, GatewayCloseReasonDto.fromValue(reason)));
+                } catch (IllegalArgumentException e) {
+                    closed.completeExceptionally(new AssertionError("a close reason the contract does not have: " + reason));
+                }
+            }
             return null;
         }
 

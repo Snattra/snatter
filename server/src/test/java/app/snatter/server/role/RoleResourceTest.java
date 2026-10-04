@@ -1,182 +1,173 @@
 package app.snatter.server.role;
 
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasItems;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.nullValue;
+import static app.snatter.client.model.PermissionDto.BAN_MEMBERS;
+import static app.snatter.client.model.PermissionDto.CONNECT;
+import static app.snatter.client.model.PermissionDto.CREATE_INVITE;
+import static app.snatter.client.model.PermissionDto.MANAGE_MESSAGES;
+import static app.snatter.client.model.PermissionDto.MANAGE_ROLES;
+import static app.snatter.client.model.PermissionDto.MANAGE_SERVER;
+import static app.snatter.client.model.PermissionDto.MOVE_MEMBERS;
+import static app.snatter.client.model.PermissionDto.MUTE_MEMBERS;
+import static app.snatter.client.model.PermissionDto.SEND_MESSAGES;
+import static app.snatter.client.model.PermissionDto.SPEAK;
+import static app.snatter.client.model.PermissionDto.STREAM;
+import static app.snatter.client.model.PermissionDto.TIMEOUT_MEMBERS;
+import static app.snatter.server.testing.ApiAssertions.assertApiError;
+import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
+import static app.snatter.server.testing.ApiClientFactory.accountsApi;
+import static app.snatter.server.testing.ApiClientFactory.channelsApi;
+import static app.snatter.server.testing.ApiClientFactory.rolesApi;
+import static java.util.stream.Collectors.toSet;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.client.api.RolesApi;
+import app.snatter.client.model.PermissionDto;
+import app.snatter.client.model.PermissionSetDto;
+import app.snatter.client.model.RoleCreateDto;
+import app.snatter.client.model.RoleDto;
+import app.snatter.client.model.RoleUpdateDto;
+import app.snatter.client.model.ServerSettingsUpdateDto;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
-import io.restassured.http.ContentType;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class RoleResourceTest {
 
-    private static io.restassured.response.Response create(String token, Map<String, Object> body) {
-        return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON).body(body).post("/api/v1/roles");
+    private final TestDataService data = new TestDataService();
+    private TestUsers.User owner;
+
+    @BeforeEach
+    void setUpServer() {
+        owner = data.setUpServer();
     }
 
-    private static io.restassured.response.Response permissionsOf(String token) {
-        return given().header("Authorization", "Bearer " + token).get("/api/v1/accounts/me/permissions");
+    private static RoleDto find(List<RoleDto> roles, UUID id) {
+        return roles.stream().filter(role -> role.getId().equals(id)).findFirst().orElseThrow();
+    }
+
+    private static Set<PermissionDto> permissionsOf(TestUsers.User user) {
+        return Set.copyOf(rolesApi(user).getMyPermissions().getPermissions());
     }
 
     @Test
     void newMembersGetTheUserRoleAndTheStandardRolesExist() {
         TestUsers.User member = TestUsers.register();
-        Object[] allButServerSettings = Arrays.stream(Permission.values())
-            .filter(p -> p != Permission.MANAGE_SERVER).map(Enum::name).toArray();
-        given().header("Authorization", "Bearer " + member.token()).get("/api/v1/roles")
-            .then().statusCode(200)
-            .body("find { it.id == '" + TestUsers.USER_ROLE + "' }.name", equalTo("User"))
-            .body("find { it.id == '" + TestUsers.USER_ROLE + "' }.permissions",
-                containsInAnyOrder("CREATE_INVITE", "SEND_MESSAGES", "CONNECT", "SPEAK", "STREAM"))
-            .body("find { it.id == '" + TestUsers.MODERATOR_ROLE + "' }.permissions",
-                containsInAnyOrder("CREATE_INVITE", "SEND_MESSAGES", "CONNECT", "SPEAK", "STREAM",
-                    "TIMEOUT_MEMBERS", "BAN_MEMBERS", "MANAGE_MESSAGES", "MUTE_MEMBERS", "MOVE_MEMBERS"))
-            .body("find { it.id == '" + TestUsers.ADMIN_ROLE + "' }.permissions", containsInAnyOrder(allButServerSettings));
+        Set<PermissionDto> allButServerSettings = Arrays.stream(Permission.values())
+            .filter(p -> p != Permission.MANAGE_SERVER).map(p -> PermissionDto.fromValue(p.name())).collect(toSet());
+        List<RoleDto> roles = rolesApi(member).listRoles();
+        RoleDto user = find(roles, TestDataService.USER_ROLE);
+        assertEquals("User", user.getName());
+        assertEquals(Set.of(CREATE_INVITE, SEND_MESSAGES, CONNECT, SPEAK, STREAM), Set.copyOf(user.getPermissions()));
+        assertEquals(Set.of(CREATE_INVITE, SEND_MESSAGES, CONNECT, SPEAK, STREAM,
+                TIMEOUT_MEMBERS, BAN_MEMBERS, MANAGE_MESSAGES, MUTE_MEMBERS, MOVE_MEMBERS),
+            Set.copyOf(find(roles, TestDataService.MODERATOR_ROLE).getPermissions()));
+        assertEquals(allButServerSettings, Set.copyOf(find(roles, TestDataService.ADMIN_ROLE).getPermissions()));
 
-        given().header("Authorization", "Bearer " + member.token()).get("/api/v1/accounts/me")
-            .then().body("roleIds", contains(TestUsers.USER_ROLE));
-        permissionsOf(member.token()).then().statusCode(200)
-            .body("owner", equalTo(false))
-            .body("permissions", not(hasItem("MANAGE_ROLES")))
-            .body("permissions", hasItem("SEND_MESSAGES"));
+        assertEquals(List.of(TestDataService.USER_ROLE), accountsApi(member).getCurrentAccount().getRoleIds());
+        PermissionSetDto memberPermissions = rolesApi(member).getMyPermissions();
+        assertFalse(memberPermissions.getOwner());
+        assertFalse(memberPermissions.getPermissions().contains(MANAGE_ROLES));
+        assertTrue(memberPermissions.getPermissions().contains(SEND_MESSAGES));
 
-        permissionsOf(TestUsers.ownerToken()).then().statusCode(200)
-            .body("owner", equalTo(true))
-            .body("permissions", hasItems("MANAGE_SERVER", "MANAGE_ROLES", "BAN_MEMBERS"));
+        PermissionSetDto ownerPermissions = rolesApi(owner).getMyPermissions();
+        assertTrue(ownerPermissions.getOwner());
+        assertTrue(ownerPermissions.getPermissions().containsAll(List.of(MANAGE_SERVER, MANAGE_ROLES, BAN_MEMBERS)));
 
-        given().get("/api/v1/roles").then().statusCode(401);
+        assertApiStatus(401, () -> rolesApi().listRoles());
     }
 
     @Test
     void newRolesGoToTheBottomAndCanBeAssigned() {
         TestUsers.User member = TestUsers.register();
-        String first = TestUsers.createRole("First " + UUID.randomUUID(), "TIMEOUT_MEMBERS");
-        String second = TestUsers.createRole("Second " + UUID.randomUUID(), "MUTE_MEMBERS");
-        try {
-            given().header("Authorization", "Bearer " + member.token()).get("/api/v1/roles")
-                .then()
-                .body("find { it.id == '" + second + "' }.position", equalTo(0))
-                .body("find { it.id == '" + first + "' }.position", equalTo(1))
-                .body("find { it.id == '" + first + "' }.permissions", contains("TIMEOUT_MEMBERS"))
-                .body("find { it.id == '" + first + "' }.color", nullValue());
+        UUID first = data.createRole("First", TIMEOUT_MEMBERS);
+        UUID second = data.createRole("Second", MUTE_MEMBERS);
+        List<RoleDto> roles = rolesApi(member).listRoles();
+        assertEquals(0, find(roles, second).getPosition());
+        assertEquals(1, find(roles, first).getPosition());
+        assertEquals(List.of(TIMEOUT_MEMBERS), find(roles, first).getPermissions());
+        assertNull(find(roles, first).getColor());
 
-            TestUsers.assignRole(member.id(), first);
-            TestUsers.assignRole(member.id(), first); // idempotent
-            given().header("Authorization", "Bearer " + member.token()).get("/api/v1/accounts/me")
-                .then().body("roleIds", containsInAnyOrder(TestUsers.USER_ROLE, first));
-            permissionsOf(member.token()).then().body("permissions", hasItem("TIMEOUT_MEMBERS"));
+        data.assignRole(member.id(), first);
+        data.assignRole(member.id(), first); // idempotent
+        assertEquals(Set.of(TestDataService.USER_ROLE, first), Set.copyOf(accountsApi(member).getCurrentAccount().getRoleIds()));
+        assertTrue(permissionsOf(member).contains(TIMEOUT_MEMBERS));
 
-            given().header("Authorization", "Bearer " + TestUsers.ownerToken())
-                .delete("/api/v1/accounts/" + member.id() + "/roles/" + first).then().statusCode(204);
-            permissionsOf(member.token()).then().body("permissions", not(hasItem("TIMEOUT_MEMBERS")));
-        } finally {
-            TestUsers.deleteRole(first);
-            TestUsers.deleteRole(second);
-        }
+        data.unassignRole(member.id(), first);
+        assertFalse(permissionsOf(member).contains(TIMEOUT_MEMBERS));
     }
 
     @Test
     void managersOnlyManageRolesWithinTheirOwnPermissions() {
-        String manager = TestUsers.createRole("Manager " + UUID.randomUUID(), "MANAGE_ROLES", "TIMEOUT_MEMBERS");
-        String admin = TestUsers.createRole("Admin " + UUID.randomUUID(), "MANAGE_SERVER", "BAN_MEMBERS");
+        UUID manager = data.createRole("Manager", MANAGE_ROLES, TIMEOUT_MEMBERS);
+        UUID settings = data.createRole("Settings", MANAGE_SERVER, BAN_MEMBERS);
         TestUsers.User mgr = TestUsers.register();
-        TestUsers.assignRole(mgr.id(), manager);
-        permissionsOf(mgr.token()).then().statusCode(200).body("permissions", hasItems("MANAGE_ROLES", "TIMEOUT_MEMBERS"));
+        data.assignRole(mgr.id(), manager);
+        assertTrue(permissionsOf(mgr).containsAll(List.of(MANAGE_ROLES, TIMEOUT_MEMBERS)));
         TestUsers.User target = TestUsers.register();
-        String created = null;
-        try {
-            // Can create a role with a subset of own permissions; it lands at the bottom.
-            created = create(mgr.token(), Map.of("name", "Helper", "permissions", List.of("TIMEOUT_MEMBERS")))
-                .then().statusCode(201).body("position", equalTo(0)).extract().path("id");
-            // Cannot grant what they do not hold.
-            create(mgr.token(), Map.of("name", "Sneaky", "permissions", List.of("BAN_MEMBERS")))
-                .then().statusCode(403).body("error", equalTo("permission_escalation"));
-            TestUsers.patchRole(mgr.token(), created, Map.of("permissions", List.of("MANAGE_SERVER")))
-                .then().statusCode(403).body("error", equalTo("permission_escalation"));
-            // Cannot touch a role holding permissions they lack.
-            TestUsers.patchRole(mgr.token(), admin, Map.of("name", "Pwned")).then().statusCode(403).body("error", equalTo("permission_escalation"));
-            given().header("Authorization", "Bearer " + mgr.token()).delete("/api/v1/roles/" + admin)
-                .then().statusCode(403).body("error", equalTo("permission_escalation"));
-            given().header("Authorization", "Bearer " + mgr.token()).put("/api/v1/accounts/" + target.id() + "/roles/" + admin)
-                .then().statusCode(403).body("error", equalTo("permission_escalation"));
-            // But can manage everything within their permissions, wherever it sits in the list.
-            TestUsers.patchRole(mgr.token(), created, Map.of("name", "Helper renamed", "color", "#123ABC", "position", 50))
-                .then().statusCode(200).body("name", equalTo("Helper renamed")).body("color", equalTo("#123ABC")).body("position", equalTo(50));
-            given().header("Authorization", "Bearer " + mgr.token()).put("/api/v1/accounts/" + target.id() + "/roles/" + created)
-                .then().statusCode(204);
-            given().header("Authorization", "Bearer " + mgr.token()).delete("/api/v1/roles/" + created).then().statusCode(204);
-            created = null;
-            given().header("Authorization", "Bearer " + target.token()).get("/api/v1/accounts/me").then().body("roleIds", contains(TestUsers.USER_ROLE));
-        } finally {
-            if (created != null) {
-                TestUsers.deleteRole(created);
-            }
-            TestUsers.deleteRole(manager);
-            TestUsers.deleteRole(admin);
-        }
+        RolesApi asManager = rolesApi(mgr);
+        // Can create a role with a subset of own permissions; it lands at the bottom.
+        RoleDto helper = asManager.createRole(new RoleCreateDto().name("Helper").permissions(List.of(TIMEOUT_MEMBERS)));
+        assertEquals(0, helper.getPosition());
+        // Cannot grant what they do not hold.
+        assertApiError(403, "permission_escalation",
+            () -> asManager.createRole(new RoleCreateDto().name("Sneaky").permissions(List.of(BAN_MEMBERS))));
+        assertApiError(403, "permission_escalation",
+            () -> asManager.updateRole(helper.getId(), new RoleUpdateDto().permissions(List.of(MANAGE_SERVER))));
+        // Cannot touch a role holding permissions they lack.
+        assertApiError(403, "permission_escalation", () -> asManager.updateRole(settings, new RoleUpdateDto().name("Pwned")));
+        assertApiError(403, "permission_escalation", () -> asManager.deleteRole(settings));
+        assertApiError(403, "permission_escalation", () -> asManager.assignRole(target.id(), settings));
+        // But can manage everything within their permissions, wherever it sits in the list.
+        RoleDto renamed = asManager.updateRole(helper.getId(),
+            new RoleUpdateDto().name("Helper renamed").color("#123ABC").position(50));
+        assertEquals("Helper renamed", renamed.getName());
+        assertEquals("#123ABC", renamed.getColor());
+        assertEquals(50, renamed.getPosition());
+        asManager.assignRole(target.id(), helper.getId());
+        asManager.deleteRole(helper.getId());
+        assertEquals(List.of(TestDataService.USER_ROLE), accountsApi(target).getCurrentAccount().getRoleIds());
     }
 
     @Test
     void theNewMemberRoleSettingDecidesWhatNewMembersGet() {
-        String owner = TestUsers.ownerToken();
-        String greeter = TestUsers.createRole("Greeter " + UUID.randomUUID(), "CREATE_INVITE");
-        try {
-            TestUsers.patchSettings(Map.of("newMemberRoleId", greeter)).then().statusCode(200).body("newMemberRoleId", equalTo(greeter));
-            TestUsers.User greeted = TestUsers.register();
-            given().header("Authorization", "Bearer " + greeted.token()).get("/api/v1/accounts/me")
-                .then().body("roleIds", contains(greeter));
-            given().header("Authorization", "Bearer " + owner).delete("/api/v1/roles/" + greeter)
-                .then().statusCode(409).body("error", equalTo("role_in_use"));
+        UUID greeter = data.createRole("Greeter", CREATE_INVITE);
+        assertEquals(greeter, data.updateSettings(new ServerSettingsUpdateDto().newMemberRoleId(greeter.toString())).getNewMemberRoleId());
+        TestUsers.User greeted = TestUsers.register();
+        assertEquals(List.of(greeter), accountsApi(greeted).getCurrentAccount().getRoleIds());
+        assertApiError(409, "role_in_use", () -> data.deleteRole(greeter));
 
-            // Without a role new members can only browse.
-            TestUsers.patchSettings(Map.of("newMemberRoleId", "")).then().statusCode(200).body("newMemberRoleId", nullValue());
-            TestUsers.User browser = TestUsers.register();
-            given().header("Authorization", "Bearer " + browser.token()).get("/api/v1/accounts/me")
-                .then().body("roleIds", equalTo(List.of()));
-            permissionsOf(browser.token()).then().body("permissions", equalTo(List.of()));
-            given().header("Authorization", "Bearer " + browser.token()).get("/api/v1/channels")
-                .then().statusCode(200).body("size()", greaterThan(0));
+        // Without a role new members can only browse.
+        assertNull(data.updateSettings(new ServerSettingsUpdateDto().newMemberRoleId("")).getNewMemberRoleId());
+        TestUsers.User browser = TestUsers.register();
+        assertEquals(List.of(), accountsApi(browser).getCurrentAccount().getRoleIds());
+        assertEquals(Set.of(), permissionsOf(browser));
+        assertFalse(channelsApi(browser).listChannels().isEmpty());
 
-            TestUsers.patchSettings(Map.of("newMemberRoleId", UUID.randomUUID().toString()))
-                .then().statusCode(400).body("error", equalTo("role_not_found"));
-        } finally {
-            TestUsers.patchSettings(Map.of("newMemberRoleId", TestUsers.USER_ROLE)).then().statusCode(200);
-            TestUsers.deleteRole(greeter);
-        }
+        assertApiError(400, "role_not_found",
+            () -> data.updateSettings(new ServerSettingsUpdateDto().newMemberRoleId(UUID.randomUUID().toString())));
     }
 
     @Test
     void rolesRequireTheManageRolesPermissionAndReportNotFound() {
-        TestUsers.User member = TestUsers.register();
-        create(member.token(), Map.of("name", "Nope")).then().statusCode(403).body("error", equalTo("forbidden"));
-        given().header("Authorization", "Bearer " + member.token()).delete("/api/v1/roles/" + UUID.randomUUID())
-            .then().statusCode(403);
+        RolesApi asMember = rolesApi(TestUsers.register());
+        assertApiError(403, "forbidden", () -> asMember.createRole(new RoleCreateDto().name("Nope")));
+        assertApiError(403, "forbidden", () -> asMember.deleteRole(UUID.randomUUID()));
 
-        String owner = TestUsers.ownerToken();
-        TestUsers.patchRole(owner, UUID.randomUUID().toString(), Map.of("name", "x"))
-            .then().statusCode(404).body("error", equalTo("role_not_found"));
-        String role = TestUsers.createRole("Temp " + UUID.randomUUID());
-        try {
-            given().header("Authorization", "Bearer " + owner).put("/api/v1/accounts/" + UUID.randomUUID() + "/roles/" + role)
-                .then().statusCode(404).body("error", equalTo("account_not_found"));
-            create(owner, Map.of("name", "", "permissions", List.of("SPEAK")))
-                .then().statusCode(400).body("error", equalTo("validation_failed"));
-            create(owner, Map.of("name", "Bad colour", "color", "red"))
-                .then().statusCode(400).body("error", equalTo("validation_failed"));
-        } finally {
-            TestUsers.deleteRole(role);
-        }
+        RolesApi asOwner = rolesApi(owner);
+        assertApiError(404, "role_not_found", () -> asOwner.updateRole(UUID.randomUUID(), new RoleUpdateDto().name("x")));
+        UUID role = data.createRole("Temp");
+        assertApiError(404, "account_not_found", () -> asOwner.assignRole(UUID.randomUUID(), role));
+        assertApiError(400, "validation_failed", () -> asOwner.createRole(new RoleCreateDto().name("").permissions(List.of(SPEAK))));
+        assertApiError(400, "validation_failed", () -> asOwner.createRole(new RoleCreateDto().name("Bad colour").color("red")));
     }
 }

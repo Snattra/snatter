@@ -640,37 +640,40 @@ rules are about readable names that are hard to fake rather than injection.
   application starts. Tests that write to the database directly need a
   transaction of their own (`QuarkusTransaction.requiringNew()`), like any
   other write.
-- `*IT` classes extend the HTTP tests with `@QuarkusIntegrationTest` and run
-  them against the packaged application. They are skipped by default and
-  enabled by the `native` profile, so
-  `mvn verify -Dnative -Dquarkus.native.container-build=true` also tests the
-  native executable end to end. Run it before merging changes that add
-  dependencies or touch serialisation. On macOS the container build makes a
-  Linux executable the host cannot run, so run it in a container and point
-  the tests at it:
-
-  ```
-  mvn package -Dnative -Dquarkus.native.container-build=true -DskipTests
-  docker build -f src/main/docker/Dockerfile.native-micro -t snatter-server-native .
-  docker run --rm -d -p 8081:8080 -e QUARKUS_PROFILE=test snatter-server-native
-  mvn failsafe:integration-test failsafe:verify -DskipITs=false \
-      -Dquarkus.http.test-host=localhost -Dquarkus.http.test-port=8081
-  ```
-
-  Use a fresh container for each run: the tests expect a fresh database.
-- All tests that need an account register it through `testing.TestUsers`. Its
-  first use bootstraps the server: the well-known `owner` account is created
-  as the first account, opens registration and disables rate limiting for the
-  rest of the run. A test that registers any other way first would make that
-  account the owner and break the suite. Tests that change settings restore
-  them in a `finally` block.
-- Integration tests run the packaged application with the `test` profile
-  (`quarkus.test.integration-test-profile`), so `%test` configuration applies
-  to them too.
+- Every test starts on a fresh server, so tests never clean up after
+  themselves. Before each one, `testing.ResetDatabaseBeforeEach` has
+  `testing.DatabaseReset` empty every table and put back what the migrations
+  left in it, as read at startup. It also destroys the beans that keep
+  database state in memory (`ServerSettingsService` and `RateLimitFilter`),
+  so they are created afresh; a new bean that does so belongs in its list.
+- `testing.TestDataService` sets up what a class's tests share. A test class
+  keeps one in a field and calls `setUpServer()` from `@BeforeEach`, which
+  registers the well-known `owner` as the first account, opens registration
+  and switches rate limiting off. Its other methods act as that owner:
+  changing settings, managing roles, registering members with given
+  permissions. `testing.TestUsers` registers further accounts as a client
+  would, solving the registration challenge.
+- Tests call the API through a client generated from the contract into
+  `target/generated-test-sources` (package `app.snatter.client`), which is
+  never part of the application. `testing.ApiClientFactory` gives each API
+  anonymously, as in `channelsApi()`, or signed in, as in `channelsApi(alice)`.
+  Its clients refuse responses with fields or values the contract does not
+  have, so a server that drifts from the contract fails the tests. A refused
+  call throws `ApiException`, which
+  `testing.ApiAssertions.assertApiError(status, code, call)` checks; the 401
+  for a missing or unknown token has no body, so `assertApiStatus` checks
+  that. Kinds of message share no generated type with their fields, so
+  `testing.Messages` sends them and reads their ids. Only tests about the
+  wire format itself, such as input the contract does not allow, use
+  RestAssured directly.
+- Nothing tests the native executable. Changes that add dependencies or touch
+  serialisation can need reflection registration that only the native build
+  shows, so build it (see the README) and try them on it before merging.
 - Gateway tests use `testing.GatewayTestClient`, a WebSocket client on the
-  JDK's `java.net.http`, so they also run against the packaged application.
-  It buffers frames and `await(type, predicate)` takes the first match, so a
-  test waits for the frames it cares about regardless of unrelated ones in
+  JDK's `java.net.http` that reads frames into the generated models, as
+  strictly as the API clients. It buffers them, and
+  `await(GatewayMessageCreatedDto.class, predicate)` takes the first match, so
+  a test waits for the frames it cares about regardless of unrelated ones in
   between. It checks that `seq` has no gaps. To assert that a frame did *not*
   arrive, trigger a later frame on the same connection, await it, then call
   `assertNone`: frames arrive in order.

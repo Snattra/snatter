@@ -5,7 +5,7 @@ import jakarta.inject.Singleton;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** Collects channel events fired during in-process tests. */
+/** Collects the channel events fired during tests. */
 @Singleton
 public class RecordedChannelEvents {
 

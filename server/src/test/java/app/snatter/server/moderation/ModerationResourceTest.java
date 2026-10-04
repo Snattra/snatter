@@ -1,85 +1,103 @@
 package app.snatter.server.moderation;
 
-import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
+import static app.snatter.client.model.PermissionDto.SEND_MESSAGES;
+import static app.snatter.server.testing.ApiAssertions.assertApiError;
+import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
+import static app.snatter.server.testing.ApiClientFactory.accountsApi;
+import static app.snatter.server.testing.ApiClientFactory.channelsApi;
+import static app.snatter.server.testing.ApiClientFactory.messagesApi;
+import static app.snatter.server.testing.ApiClientFactory.moderationApi;
+import static app.snatter.server.testing.ApiClientFactory.rolesApi;
+import static app.snatter.server.testing.TestUsers.DEFAULT_PASSWORD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.client.api.ModerationApi;
+import app.snatter.client.model.AccountDto;
+import app.snatter.client.model.BanCreateDto;
+import app.snatter.client.model.BanDto;
+import app.snatter.client.model.BanNoticeDto;
+import app.snatter.client.model.GatewayCloseReasonDto;
+import app.snatter.client.model.GatewayMemberUpdatedDto;
+import app.snatter.client.model.GatewayPermissionsChangedDto;
+import app.snatter.client.model.MessageCreateDto;
+import app.snatter.client.model.TimeoutCreateDto;
 import app.snatter.server.testing.GatewayTestClient;
 import app.snatter.server.testing.GatewayTestClient.Closed;
+import app.snatter.server.testing.Messages;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
-import io.restassured.http.ContentType;
-import io.restassured.response.Response;
-import io.restassured.specification.RequestSpecification;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class ModerationResourceTest {
 
-    private static final String GENERAL_TEXT = "00000000-0000-7000-8000-000000000101";
+    private static final UUID GENERAL_TEXT = UUID.fromString("00000000-0000-7000-8000-000000000101");
 
-    private static RequestSpecification as(String token) {
-        return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON);
+    private final TestDataService data = new TestDataService();
+    private TestUsers.User owner;
+
+    @BeforeEach
+    void setUpServer() {
+        owner = data.setUpServer();
     }
 
-    private static Response ban(String token, String accountId, Map<String, Object> body) {
-        return as(token).body(body).put("/api/v1/bans/" + accountId);
-    }
-
-    private static Response login(String username, String password) {
-        return given().contentType(ContentType.JSON)
-            .body(Map.of("username", username, "password", password))
-            .post("/api/v1/auth/login");
-    }
-
-    private static TestUsers.User moderator() {
+    private TestUsers.User moderator() {
         TestUsers.User mod = TestUsers.register();
-        TestUsers.assignRole(mod.id(), TestUsers.MODERATOR_ROLE);
+        data.assignRole(mod.id(), TestDataService.MODERATOR_ROLE);
         return mod;
+    }
+
+    private static TimeoutCreateDto timeout(int seconds) {
+        return new TimeoutCreateDto().durationSeconds(seconds);
+    }
+
+    /** An update of the member that matches. */
+    private static Predicate<GatewayMemberUpdatedDto> updateOf(TestUsers.User member, Predicate<AccountDto> matching) {
+        return frame -> frame.getMember().getId().equals(member.id()) && matching.test(frame.getMember());
     }
 
     @Test
     void banningEndsSessionsAndRefusesLoginWithTheReason() {
         TestUsers.User mod = moderator();
         TestUsers.User member = TestUsers.register();
+        ModerationApi asMod = moderationApi(mod);
         try (GatewayTestClient gateway = GatewayTestClient.identified(member.token())) {
-            ban(mod.token(), member.id(), Map.of("reason", "  spamming  ")).then().statusCode(200)
-                .body("accountId", equalTo(member.id()))
-                .body("reason", equalTo("spamming"))
-                .body("bannedBy", equalTo(mod.id()))
-                .body("createdAt", notNullValue());
-            assertEquals(new Closed(4005, "banned"), gateway.awaitClose());
+            BanDto ban = asMod.banMember(member.id(), new BanCreateDto().reason("  spamming  "));
+            assertEquals(member.id(), ban.getAccountId());
+            assertEquals("spamming", ban.getReason());
+            assertEquals(mod.id(), ban.getBannedBy());
+            assertNotNull(ban.getCreatedAt());
+            assertEquals(new Closed(4005, GatewayCloseReasonDto.BANNED), gateway.awaitClose());
         }
-        as(member.token()).get("/api/v1/accounts/me").then().statusCode(401);
+        assertApiStatus(401, () -> accountsApi(member).getCurrentAccount());
         try (GatewayTestClient gateway = GatewayTestClient.connect()) {
             gateway.identify(member.token());
-            assertEquals(new Closed(4002, "authentication_failed"), gateway.awaitClose());
+            assertEquals(new Closed(4002, GatewayCloseReasonDto.AUTHENTICATION_FAILED), gateway.awaitClose());
         }
 
-        login(member.username(), "wrong password here").then().statusCode(401).body("error", equalTo("invalid_credentials"));
-        login(member.username(), TestUsers.DEFAULT_PASSWORD).then().statusCode(403)
-            .body("error", equalTo("banned"))
-            .body("ban.reason", equalTo("spamming"))
-            .body("ban.bannedAt", notNullValue());
+        assertApiError(401, "invalid_credentials", () -> TestUsers.login(member.username(), "wrong password here"));
+        BanNoticeDto notice = assertApiError(403, "banned", () -> TestUsers.login(member.username(), DEFAULT_PASSWORD)).getBan();
+        assertEquals("spamming", notice.getReason());
+        assertNotNull(notice.getBannedAt());
 
         // Banning again replaces the reason; a blank one means none.
-        ban(mod.token(), member.id(), Map.of("reason", " ")).then().statusCode(200).body("reason", equalTo(null));
-        as(mod.token()).get("/api/v1/bans").then().statusCode(200)
-            .body("find { it.accountId == '" + member.id() + "' }.bannedBy", equalTo(mod.id()));
+        assertNull(asMod.banMember(member.id(), new BanCreateDto().reason(" ")).getReason());
+        assertEquals(mod.id(), asMod.listBans().stream()
+            .filter(b -> b.getAccountId().equals(member.id())).findFirst().orElseThrow().getBannedBy());
 
-        as(mod.token()).delete("/api/v1/bans/" + member.id()).then().statusCode(204);
-        as(mod.token()).delete("/api/v1/bans/" + member.id()).then().statusCode(204);
-        as(mod.token()).get("/api/v1/bans").then().body("accountId", not(hasItem(member.id())));
-        String token = login(member.username(), TestUsers.DEFAULT_PASSWORD).then().statusCode(200).extract().path("token");
-        as(token).get("/api/v1/accounts/me").then().statusCode(200);
+        asMod.unbanMember(member.id());
+        asMod.unbanMember(member.id());
+        assertFalse(asMod.listBans().stream().anyMatch(b -> b.getAccountId().equals(member.id())));
+        accountsApi(TestUsers.newSession(member)).getCurrentAccount();
     }
 
     @Test
@@ -87,18 +105,20 @@ class ModerationResourceTest {
         TestUsers.User mod = moderator();
         TestUsers.User member = TestUsers.register();
         TestUsers.User watcher = TestUsers.register();
+        ModerationApi asMod = moderationApi(mod);
         try (GatewayTestClient watching = GatewayTestClient.identified(watcher.token())) {
-            ban(mod.token(), member.id(), Map.of("reason", "spamming")).then().statusCode(200);
-            watching.await("member_updated", f -> member.id().equals(f.getString("member.id")) && f.getString("member.bannedAt") != null);
-            as(watcher.token()).get("/api/v1/accounts/" + member.id()).then().statusCode(200).body("bannedAt", notNullValue());
-            as(watcher.token()).get("/api/v1/bans").then().statusCode(403);
+            asMod.banMember(member.id(), new BanCreateDto().reason("spamming"));
+            watching.await(GatewayMemberUpdatedDto.class, updateOf(member, m -> m.getBannedAt() != null));
+            assertNotNull(accountsApi(watcher).getAccount(member.id()).getBannedAt());
+            assertApiError(403, "forbidden", () -> moderationApi(watcher).listBans());
             try (GatewayTestClient later = GatewayTestClient.identified(watcher.token())) {
-                assertTrue(later.ready().getString("members.find { it.id == '" + member.id() + "' }.bannedAt") != null);
+                assertNotNull(later.ready().getMembers().stream()
+                    .filter(m -> m.getId().equals(member.id())).findFirst().orElseThrow().getBannedAt());
             }
 
-            as(mod.token()).delete("/api/v1/bans/" + member.id()).then().statusCode(204);
-            watching.await("member_updated", f -> member.id().equals(f.getString("member.id")) && f.getString("member.bannedAt") == null);
-            as(watcher.token()).get("/api/v1/accounts/" + member.id()).then().statusCode(200).body("bannedAt", nullValue());
+            asMod.unbanMember(member.id());
+            watching.await(GatewayMemberUpdatedDto.class, updateOf(member, m -> m.getBannedAt() == null));
+            assertNull(accountsApi(watcher).getAccount(member.id()).getBannedAt());
         }
     }
 
@@ -106,32 +126,27 @@ class ModerationResourceTest {
     void onlyMembersWithinTheCallersPermissionsCanBeBanned() {
         TestUsers.User mod = moderator();
         TestUsers.User admin = TestUsers.register();
-        TestUsers.assignRole(admin.id(), TestUsers.ADMIN_ROLE);
+        data.assignRole(admin.id(), TestDataService.ADMIN_ROLE);
         TestUsers.User member = TestUsers.register();
-        String ownerId = as(TestUsers.ownerToken()).get("/api/v1/accounts/me").then().extract().path("id");
+        ModerationApi asMod = moderationApi(mod);
+        ModerationApi asAdmin = moderationApi(admin);
+        ModerationApi asMember = moderationApi(member);
+        ModerationApi asOwner = moderationApi(owner);
 
-        ban(member.token(), mod.id(), Map.of()).then().statusCode(403).body("error", equalTo("forbidden"));
-        as(member.token()).get("/api/v1/bans").then().statusCode(403);
-        ban(mod.token(), mod.id(), Map.of()).then().statusCode(400).body("error", equalTo("cannot_moderate_self"));
-        ban(mod.token(), admin.id(), Map.of()).then().statusCode(403).body("error", equalTo("member_outranks_you"));
-        ban(mod.token(), ownerId, Map.of()).then().statusCode(403).body("error", equalTo("member_outranks_you"));
-        ban(admin.token(), ownerId, Map.of()).then().statusCode(403).body("error", equalTo("member_outranks_you"));
-        ban(mod.token(), UUID.randomUUID().toString(), Map.of()).then().statusCode(404).body("error", equalTo("account_not_found"));
-        ban(mod.token(), member.id(), Map.of("reason", "x".repeat(513))).then().statusCode(400).body("error", equalTo("validation_failed"));
+        assertApiError(403, "forbidden", () -> asMember.banMember(mod.id(), new BanCreateDto()));
+        assertApiError(403, "forbidden", asMember::listBans);
+        assertApiError(400, "cannot_moderate_self", () -> asMod.banMember(mod.id(), new BanCreateDto()));
+        assertApiError(403, "member_outranks_you", () -> asMod.banMember(admin.id(), new BanCreateDto()));
+        assertApiError(403, "member_outranks_you", () -> asMod.banMember(owner.id(), new BanCreateDto()));
+        assertApiError(403, "member_outranks_you", () -> asAdmin.banMember(owner.id(), new BanCreateDto()));
+        assertApiError(404, "account_not_found", () -> asMod.banMember(UUID.randomUUID(), new BanCreateDto()));
+        assertApiError(400, "validation_failed", () -> asMod.banMember(member.id(), new BanCreateDto().reason("x".repeat(513))));
 
         // Moving up: the admin may ban the moderator, and the owner anyone.
-        ban(admin.token(), mod.id(), Map.of()).then().statusCode(200);
-        ban(TestUsers.ownerToken(), admin.id(), Map.of("reason", "rogue")).then().statusCode(200);
-        as(TestUsers.ownerToken()).delete("/api/v1/bans/" + mod.id()).then().statusCode(204);
-        as(TestUsers.ownerToken()).delete("/api/v1/bans/" + admin.id()).then().statusCode(204);
-    }
-
-    private static Response timeOut(String token, String accountId, int seconds) {
-        return as(token).body(Map.of("durationSeconds", seconds)).put("/api/v1/timeouts/" + accountId);
-    }
-
-    private static Response post(String token, String content) {
-        return as(token).body(Map.of("content", content)).post("/api/v1/channels/" + GENERAL_TEXT + "/messages");
+        asAdmin.banMember(mod.id(), new BanCreateDto());
+        asOwner.banMember(admin.id(), new BanCreateDto().reason("rogue"));
+        asOwner.unbanMember(mod.id());
+        asOwner.unbanMember(admin.id());
     }
 
     @Test
@@ -139,31 +154,31 @@ class ModerationResourceTest {
         TestUsers.User mod = moderator();
         TestUsers.User member = TestUsers.register();
         TestUsers.User watcher = TestUsers.register();
+        ModerationApi asMod = moderationApi(mod);
         try (GatewayTestClient memberGateway = GatewayTestClient.identified(member.token());
              GatewayTestClient watcherGateway = GatewayTestClient.identified(watcher.token())) {
-            timeOut(mod.token(), member.id(), 2).then().statusCode(200)
-                .body("timedOutUntil", notNullValue())
-                .body("roleIds", hasItem(TestUsers.USER_ROLE));
+            AccountDto timedOut = asMod.timeOutMember(member.id(), timeout(2));
+            assertNotNull(timedOut.getTimedOutUntil());
+            assertTrue(timedOut.getRoleIds().contains(TestDataService.USER_ROLE));
 
-            assertEquals(List.of(), memberGateway.await("permissions_changed").getList("permissions.permissions"));
-            watcherGateway.await("member_updated", f -> member.id().equals(f.getString("member.id"))
-                && f.getString("member.timedOutUntil") != null);
-            as(member.token()).get("/api/v1/accounts/me/permissions").then().body("permissions", equalTo(List.of()));
-            post(member.token(), "let me speak").then().statusCode(403);
-            as(member.token()).get("/api/v1/channels").then().statusCode(200).body("id", hasItem(GENERAL_TEXT));
+            assertEquals(List.of(), memberGateway.await(GatewayPermissionsChangedDto.class).getPermissions().getPermissions());
+            watcherGateway.await(GatewayMemberUpdatedDto.class, updateOf(member, m -> m.getTimedOutUntil() != null));
+            assertEquals(List.of(), rolesApi(member).getMyPermissions().getPermissions());
+            assertApiError(403, "forbidden",
+                () -> messagesApi(member).createMessage(GENERAL_TEXT, new MessageCreateDto().content("let me speak")));
+            assertTrue(channelsApi(member).listChannels().stream().anyMatch(c -> c.getId().equals(GENERAL_TEXT)));
 
             // It runs out on its own, and the gateway says so.
-            assertTrue(memberGateway.await("permissions_changed").getList("permissions.permissions").contains("SEND_MESSAGES"));
-            watcherGateway.await("member_updated", f -> member.id().equals(f.getString("member.id"))
-                && f.getString("member.timedOutUntil") == null);
-            post(member.token(), "back").then().statusCode(201);
+            assertTrue(memberGateway.await(GatewayPermissionsChangedDto.class).getPermissions().getPermissions().contains(SEND_MESSAGES));
+            watcherGateway.await(GatewayMemberUpdatedDto.class, updateOf(member, m -> m.getTimedOutUntil() == null));
+            Messages.send(member, GENERAL_TEXT, "back");
 
             // Or it is lifted early.
-            timeOut(mod.token(), member.id(), 600).then().statusCode(200);
-            memberGateway.await("permissions_changed");
-            as(mod.token()).delete("/api/v1/timeouts/" + member.id()).then().statusCode(204);
-            assertTrue(memberGateway.await("permissions_changed").getList("permissions.permissions").contains("SEND_MESSAGES"));
-            as(member.token()).get("/api/v1/accounts/me").then().body("timedOutUntil", nullValue());
+            asMod.timeOutMember(member.id(), timeout(600));
+            memberGateway.await(GatewayPermissionsChangedDto.class);
+            asMod.endTimeout(member.id());
+            assertTrue(memberGateway.await(GatewayPermissionsChangedDto.class).getPermissions().getPermissions().contains(SEND_MESSAGES));
+            assertNull(accountsApi(member).getCurrentAccount().getTimedOutUntil());
         }
     }
 
@@ -171,26 +186,28 @@ class ModerationResourceTest {
     void timeoutsFollowTheModerationRules() {
         TestUsers.User mod = moderator();
         TestUsers.User admin = TestUsers.register();
-        TestUsers.assignRole(admin.id(), TestUsers.ADMIN_ROLE);
+        data.assignRole(admin.id(), TestDataService.ADMIN_ROLE);
         TestUsers.User member = TestUsers.register();
-        String owner = TestUsers.ownerToken();
+        ModerationApi asMod = moderationApi(mod);
+        ModerationApi asMember = moderationApi(member);
+        ModerationApi asOwner = moderationApi(owner);
 
-        timeOut(member.token(), mod.id(), 60).then().statusCode(403).body("error", equalTo("forbidden"));
-        timeOut(mod.token(), mod.id(), 60).then().statusCode(400).body("error", equalTo("cannot_moderate_self"));
-        timeOut(mod.token(), admin.id(), 60).then().statusCode(403).body("error", equalTo("member_outranks_you"));
-        timeOut(mod.token(), member.id(), 0).then().statusCode(400).body("error", equalTo("validation_failed"));
-        timeOut(mod.token(), member.id(), 2_419_201).then().statusCode(400).body("error", equalTo("validation_failed"));
+        assertApiError(403, "forbidden", () -> asMember.timeOutMember(mod.id(), timeout(60)));
+        assertApiError(400, "cannot_moderate_self", () -> asMod.timeOutMember(mod.id(), timeout(60)));
+        assertApiError(403, "member_outranks_you", () -> asMod.timeOutMember(admin.id(), timeout(60)));
+        assertApiError(400, "validation_failed", () -> asMod.timeOutMember(member.id(), timeout(0)));
+        assertApiError(400, "validation_failed", () -> asMod.timeOutMember(member.id(), timeout(2_419_201)));
 
         // A timeout lowers what someone can do, not their rank.
-        timeOut(owner, admin.id(), 600).then().statusCode(200);
-        ban(mod.token(), admin.id(), Map.of()).then().statusCode(403).body("error", equalTo("member_outranks_you"));
-        as(owner).delete("/api/v1/timeouts/" + admin.id()).then().statusCode(204);
+        asOwner.timeOutMember(admin.id(), timeout(600));
+        assertApiError(403, "member_outranks_you", () -> asMod.banMember(admin.id(), new BanCreateDto()));
+        asOwner.endTimeout(admin.id());
 
         // A timed-out moderator cannot moderate.
-        timeOut(owner, mod.id(), 600).then().statusCode(200);
-        timeOut(mod.token(), member.id(), 60).then().statusCode(403).body("error", equalTo("forbidden"));
-        as(owner).delete("/api/v1/timeouts/" + mod.id()).then().statusCode(204);
-        timeOut(mod.token(), member.id(), 60).then().statusCode(200);
-        as(mod.token()).delete("/api/v1/timeouts/" + member.id()).then().statusCode(204);
+        asOwner.timeOutMember(mod.id(), timeout(600));
+        assertApiError(403, "forbidden", () -> asMod.timeOutMember(member.id(), timeout(60)));
+        asOwner.endTimeout(mod.id());
+        asMod.timeOutMember(member.id(), timeout(60));
+        asMod.endTimeout(member.id());
     }
 }

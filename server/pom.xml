@@ -29,7 +29,6 @@
         <quarkus.platform.version>3.39.4</quarkus.platform.version>
         <quarkus-jdbi.version>1.10.1</quarkus-jdbi.version>
         <sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
-        <skipITs>true</skipITs>
         <!-- The hand-written OpenAPI document in the Apache-licensed protocol
              module is the API contract. Server interfaces and DTOs are
              generated from it on every build. -->
@@ -117,6 +116,12 @@
             <artifactId>rest-assured</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <!-- The HTTP client of the generated test client. -->
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -199,6 +204,59 @@
                             </configOptions>
                         </configuration>
                     </execution>
+                    <execution>
+                        <!-- A client for the tests, from the same contract, so they call the API
+                             through typed operations and models instead of paths and raw JSON.
+                             It is test source only and never part of the application. -->
+                        <id>generate-test-client</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <inputSpec>${openapi.spec}</inputSpec>
+                            <generatorName>java</generatorName>
+                            <!-- Not the default native client: it turns a oneOf into a wrapper
+                                 that tries each option in turn, where this one makes an interface
+                                 Jackson resolves by the discriminator. -->
+                            <library>apache-httpclient</library>
+                            <output>${project.build.directory}/generated-test-sources/openapi</output>
+                            <addCompileSourceRoot>false</addCompileSourceRoot>
+                            <addTestCompileSourceRoot>true</addTestCompileSourceRoot>
+                            <invokerPackage>app.snatter.client</invokerPackage>
+                            <apiPackage>app.snatter.client.api</apiPackage>
+                            <modelPackage>app.snatter.client.model</modelPackage>
+                            <modelNameSuffix>Dto</modelNameSuffix>
+                            <generateApiTests>false</generateApiTests>
+                            <generateModelTests>false</generateModelTests>
+                            <generateApiDocumentation>false</generateApiDocumentation>
+                            <generateModelDocumentation>false</generateModelDocumentation>
+                            <openapiNormalizer>SIMPLIFY_ONEOF_ANYOF=false</openapiNormalizer>
+                            <typeMappings>
+                                <typeMapping>DateTime=Instant</typeMapping>
+                            </typeMappings>
+                            <importMappings>
+                                <importMapping>Instant=java.time.Instant</importMapping>
+                            </importMappings>
+                            <configOptions>
+                                <useJakartaEe>true</useJakartaEe>
+                                <openApiNullable>false</openApiNullable>
+                                <!-- Absent arrays stay null and are left out of requests, so a
+                                     partial update does not empty them. -->
+                                <containerDefaultToNull>true</containerDefaultToNull>
+                                <!-- Failed calls throw an unchecked ApiException, so tests need no
+                                     throws clauses. -->
+                                <useRuntimeException>true</useRuntimeException>
+                                <useOneOfInterfaces>true</useOneOfInterfaces>
+                                <!-- Query parameters are all simple values. Models that hold a oneOf
+                                     interface would not compile with this on, as the interface lacks
+                                     the toUrlQueryString it generates. -->
+                                <supportUrlQuery>false</supportUrlQuery>
+                                <dateLibrary>java8</dateLibrary>
+                                <hideGenerationTimestamp>true</hideGenerationTimestamp>
+                            </configOptions>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
@@ -250,27 +308,6 @@
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
-            <plugin>
-                <artifactId>maven-failsafe-plugin</artifactId>
-                <version>${surefire-plugin.version}</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <argLine>@{argLine}</argLine>
-                    <systemPropertyVariables>
-                        <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
-                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
-                        <java.awt.headless>true</java.awt.headless>
-                        <maven.home>${maven.home}</maven.home>
-                    </systemPropertyVariables>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 
@@ -284,7 +321,6 @@
             </activation>
             <properties>
                 <quarkus.package.jar.enabled>false</quarkus.package.jar.enabled>
-                <skipITs>false</skipITs>
                 <quarkus.native.enabled>true</quarkus.native.enabled>
             </properties>
         </profile>

@@ -1,6 +1,5 @@
 package app.snatter.server.channel;
 
-import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -10,21 +9,28 @@ import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.auth.SessionId;
 import app.snatter.server.role.Permission;
 import app.snatter.server.role.RoleId;
-import app.snatter.server.testing.TestUsers;
+import app.snatter.server.testing.TestDataService;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class ChannelEventsTest {
 
+    private final TestDataService data = new TestDataService();
+
+    @BeforeEach
+    void setUpServer() {
+        data.setUpServer();
+    }
+
     /** The real owner account, since system notices reference their author. */
-    private static AccountPrincipal owner() {
-        String id = given().header("Authorization", "Bearer " + TestUsers.ownerToken()).get("/api/v1/accounts/me").path("id");
-        return new AccountPrincipal(AccountId.fromString(id), TestUsers.OWNER_USERNAME,
+    private AccountPrincipal owner() {
+        return new AccountPrincipal(new AccountId(data.owner().id()), data.owner().username(),
             new SessionId(UUID.randomUUID()), true, Permission.all(), Set.of(), null);
     }
 
@@ -43,10 +49,9 @@ class ChannelEventsTest {
 
         channels.update(owner, id, new ChannelService.Changes("renamed", "a topic", null, null, null, null));
         channels.update(owner, id, new ChannelService.Changes("renamed", "", null, null, 0, null));
-        RoleId staff = RoleId.fromString(TestUsers.createRole("Events staff " + UUID.randomUUID()));
+        RoleId staff = new RoleId(data.createRole("Events staff"));
         channels.update(owner, id, new ChannelService.Changes(null, null, null, null, null, Set.of(staff)));
         channels.delete(owner, id);
-        TestUsers.deleteRole(staff.toString());
 
         assertEquals(List.of(
             new ChannelEvent.Created(id, actor, ChannelType.TEXT, "events"),
@@ -62,14 +67,10 @@ class ChannelEventsTest {
     void rejectedChangesFireNothing() {
         AccountPrincipal owner = owner();
         Channel channel = channels.create(owner, ChannelType.TEXT, "quiet", null, null, null, Set.of());
-        try {
-            // Renamed and given a bitrate, which text channels do not have: all of it is refused.
-            assertThrows(ApiException.class, () ->
-                channels.update(owner, channel.id(), new ChannelService.Changes("loud", null, 64_000, null, null, null)));
-            assertEquals(List.of(new ChannelEvent.Created(channel.id(), owner.accountId(), ChannelType.TEXT, "quiet")),
-                recorded.about(channel.id()));
-        } finally {
-            channels.delete(owner, channel.id());
-        }
+        // Renamed and given a bitrate, which text channels do not have: all of it is refused.
+        assertThrows(ApiException.class, () ->
+            channels.update(owner, channel.id(), new ChannelService.Changes("loud", null, 64_000, null, null, null)));
+        assertEquals(List.of(new ChannelEvent.Created(channel.id(), owner.accountId(), ChannelType.TEXT, "quiet")),
+            recorded.about(channel.id()));
     }
 }

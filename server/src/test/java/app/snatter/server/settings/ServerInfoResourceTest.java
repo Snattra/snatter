@@ -1,13 +1,18 @@
 package app.snatter.server.settings;
 
+import static app.snatter.server.testing.ApiClientFactory.serverApi;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.emptyString;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import app.snatter.client.model.CommunityDto;
+import app.snatter.client.model.ServerInfoDto;
 import app.snatter.server.protocol.Protocol;
+import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Test;
@@ -15,40 +20,41 @@ import org.junit.jupiter.api.Test;
 @QuarkusTest
 class ServerInfoResourceTest {
 
+    private final TestDataService data = new TestDataService();
+
     @Test
     void exposesNameVersionAndProtocol() {
-        given()
-            .when().get("/api/v1/server-info")
-            .then()
-            .statusCode(200)
-            .body("name", equalTo("Snatter"))
-            .body("version", not(emptyString()))
-            .body("protocol.version", equalTo(Protocol.CURRENT.toString()))
-            .body("protocol.minClient", equalTo(Protocol.CURRENT.major() + ".0"))
-            .body("voice.defaultBitrate", equalTo(64000));
+        ServerInfoDto info = serverApi().getServerInfo();
+        assertEquals("Snatter", info.getName());
+        assertFalse(info.getVersion().isEmpty());
+        assertEquals(Protocol.CURRENT.toString(), info.getProtocol().getVersion());
+        assertEquals(Protocol.CURRENT.major() + ".0", info.getProtocol().getMinClient());
+        assertEquals(64000, info.getVoice().getDefaultBitrate());
     }
 
     @Test
     void exposesCommunitySettingsFromDatabase() {
-        given()
-            .when().get("/api/v1/server-info")
-            .then()
-            .statusCode(200)
-            .body("community.name", equalTo("My Snatter server"))
-            .body("community.description", nullValue());
+        CommunityDto community = serverApi().getServerInfo().getCommunity();
+        assertEquals("My Snatter server", community.getName());
+        assertNull(community.getDescription());
+    }
+
+    @Test
+    void aFreshServerNeedsSettingUp() {
+        ServerInfoDto info = serverApi().getServerInfo();
+        assertTrue(info.getRegistration().getSetupRequired());
+        assertNull(info.getOwnerId());
     }
 
     @Test
     void setupIsOverOnceTheOwnerExists() {
-        String ownerId = given().header("Authorization", "Bearer " + TestUsers.ownerToken())
-            .get("/api/v1/accounts/me").then().statusCode(200).extract().path("id");
-        given()
-            .when().get("/api/v1/server-info")
-            .then()
-            .statusCode(200)
-            .body("registration.setupRequired", equalTo(false))
-            .body("ownerId", equalTo(ownerId));
+        TestUsers.User owner = data.setUpServer();
+        ServerInfoDto info = serverApi().getServerInfo();
+        assertFalse(info.getRegistration().getSetupRequired());
+        assertEquals(owner.id(), info.getOwnerId());
     }
+
+    // Health and the contract itself are served by Quarkus, outside the contract.
 
     @Test
     void healthEndpointIsUp() {
