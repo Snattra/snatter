@@ -60,7 +60,11 @@ export class ServerConnection {
   private gateway: Gateway | null = null;
   /** Channels with a page on its way, so scrolling does not ask twice. */
   private readonly fetching = new Set<string>();
-  /** The voice channel the server confirmed this connection is in, to fall back to when a move is refused. */
+  /**
+   * The voice channel the server confirmed this connection is in, to fall
+   * back to when a join or move is refused. It stays until the server
+   * confirms leaving, since a leave can be overtaken by a later join.
+   */
   private voiceHeld: string | null = null;
 
   constructor(readonly origin: string) {
@@ -232,7 +236,6 @@ export class ServerConnection {
   }
 
   leaveVoice(): void {
-    this.voiceHeld = null;
     this.updateVoice((voice) => ({ ...voice, channelId: null, notice: null }));
     this.gateway?.send({ type: "voice_state", channelId: null, selfMuted: false, selfDeafened: false });
   }
@@ -273,6 +276,11 @@ export class ServerConnection {
       case "voice_state_updated":
         if (frame.voiceState.accountId === view?.account.id && frame.voiceState.channelId === voice.channelId) {
           this.voiceHeld = voice.channelId;
+        }
+        break;
+      case "voice_state_deleted":
+        if (frame.accountId === view?.account.id) {
+          this.voiceHeld = null;
         }
         break;
       case "voice_refused":

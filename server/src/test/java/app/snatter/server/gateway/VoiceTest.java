@@ -14,6 +14,7 @@ import app.snatter.client.model.ChannelCreateDto;
 import app.snatter.client.model.ChannelTypeDto;
 import app.snatter.client.model.GatewayChannelCreatedDto;
 import app.snatter.client.model.GatewayChannelDeletedDto;
+import app.snatter.client.model.GatewayMemberUpdatedDto;
 import app.snatter.client.model.GatewayMessageCreatedDto;
 import app.snatter.client.model.GatewayTypingDto;
 import app.snatter.client.model.GatewayTypingStartedDto;
@@ -236,7 +237,12 @@ class VoiceTest {
             memberGateway.send(join(lounge));
             watcherGateway.await(GatewayVoiceStateUpdatedDto.class, in(member, lounge));
             moderationApi(owner).timeOutMember(member.id(), new TimeoutCreateDto().durationSeconds(600));
-            assertEquals(FORBIDDEN, memberGateway.await(GatewayVoiceEndedDto.class).getReason());
+            GatewayVoiceEndedDto ended = memberGateway.await(GatewayVoiceEndedDto.class);
+            assertEquals(FORBIDDEN, ended.getReason());
+            // The member hears of their timeout first, so the client can say why voice ended.
+            assertTrue(memberGateway.await(GatewayMemberUpdatedDto.class,
+                frame -> frame.getMember().getId().equals(member.id()) && frame.getMember().getTimedOutUntil() != null)
+                .getSeq() < ended.getSeq());
             watcherGateway.await(GatewayVoiceStateDeletedDto.class, left(member));
             moderationApi(owner).endTimeout(member.id());
 

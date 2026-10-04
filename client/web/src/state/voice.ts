@@ -57,9 +57,9 @@ export function endNotice(reason: VoiceEndReason, timedOut: boolean): string {
     case "joined_elsewhere":
       return "You joined voice on another device.";
     case "channel_unavailable":
-      return "You left voice: the channel is gone.";
+      return "You left voice because the channel is no longer available.";
     case "forbidden":
-      return timedOut ? "You left voice because you were timed out." : "You left voice: you no longer have permission.";
+      return timedOut ? "You left voice because you were timed out." : "You left voice because you no longer have permission.";
     default:
       return "You were disconnected from voice.";
   }

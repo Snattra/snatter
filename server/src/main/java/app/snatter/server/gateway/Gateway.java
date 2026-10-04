@@ -350,10 +350,14 @@ public class Gateway {
         }
     }
 
-    /** A timeout or mute started, changed or ended: the member's permissions and everyone's view of them. */
+    /**
+     * A timeout or mute started, changed or ended: everyone's view of the
+     * member first, so a client told what follows from it, such as voice
+     * ending, already knows why, then the member's permissions.
+     */
     private void restrictionChanged(AccountId accountId) {
-        syncAccess(accountId::equals);
         memberUpdated(accountId);
+        syncAccess(accountId::equals);
     }
 
     private void memberUpdated(AccountId accountId) {
@@ -627,9 +631,10 @@ public class Gateway {
         });
     }
 
+    /** Like {@link #restrictionChanged}: the member's new roles first, then what follows from them. */
     private void roleAssignmentChanged(AccountId accountId) {
-        syncAccess(accountId::equals);
         memberUpdated(accountId);
+        syncAccess(accountId::equals);
     }
 
     private void dispatchMessage(MessageEvent event) {
