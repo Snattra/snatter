@@ -9,16 +9,16 @@
 
 # --- Build stage --------------------------------------------------------------
 FROM docker.io/library/node:24-alpine AS build
-WORKDIR /build
+WORKDIR /build/client
 
 # Install dependencies first so they are cached independently of source changes.
-COPY client/package.json client/package-lock.json client/
-COPY client/web/package.json client/web/
-RUN cd client && npm ci
+COPY client/package.json client/package-lock.json ./
+COPY client/web/package.json web/
+RUN npm ci
 
-COPY protocol/openapi protocol/openapi
-COPY client/web client/web
-RUN cd client && npm run build
+COPY protocol/openapi ../protocol/openapi
+COPY client/web web
+RUN npm run build
 
 # --- Runtime stage ------------------------------------------------------------
 FROM docker.io/nginxinc/nginx-unprivileged:stable-alpine

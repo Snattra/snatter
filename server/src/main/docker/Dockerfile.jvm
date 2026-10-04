@@ -92,7 +92,7 @@ COPY --chown=185 target/quarkus-app/app/ /deployments/app/
 COPY --chown=185 target/quarkus-app/quarkus/ /deployments/quarkus/
 
 # The database and uploaded content. Mount a volume here.
-USER root
+USER 0
 RUN mkdir -p /var/lib/snatter && chown 185:0 /var/lib/snatter
 ENV SNATTER_STORAGE_ROOT=/var/lib/snatter
 

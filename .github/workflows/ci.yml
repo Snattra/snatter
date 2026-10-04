@@ -1,5 +1,6 @@
 # Builds and tests what a change touches: the server, the client, the
-# contract. Runs on pull requests and on main.
+# contract and the container images. Runs on pull requests and on main, and
+# on main also publishes the images.
 #
 # Each part runs only when its files change. Require the "CI result" check
 # rather than the parts: a part skipped for lack of changes counts as passed
@@ -33,6 +34,7 @@ jobs:
       server: ${{ steps.filter.outputs.server }}
       client: ${{ steps.filter.outputs.client }}
       protocol: ${{ steps.filter.outputs.protocol }}
+      images: ${{ steps.filter.outputs.images }}
     steps:
       # Pull requests are compared through the API; pushes need the history.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,6 +56,13 @@ jobs:
               - '.github/workflows/ci.yml'
             protocol:
               - 'protocol/**'
+              - '.github/workflows/ci.yml'
+            images:
+              - 'server/**'
+              - 'client/**'
+              - 'protocol/openapi/**'
+              - 'compose.yaml'
+              - '.dockerignore'
               - '.github/workflows/ci.yml'
 
   server:
@@ -135,6 +144,61 @@ jobs:
           tar -xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP" oasdiff
           PATH="$RUNNER_TEMP:$PATH" ./check-breaking.sh HEAD^1
 
+  images:
+    name: Images
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint the Dockerfiles
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" -w /repo
+          ghcr.io/hadolint/hadolint:v2.15.1-debian@sha256:9a3944b7fddcb947d1ffd90829ac1a6e5c30479223358f249d8b96c7d0019e27
+          hadolint $(git ls-files '*Dockerfile*')
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Tagged with the names compose.yaml gives them, so that it runs these.
+      - name: Build the server image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: server/Dockerfile
+          tags: snatter-server:local
+          load: true
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,scope=server,mode=max
+      - name: Build the web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: client/web/Dockerfile
+          tags: snatter-web:local
+          load: true
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+      # Runs the installation compose.yaml describes and reaches it as a
+      # browser would: the app, the API and the gateway, all through the web
+      # container.
+      - name: Smoke test
+        run: |
+          docker compose up -d --no-build
+          curl -fsS --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8080/api/v1/server-info
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          curl -fsSI http://localhost:8080/ | grep -qi '^content-security-policy:'
+          # The handshake answers 101, then the connection stays open.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 3 \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            http://localhost:8080/api/v1/gateway || true)
+          echo "Gateway handshake: $code"
+          [ "$code" = 101 ]
+      - name: Show the logs
+        if: failure()
+        run: docker compose logs
+
   signoff:
     name: Sign-off
     if: github.event_name == 'pull_request'
@@ -167,7 +231,7 @@ jobs:
 
   result:
     name: CI result
-    needs: [changes, server, client, protocol, signoff]
+    needs: [changes, server, client, protocol, images, signoff]
     # Also when the run is cancelled: skipped, this check would count as
     # passed.
     if: always()
@@ -176,3 +240,51 @@ jobs:
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
+
+  # Once everything passed on main: ghcr.io/snattra/snatter-server and
+  # snatter-web, tagged `main` and `sha-<commit>`. Built again from the cache
+  # the images job left, so nothing is compiled twice.
+  publish:
+    name: Publish ${{ matrix.image }}
+    needs: [changes, result]
+    if: github.event_name == 'push' && needs.changes.outputs.images == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: snatter-server
+            file: server/Dockerfile
+            cache: server
+          - image: snatter-web
+            file: client/web/Dockerfile
+            cache: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # Releases will add version tags here, and `latest`.
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        with:
+          images: ghcr.io/snattra/${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=sha
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.cache }}
