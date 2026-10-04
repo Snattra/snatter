@@ -248,7 +248,11 @@ jobs:
   publish:
     name: Publish images
     needs: [changes, result]
-    if: github.event_name == 'push' && needs.changes.outputs.images == 'true'
+    # Spelled out: without a status check, the sign-off job skipped on pushes
+    # would skip this one too, though "CI result" passed.
+    if: >-
+      !cancelled() && github.event_name == 'push'
+      && needs.changes.outputs.images == 'true' && needs.result.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
