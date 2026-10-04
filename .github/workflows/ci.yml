@@ -25,6 +25,7 @@ jobs:
   changes:
     name: Find changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
@@ -122,8 +123,11 @@ jobs:
   result:
     name: CI result
     needs: [changes, server, client, protocol]
-    if: ${{ !cancelled() }}
+    # Also when the run is cancelled: skipped, this check would count as
+    # passed.
+    if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1

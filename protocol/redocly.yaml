@@ -1,6 +1,7 @@
-# Lint rules for the contract, checked in CI. Run them from this directory:
+# Lint rules for the contract, checked in CI. Run them from this directory
+# with the version CI uses (also named in README.md):
 #
-#   npx @redocly/cli lint
+#   npx @redocly/cli@2.57.0 lint
 #
 # Deliberate exceptions to single places in the contract are listed in
 # .redocly.lint-ignore.yaml beside this file.
