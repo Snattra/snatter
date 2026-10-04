@@ -461,7 +461,10 @@ which gets `voice_ended` (`joined_elsewhere`); from the connection in voice
 it changes the mute and deafen, moves, or with no channel leaves. Joining
 needs `CONNECT`, a voice channel the connection can see, and room under the
 channel's user limit unless the member holds `MOVE_MEMBERS`; a refusal
-answers `voice_refused` to that connection only. Each connection gets one
+answers `voice_refused` to that connection only, saying which channel it is
+in after all, so a client never has to work that out from broadcasts it
+cannot tell apart from another connection's. A connection that takes voice
+over always hears its own state, even when no one else sees a change. Each connection gets one
 `voice_state` applied per 250 ms, since each reaches everyone who sees the
 channel. Unlike typing, one that comes sooner is not dropped: it waits in
 `Client.voicePending` for its turn, replaced by any newer one, so the last

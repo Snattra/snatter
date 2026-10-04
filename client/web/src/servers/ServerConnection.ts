@@ -60,12 +60,6 @@ export class ServerConnection {
   private gateway: Gateway | null = null;
   /** Channels with a page on its way, so scrolling does not ask twice. */
   private readonly fetching = new Set<string>();
-  /**
-   * The voice channel the server confirmed this connection is in, to fall
-   * back to when a join or move is refused. It stays until the server
-   * confirms leaving, since a leave can be overtaken by a later join.
-   */
-  private voiceHeld: string | null = null;
 
   constructor(readonly origin: string) {
     this.api = createApi(origin, () => this.token);
@@ -269,28 +263,22 @@ export class ServerConnection {
     }
   }
 
+  /**
+   * Follows the server where it answers this connection alone. A refusal of
+   * the channel asked for last says where the connection is after all, which
+   * earlier requests may have changed.
+   */
   private applyToVoice(frame: GatewayServerFrame): void {
     const { view, voice } = this.entry();
     const timedOut = view !== null && isTimedOut(view.account, Date.now());
     switch (frame.type) {
-      case "voice_state_updated":
-        if (frame.voiceState.accountId === view?.account.id && frame.voiceState.channelId === voice.channelId) {
-          this.voiceHeld = voice.channelId;
-        }
-        break;
-      case "voice_state_deleted":
-        if (frame.accountId === view?.account.id) {
-          this.voiceHeld = null;
-        }
-        break;
       case "voice_refused":
         if (frame.channelId === voice.channelId) {
           const notice = refusalNotice(frame.reason, view?.channels[frame.channelId], timedOut);
-          this.updateVoice((current) => ({ ...current, channelId: this.voiceHeld, notice }));
+          this.updateVoice((current) => ({ ...current, channelId: frame.currentChannelId ?? null, notice }));
         }
         break;
       case "voice_ended":
-        this.voiceHeld = null;
         this.updateVoice((current) => ({ ...current, channelId: null, notice: endNotice(frame.reason, timedOut) }));
         break;
       default:
@@ -563,7 +551,6 @@ export class ServerConnection {
   private start(token: string): void {
     this.gateway?.stop();
     this.token = token;
-    this.voiceHeld = null;
     this.update({ status: "connecting", notice: null, voice: noVoice });
     this.gateway = new Gateway(Gateway.urlFor(this.origin), token, {
       frame: (frame) => {
@@ -583,7 +570,6 @@ export class ServerConnection {
         });
         if (frame.type === "ready") {
           // The server took the member out of voice when the last connection closed, so join again.
-          this.voiceHeld = null;
           this.sendVoice();
           void this.catchUp();
         } else {

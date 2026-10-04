@@ -2610,9 +2610,11 @@ components:
 
         Joining or moving needs `CONNECT`, a voice channel the member can
         see, and room in it under its `userLimit` unless the member holds
-        `MOVE_MEMBERS`. Otherwise the connection gets `voice_refused` and
-        stays where it was. Everyone who can see the channel then gets
-        `voice_state_updated`, or `voice_state_deleted` on leaving.
+        `MOVE_MEMBERS`. Otherwise the connection gets `voice_refused`, which
+        says where it is after all. Those who can see the channel are told
+        what changed for them with `voice_state_updated`, or
+        `voice_state_deleted` on leaving; the connection that joins always
+        hears its own state, even when nothing else changed.
 
         The server applies one `voice_state` per connection every 250
         milliseconds. One that comes sooner waits its turn, and a newer one
@@ -3030,22 +3032,30 @@ components:
     GatewayVoiceRefused:
       description: |
         The `voice_state` this connection sent could not join or move to
-        the channel; the member is where they were.
+        the channel. The member is where they were, which `currentChannelId`
+        says for this connection, as earlier frames may still have moved it.
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object
-          required: [channelId, reason]
+          required: [channelId, reason, currentChannelId]
           properties:
             channelId:
               $ref: "#/components/schemas/ChannelId"
             reason:
               $ref: "#/components/schemas/VoiceRefusal"
+            currentChannelId:
+              allOf:
+                - $ref: "#/components/schemas/ChannelId"
+              nullable: true
+              description: The voice channel this connection is in after all; null when it is not in voice
 
     GatewayVoiceEnded:
       description: |
         This connection is no longer in voice, without having asked to
-        leave. Everyone who could see the channel, including the member's
-        connections, also gets `voice_state_updated` or `voice_state_deleted`.
+        leave. Those who can see the channel, including the member's other
+        connections, are told what changed for them, if anything: another
+        connection taking over in the same channel, muted and deafened the
+        same, changes nothing they see.
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object

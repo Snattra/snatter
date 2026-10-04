@@ -453,7 +453,9 @@ public class Gateway {
         }
         Optional<VoiceRefusalDto> refusal = refusal(client, channelId);
         if (refusal.isPresent()) {
-            send(client, seq -> new GatewayVoiceRefusedDto().seq(seq).channelId(channelId).reason(refusal.get()));
+            ChannelId stays = here ? current.state().channelId() : null;
+            send(client, seq -> new GatewayVoiceRefusedDto()
+                .seq(seq).channelId(channelId).reason(refusal.get()).currentChannelId(stays));
             return;
         }
         if (current != null && !here) {

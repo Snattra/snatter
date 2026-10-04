@@ -73,10 +73,13 @@ class VoiceTest {
         return gateway.ready().getVoiceStates().stream().map(VoiceStateDto::getAccountId).toList();
     }
 
-    /** Joins and returns why the server refused. */
+    /** Joins from out of voice and returns why the server refused. */
     private static VoiceRefusalDto refusal(GatewayTestClient gateway, UUID channel) {
         gateway.send(join(channel));
-        return gateway.await(GatewayVoiceRefusedDto.class, frame -> frame.getChannelId().equals(channel)).getReason();
+        GatewayVoiceRefusedDto refused =
+            gateway.await(GatewayVoiceRefusedDto.class, frame -> frame.getChannelId().equals(channel));
+        assertEquals(null, refused.getCurrentChannelId());
+        return refused.getReason();
     }
 
     /** Frames arrive in order, so anything sent before this marker has arrived once it has. */
@@ -201,7 +204,10 @@ class VoiceTest {
             otherGateway.await(GatewayVoiceStateUpdatedDto.class, in(member, small));
             otherGateway.send(join(lounge));
             otherGateway.await(GatewayVoiceStateUpdatedDto.class, in(other, lounge));
-            assertEquals(VoiceRefusalDto.CHANNEL_FULL, refusal(otherGateway, small));
+            otherGateway.send(join(small));
+            GatewayVoiceRefusedDto full = otherGateway.await(GatewayVoiceRefusedDto.class, frame -> frame.getChannelId().equals(small));
+            assertEquals(VoiceRefusalDto.CHANNEL_FULL, full.getReason());
+            assertEquals(lounge, full.getCurrentChannelId());
 
             // MOVE_MEMBERS goes past the limit.
             modGateway.send(join(small));
