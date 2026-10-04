@@ -111,14 +111,29 @@ jobs:
       run:
         working-directory: protocol
     steps:
+      # On a pull request this is the merge into the base branch, whose first
+      # parent holds the contract as the base branch has it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
       # Rules in redocly.yaml. Errors fail the job; warnings show on the diff.
       - run: npx --yes @redocly/cli@2.57.0 lint --format=github-actions
+      # Lists the contract's changes in the job summary. yq comes with the
+      # runner.
+      - name: Check for breaking changes
+        if: github.event_name == 'pull_request'
+        env:
+          OASDIFF_URL: https://github.com/oasdiff/oasdiff/releases/download/v1.33.0/oasdiff_1.33.0_linux_amd64.tar.gz
+          OASDIFF_SHA256: 43a4e328e2d13ba1552d760aa68d2485c75c5621f309f6ff64ae895188345247
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/oasdiff.tar.gz" "$OASDIFF_URL"
+          echo "$OASDIFF_SHA256  $RUNNER_TEMP/oasdiff.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP" oasdiff
+          PATH="$RUNNER_TEMP:$PATH" ./check-breaking.sh HEAD^1
 
   result:
     name: CI result
