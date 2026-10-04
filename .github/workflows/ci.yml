@@ -185,7 +185,7 @@ jobs:
       - name: Smoke test
         run: |
           docker compose up -d --no-build
-          curl -fsS --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8080/api/v1/server-info
+          curl -fsS --retry 30 --retry-delay 2 --retry-all-errors -w '\n' http://localhost:8080/api/v1/server-info
           curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
           curl -fsSI http://localhost:8080/ | grep -qi '^content-security-policy:'
           # The handshake answers 101, then the connection stays open.
@@ -243,9 +243,10 @@ jobs:
 
   # Once everything passed on main: ghcr.io/snattra/snatter-server and
   # snatter-web, tagged `main` and `sha-<commit>`. Built again from the cache
-  # the images job left, so nothing is compiled twice.
+  # the images job left, so nothing is compiled twice. Releases will add
+  # version tags in the metadata steps, and `latest`.
   publish:
-    name: Publish ${{ matrix.image }}
+    name: Publish images
     needs: [changes, result]
     if: github.event_name == 'push' && needs.changes.outputs.images == 'true'
     runs-on: ubuntu-latest
@@ -253,15 +254,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        include:
-          - image: snatter-server
-            file: server/Dockerfile
-            cache: server
-          - image: snatter-web
-            file: client/web/Dockerfile
-            cache: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -272,19 +264,35 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # Releases will add version tags here, and `latest`.
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        id: meta
+        id: server
         with:
-          images: ghcr.io/snattra/${{ matrix.image }}
+          images: ghcr.io/snattra/snatter-server
           tags: |
             type=ref,event=branch
             type=sha
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - name: Push the server image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: ${{ matrix.file }}
+          file: server/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.cache }}
+          tags: ${{ steps.server.outputs.tags }}
+          labels: ${{ steps.server.outputs.labels }}
+          cache-from: type=gha,scope=server
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: web
+        with:
+          images: ghcr.io/snattra/snatter-web
+          tags: |
+            type=ref,event=branch
+            type=sha
+      - name: Push the web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: client/web/Dockerfile
+          push: true
+          tags: ${{ steps.web.outputs.tags }}
+          labels: ${{ steps.web.outputs.labels }}
+          cache-from: type=gha,scope=web
