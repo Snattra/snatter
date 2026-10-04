@@ -135,9 +135,39 @@ jobs:
           tar -xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP" oasdiff
           PATH="$RUNNER_TEMP:$PATH" ./check-breaking.sh HEAD^1
 
+  signoff:
+    name: Sign-off
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      # Every commit but merges carries a Signed-off-by from its author, as
+      # CONTRIBUTING.md asks, except Dependabot's, which cannot.
+      - name: Check every commit is signed off
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          unsigned=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --jq '
+            .[]
+            | select((.parents | length) == 1 and .author.login != "dependabot[bot]")
+            | (.commit.author.email | ascii_downcase) as $email
+            | select([.commit.message | split("\n")[] | select(startswith("Signed-off-by:"))
+                     | capture("<(?<email>[^>]+)>").email | ascii_downcase] | index($email) | not)
+            | "\(.sha[0:7]) \(.commit.message | split("\n")[0]) (\(.commit.author.email))"')
+          if [ -n "$unsigned" ]; then
+            echo "::error::Commits without a sign-off by their author (see CONTRIBUTING.md):"
+            echo "$unsigned"
+            echo "Sign them off with: git rebase --signoff origin/$BASE_REF && git push --force-with-lease"
+            exit 1
+          fi
+
   result:
     name: CI result
-    needs: [changes, server, client, protocol]
+    needs: [changes, server, client, protocol, signoff]
     # Also when the run is cancelled: skipped, this check would count as
     # passed.
     if: always()

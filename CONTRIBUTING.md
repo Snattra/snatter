@@ -18,7 +18,8 @@ git commit -s -m "Add something useful"
 
 This appends a line like `Signed-off-by: Your Name <you@example.com>` using
 the name and email from your git configuration. Pull requests with unsigned
-commits will not be merged.
+commits will not be merged; a check on each pull request lists them. To sign
+off commits you already made, run `git rebase --signoff main` and force-push.
 
 The one exception is Dependabot, which cannot sign off its commits. Its pull
 requests only bump versions of third-party dependencies, so they may be merged
