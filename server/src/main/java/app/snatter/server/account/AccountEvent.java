@@ -27,4 +27,8 @@ public sealed interface AccountEvent {
     /** A timeout started, changed or was lifted early. One running out on its own fires nothing. */
     record TimeoutChanged(AccountId accountId, AccountId actor) implements AccountEvent {
     }
+
+    /** A moderator muted the member in voice, or unmuted them. */
+    record MuteChanged(AccountId accountId, AccountId actor) implements AccountEvent {
+    }
 }

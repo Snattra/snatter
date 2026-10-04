@@ -1,6 +1,8 @@
 package app.snatter.server.moderation;
 
+import static app.snatter.client.model.PermissionDto.CONNECT;
 import static app.snatter.client.model.PermissionDto.SEND_MESSAGES;
+import static app.snatter.client.model.PermissionDto.SPEAK;
 import static app.snatter.server.testing.ApiAssertions.assertApiError;
 import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
 import static app.snatter.server.testing.ApiClientFactory.accountsApi;
@@ -24,6 +26,7 @@ import app.snatter.client.model.GatewayCloseReasonDto;
 import app.snatter.client.model.GatewayMemberUpdatedDto;
 import app.snatter.client.model.GatewayPermissionsChangedDto;
 import app.snatter.client.model.MessageCreateDto;
+import app.snatter.client.model.PermissionDto;
 import app.snatter.client.model.TimeoutCreateDto;
 import app.snatter.server.testing.GatewayTestClient;
 import app.snatter.server.testing.GatewayTestClient.Closed;
@@ -209,5 +212,62 @@ class ModerationResourceTest {
         asOwner.endTimeout(mod.id());
         asMod.timeOutMember(member.id(), timeout(60));
         asMod.endTimeout(member.id());
+    }
+
+    @Test
+    void aMuteTakesSpeakAwayUntilLifted() {
+        TestUsers.User mod = moderator();
+        TestUsers.User member = TestUsers.register();
+        TestUsers.User watcher = TestUsers.register();
+        ModerationApi asMod = moderationApi(mod);
+        try (GatewayTestClient memberGateway = GatewayTestClient.identified(member.token());
+             GatewayTestClient watcherGateway = GatewayTestClient.identified(watcher.token())) {
+            AccountDto muted = asMod.muteMember(member.id());
+            assertNotNull(muted.getMutedAt());
+
+            // They can still join voice and listen, and write.
+            List<PermissionDto> held = memberGateway.await(GatewayPermissionsChangedDto.class).getPermissions().getPermissions();
+            assertFalse(held.contains(SPEAK));
+            assertTrue(held.contains(CONNECT));
+            assertTrue(held.contains(SEND_MESSAGES));
+            watcherGateway.await(GatewayMemberUpdatedDto.class, updateOf(member, m -> m.getMutedAt() != null));
+
+            // Muting again changes nothing, not even when.
+            assertEquals(muted.getMutedAt(), asMod.muteMember(member.id()).getMutedAt());
+
+            asMod.unmuteMember(member.id());
+            assertTrue(memberGateway.await(GatewayPermissionsChangedDto.class).getPermissions().getPermissions().contains(SPEAK));
+            watcherGateway.await(GatewayMemberUpdatedDto.class, updateOf(member, m -> m.getMutedAt() == null));
+            assertNull(accountsApi(member).getCurrentAccount().getMutedAt());
+            asMod.unmuteMember(member.id());
+        }
+    }
+
+    @Test
+    void mutesFollowTheModerationRules() {
+        TestUsers.User mod = moderator();
+        TestUsers.User admin = TestUsers.register();
+        data.assignRole(admin.id(), TestDataService.ADMIN_ROLE);
+        TestUsers.User member = TestUsers.register();
+        ModerationApi asMod = moderationApi(mod);
+
+        assertApiError(403, "forbidden", () -> moderationApi(member).muteMember(mod.id()));
+        assertApiError(400, "cannot_moderate_self", () -> asMod.muteMember(mod.id()));
+        assertApiError(403, "member_outranks_you", () -> asMod.muteMember(admin.id()));
+        assertApiError(403, "member_outranks_you", () -> asMod.muteMember(owner.id()));
+        assertApiError(404, "account_not_found", () -> asMod.muteMember(UUID.randomUUID()));
+
+        // A mute lowers what someone can do, not their rank, on either side.
+        moderationApi(owner).muteMember(admin.id());
+        assertApiError(403, "member_outranks_you", () -> asMod.muteMember(admin.id()));
+        assertApiError(403, "member_outranks_you", () -> asMod.unmuteMember(admin.id()));
+        moderationApi(owner).muteMember(mod.id());
+        asMod.muteMember(member.id());
+        asMod.timeOutMember(member.id(), timeout(60));
+        asMod.endTimeout(member.id());
+
+        // Nor what a muted admin can manage, though the roles grant SPEAK.
+        rolesApi(admin).unassignRole(member.id(), TestDataService.USER_ROLE);
+        rolesApi(admin).assignRole(member.id(), TestDataService.USER_ROLE);
     }
 }

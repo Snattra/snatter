@@ -47,7 +47,7 @@ info:
        caller can see and how far they have read each one.
     3. From then on the server pushes events. Each carries `seq`, counting
        up from 1 (`ready`) per connection, so gaps are detectable. The
-       client may send `typing` frames.
+       client may send `typing` and `voice_state` frames.
 
     The connection carries state, not history: on reconnecting, a client
     gets a fresh `ready` and fetches messages it missed with
@@ -62,6 +62,16 @@ info:
 
     Clients ignore frames of a type they do not know, which a newer server
     may send; their `seq` still counts.
+
+    ### Voice
+
+    A member is in at most one voice channel, through one connection: the
+    one that joined with `voice_state`. Everyone who can see the channel
+    learns who is in it from `ready` and `voice_state_updated`, and that
+    they left from `voice_state_deleted`. The connection in voice also
+    hears `voice_refused` when it cannot join or move, and `voice_ended`
+    when it is taken out of voice without asking. Closing the connection
+    leaves voice, so a client that reconnects joins again.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -81,7 +91,7 @@ tags:
   - name: invites
     description: Invite links that let new people register
   - name: moderation
-    description: Bans and timeouts
+    description: Bans, timeouts and mutes
   - name: roles
     description: Roles bundle permissions and are assigned to members
   - name: channels
@@ -578,6 +588,67 @@ paths:
       responses:
         "204":
           description: The member is not timed out
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/mutes/{accountId}:
+    put:
+      tags: [moderation]
+      operationId: muteMember
+      summary: Mute a member in voice
+      description: |
+        Requires `MUTE_MEMBERS`. Until unmuted the member holds no `SPEAK`:
+        they can join voice channels and listen, but not speak. It lasts
+        across leaving and joining voice, and signing in again. Muting a
+        muted member changes nothing. The rules of banning apply
+        (`member_outranks_you`, `cannot_moderate_self`). Everyone sees it as
+        `Account.mutedAt` through `member_updated`; the member also gets
+        `permissions_changed`.
+      security:
+        - session: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      responses:
+        "200":
+          description: The member, muted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [moderation]
+      operationId: unmuteMember
+      summary: Unmute a member in voice
+      description: Same rules as muting. Idempotent.
+      security:
+        - session: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/AccountId"
+      responses:
+        "204":
+          description: The member is not muted
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2406,6 +2477,14 @@ components:
             When the member was banned, which everyone may know; null when
             they are not. The reason is only for members holding
             `BAN_MEMBERS` (`listBans`).
+        mutedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When a moderator muted the member in voice, which takes away
+            `SPEAK` until they are unmuted; null when not muted. Clients show
+            it like the member muting themselves (`VoiceState.selfMuted`).
         createdAt:
           type: string
           format: date-time
@@ -2474,11 +2553,13 @@ components:
       oneOf:
         - $ref: "#/components/schemas/GatewayIdentify"
         - $ref: "#/components/schemas/GatewayTyping"
+        - $ref: "#/components/schemas/GatewayVoiceState"
       discriminator:
         propertyName: type
         mapping:
           identify: "#/components/schemas/GatewayIdentify"
           typing: "#/components/schemas/GatewayTyping"
+          voice_state: "#/components/schemas/GatewayVoiceState"
 
     GatewayIdentify:
       type: object
@@ -2513,6 +2594,94 @@ components:
           type: string
         channelId:
           $ref: "#/components/schemas/ChannelId"
+
+    GatewayVoiceState:
+      type: object
+      description: |
+        Joins a voice channel, moves to another, changes the member's own
+        mute and deafen, or leaves, depending on where the connection is:
+
+        - From a connection that is not in voice, a channel joins it. If the
+          member is in voice on another connection, they move to this one,
+          and that one gets `voice_ended` with `joined_elsewhere`. A null
+          channel does nothing.
+        - From the connection in voice, its own channel changes only the
+          mute and deafen, another channel moves there, and null leaves.
+
+        Joining or moving needs `CONNECT`, a voice channel the member can
+        see, and room in it under its `userLimit` unless the member holds
+        `MOVE_MEMBERS`. Otherwise the connection gets `voice_refused`, which
+        says where it is after all; from the connection in voice, the
+        frame's mute and deafen still apply there. Those who can see the
+        channel are told what changed for them with `voice_state_updated`,
+        or `voice_state_deleted` on leaving; the connection that joins
+        always hears its own state, even when nothing else changed.
+
+        The server applies one `voice_state` per connection every 250
+        milliseconds. One that comes sooner waits its turn, and a newer one
+        replaces it, so the last one sent is the one that counts.
+      required: [type, channelId, selfMuted, selfDeafened]
+      properties:
+        type:
+          type: string
+        channelId:
+          allOf:
+            - $ref: "#/components/schemas/ChannelId"
+          nullable: true
+          description: The voice channel to be in; null to leave
+        selfMuted:
+          type: boolean
+          description: The member turned their microphone off
+        selfDeafened:
+          type: boolean
+          description: The member turned sound off; this mutes them too
+
+    VoiceState:
+      type: object
+      description: |
+        A member in a voice channel, with their own mute and deafen. Whether
+        a moderator muted them is `Account.mutedAt`.
+      required: [accountId, channelId, selfMuted, selfDeafened]
+      properties:
+        accountId:
+          $ref: "#/components/schemas/AccountId"
+        channelId:
+          $ref: "#/components/schemas/ChannelId"
+        selfMuted:
+          type: boolean
+          description: The member turned their microphone off; always true while deafened
+        selfDeafened:
+          type: boolean
+          description: The member turned sound off
+
+    VoiceRefusal:
+      type: string
+      description: |
+        Why the connection could not join or move to a voice channel:
+
+        - `channel_not_found`: there is no such channel the member can see
+        - `not_a_voice_channel`: the channel has no voice
+        - `forbidden`: the member does not hold `CONNECT`, as during a timeout
+        - `channel_full`: the channel is at its `userLimit`
+      enum:
+        - channel_not_found
+        - not_a_voice_channel
+        - forbidden
+        - channel_full
+
+    VoiceEndReason:
+      type: string
+      description: |
+        Why the connection was taken out of voice:
+
+        - `joined_elsewhere`: the member joined voice on another connection
+        - `channel_unavailable`: the channel was deleted, or the member can no
+          longer see it
+        - `forbidden`: the member no longer holds `CONNECT`, as when timed out
+      enum:
+        - joined_elsewhere
+        - channel_unavailable
+        - forbidden
 
     PresenceStatus:
       type: string
@@ -2551,6 +2720,10 @@ components:
         - $ref: "#/components/schemas/GatewayPresenceUpdated"
         - $ref: "#/components/schemas/GatewayTypingStarted"
         - $ref: "#/components/schemas/GatewayReadStateUpdated"
+        - $ref: "#/components/schemas/GatewayVoiceStateUpdated"
+        - $ref: "#/components/schemas/GatewayVoiceStateDeleted"
+        - $ref: "#/components/schemas/GatewayVoiceRefused"
+        - $ref: "#/components/schemas/GatewayVoiceEnded"
       discriminator:
         propertyName: type
         mapping:
@@ -2572,6 +2745,10 @@ components:
           presence_updated: "#/components/schemas/GatewayPresenceUpdated"
           typing_started: "#/components/schemas/GatewayTypingStarted"
           read_state_updated: "#/components/schemas/GatewayReadStateUpdated"
+          voice_state_updated: "#/components/schemas/GatewayVoiceStateUpdated"
+          voice_state_deleted: "#/components/schemas/GatewayVoiceStateDeleted"
+          voice_refused: "#/components/schemas/GatewayVoiceRefused"
+          voice_ended: "#/components/schemas/GatewayVoiceEnded"
 
     GatewayServerFrameBase:
       type: object
@@ -2590,7 +2767,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object
-          required: [account, permissions, server, roles, members, presences, channels, readStates]
+          required: [account, permissions, server, roles, members, presences, channels, readStates, voiceStates]
           properties:
             account:
               $ref: "#/components/schemas/Account"
@@ -2622,6 +2799,13 @@ components:
               items:
                 $ref: "#/components/schemas/ReadState"
               description: One for each of those channels that keeps messages
+            voiceStates:
+              type: array
+              items:
+                $ref: "#/components/schemas/VoiceState"
+              description: |
+                Who is in the voice channels the member can see, including
+                the member if they are in voice on another connection
 
     GatewayServerUpdated:
       description: The public server description changed
@@ -2819,3 +3003,64 @@ components:
           properties:
             readState:
               $ref: "#/components/schemas/ReadState"
+
+    GatewayVoiceStateUpdated:
+      description: |
+        A member joined a voice channel the member can see, moved into one,
+        or changed their own mute or deafen. Also sent for those in a voice
+        channel that became visible, after its `channel_created`.
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [voiceState]
+          properties:
+            voiceState:
+              $ref: "#/components/schemas/VoiceState"
+
+    GatewayVoiceStateDeleted:
+      description: |
+        A member left voice, or moved to a voice channel the member cannot
+        see. Also sent for those in a voice channel that is deleted or
+        hidden, before its `channel_deleted`.
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [accountId]
+          properties:
+            accountId:
+              $ref: "#/components/schemas/AccountId"
+
+    GatewayVoiceRefused:
+      description: |
+        The `voice_state` this connection sent could not join or move to
+        the channel. The member is where they were, which `currentChannelId`
+        says for this connection, as earlier frames may still have moved it.
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [channelId, reason, currentChannelId]
+          properties:
+            channelId:
+              $ref: "#/components/schemas/ChannelId"
+            reason:
+              $ref: "#/components/schemas/VoiceRefusal"
+            currentChannelId:
+              allOf:
+                - $ref: "#/components/schemas/ChannelId"
+              nullable: true
+              description: The voice channel this connection is in after all; null when it is not in voice
+
+    GatewayVoiceEnded:
+      description: |
+        This connection is no longer in voice, without having asked to
+        leave. Those who can see the channel, including the member's other
+        connections, are told what changed for them, if anything: another
+        connection taking over in the same channel, muted and deafened the
+        same, changes nothing they see.
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [reason]
+          properties:
+            reason:
+              $ref: "#/components/schemas/VoiceEndReason"

@@ -34,6 +34,7 @@ import { isTimedOut } from "../state/moderation";
 import { type Outdated, compatibility, isOutdated } from "../state/protocol";
 import { type ServerView, applyFrame, fromReady } from "../state/serverView";
 import { type ServerEntry, blank, useServers } from "../state/store";
+import { type LocalVoice, endNotice, micOff, noVoice, refusalNotice } from "../state/voice";
 import { describeError } from "../ui/errors";
 
 export interface Registration {
@@ -202,9 +203,91 @@ export class ServerConnection {
     await this.untilView((view) => view.members[accountId]?.bannedAt == null);
   }
 
+  /** Turns a member's microphone off for everyone, until unmuted. */
+  async mute(accountId: string): Promise<void> {
+    unwrap(await this.api.PUT("/api/v1/mutes/{accountId}", { params: { path: { accountId } } }));
+    await this.untilView((view) => view.members[accountId]?.mutedAt != null);
+  }
+
+  async unmute(accountId: string): Promise<void> {
+    unwrap(await this.api.DELETE("/api/v1/mutes/{accountId}", { params: { path: { accountId } } }));
+    await this.untilView((view) => view.members[accountId]?.mutedAt == null);
+  }
+
   /** Every ban with its reason, for members holding `BAN_MEMBERS`. */
   async bans(): Promise<Ban[]> {
     return unwrap(await this.api.GET("/api/v1/bans"));
+  }
+
+  // --- Voice ------------------------------------------------------------------
+  // The store shows what was asked for at once; the member's own voice state
+  // in the view says when the server has done it.
+
+  /** Joins a voice channel, or moves there from the one the member is in. */
+  joinVoice(channelId: string): void {
+    this.updateVoice((voice) => ({ ...voice, channelId, notice: null }));
+    this.sendVoice();
+  }
+
+  leaveVoice(): void {
+    this.updateVoice((voice) => ({ ...voice, channelId: null, notice: null }));
+    this.gateway?.send({ type: "voice_state", channelId: null, selfMuted: false, selfDeafened: false });
+  }
+
+  /** Turns the member's microphone off or on; turning it on while deafened turns sound back on too. */
+  setSelfMuted(selfMuted: boolean): void {
+    this.updateVoice((voice) => ({ ...voice, selfMuted, selfDeafened: selfMuted && voice.selfDeafened }));
+    this.sendVoice();
+  }
+
+  /** Turns sound off, which mutes too, or back on, with the microphone as the member left it. */
+  setSelfDeafened(selfDeafened: boolean): void {
+    this.updateVoice((voice) => ({ ...voice, selfDeafened }));
+    this.sendVoice();
+  }
+
+  dismissVoiceNotice(): void {
+    this.updateVoice((voice) => ({ ...voice, notice: null }));
+  }
+
+  /** Tells the server where the member wants to be, if anywhere. */
+  private sendVoice(): void {
+    const voice = this.entry().voice;
+    if (voice.channelId !== null) {
+      this.gateway?.send({
+        type: "voice_state",
+        channelId: voice.channelId,
+        selfMuted: micOff(voice),
+        selfDeafened: voice.selfDeafened,
+      });
+    }
+  }
+
+  /**
+   * Follows the server where it answers this connection alone. A refusal of
+   * the channel asked for last says where the connection is after all, which
+   * earlier requests may have changed.
+   */
+  private applyToVoice(frame: GatewayServerFrame): void {
+    const { view, voice } = this.entry();
+    const timedOut = view !== null && isTimedOut(view.account, Date.now());
+    switch (frame.type) {
+      case "voice_refused":
+        if (frame.channelId === voice.channelId) {
+          const notice = refusalNotice(frame.reason, view?.channels[frame.channelId], timedOut);
+          this.updateVoice((current) => ({ ...current, channelId: frame.currentChannelId ?? null, notice }));
+        }
+        break;
+      case "voice_ended":
+        this.updateVoice((current) => ({ ...current, channelId: null, notice: endNotice(frame.reason, timedOut) }));
+        break;
+      default:
+        break;
+    }
+  }
+
+  private updateVoice(change: (voice: LocalVoice) => LocalVoice): void {
+    useServers.getState().update(this.origin, (entry) => ({ ...entry, voice: change(entry.voice) }));
   }
 
   // --- Messages ---------------------------------------------------------------
@@ -468,7 +551,7 @@ export class ServerConnection {
   private start(token: string): void {
     this.gateway?.stop();
     this.token = token;
-    this.update({ status: "connecting", notice: null });
+    this.update({ status: "connecting", notice: null, voice: noVoice });
     this.gateway = new Gateway(Gateway.urlFor(this.origin), token, {
       frame: (frame) => {
         // Checked on every ready, since the server may have been upgraded while the app was away.
@@ -486,9 +569,12 @@ export class ServerConnection {
           return entry.view === null ? entry : { ...entry, view: applyFrame(entry.view, frame, Date.now()) };
         });
         if (frame.type === "ready") {
+          // The server took the member out of voice when the last connection closed, so join again.
+          this.sendVoice();
           void this.catchUp();
         } else {
           this.applyToLogs(frame);
+          this.applyToVoice(frame);
         }
       },
       reconnecting: () => this.update({ status: "reconnecting" }),
@@ -507,7 +593,7 @@ export class ServerConnection {
   private stopOutdated(outdated: Outdated): void {
     this.gateway?.stop();
     this.gateway = null;
-    this.update({ status: outdated, view: null });
+    this.update({ status: outdated, view: null, voice: noVoice });
   }
 
   private async signOut(notice: string | null): Promise<void> {
@@ -515,7 +601,7 @@ export class ServerConnection {
     this.gateway = null;
     this.token = null;
     await platform.secrets.delete(this.secretKey);
-    this.update({ status: "signed_out", view: null, logs: {}, notice });
+    this.update({ status: "signed_out", view: null, logs: {}, notice, voice: noVoice });
   }
 
   /**

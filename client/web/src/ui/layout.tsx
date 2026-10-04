@@ -70,6 +70,11 @@ export function RailServer({ name, selected = false, onClick }: { name: string; 
 
 const Collapsed = createContext(false);
 
+/** Whether the channel sidebar around this is narrowed to icons, so rows can give their name as a tooltip. */
+export function useCollapsed(): boolean {
+  return useContext(Collapsed);
+}
+
 interface SidebarProps {
   /** The community name in the header. */
   name: ReactNode;

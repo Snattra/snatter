@@ -1,5 +1,7 @@
 package app.snatter.server.gateway;
 
+import app.snatter.api.model.GatewayVoiceStateDto;
+import app.snatter.server.account.AccountId;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.Channel;
 import app.snatter.server.channel.ChannelId;
@@ -27,8 +29,14 @@ final class Client {
     boolean closing;
     Map<RoleId, Role> roles = new LinkedHashMap<>();
     Map<ChannelId, Channel> channels = new LinkedHashMap<>();
+    /** Who it was told is in the voice channels it can see, by account. */
+    Map<AccountId, VoiceState> voiceStates = new LinkedHashMap<>();
     /** When a {@code typing} frame for each channel was last passed on, from {@link System#nanoTime()}. */
     final Map<ChannelId, Long> typingPassedOn = new HashMap<>();
+    /** When its last {@code voice_state} was applied, from {@link System#nanoTime()}; null before the first. */
+    Long voiceAppliedAt;
+    /** A {@code voice_state} that came too soon after the last, waiting for its turn; a newer one replaces it. */
+    GatewayVoiceStateDto voicePending;
 
     Client(WebSocketConnection connection) {
         this.connection = connection;

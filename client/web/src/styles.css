@@ -1345,6 +1345,241 @@ textarea.sn-input {
   line-height: 16px;
 }
 
+/* ---------- Voice ---------- */
+
+/* Those in a voice channel, under its row. Each 24px avatar sits centred
+   where the channel icons do, so collapsing never moves it. */
+.sn-voice-members {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.sn-voice-member {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  padding: var(--space-2) var(--space-8) var(--space-2) calc((var(--sidebar-collapsed) - 2 * var(--space-8) - 24px) / 2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+  animation: sn-fade-in var(--duration-base) var(--ease-out);
+  transition:
+    background-color var(--duration-instant) var(--ease-standard),
+    color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-voice-member:hover {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.sn-voice-member-name {
+  flex: 1;
+}
+
+.sn-voice-marks {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sn-voice-mark {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.sn-voice-mark .sn-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* A moderator's mute takes `danger`, like the mark of a ban. */
+.sn-voice-mark-moderated {
+  color: var(--danger);
+}
+
+/* Over the user panel while in voice. Its icon sits where the avatar below
+   does, so it stays in the collapsed column. */
+.sn-voice-panel {
+  display: grid;
+  flex: none;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-12);
+  border-top: 1px solid var(--divider);
+  background: var(--bg);
+  animation: sn-fade-in var(--duration-base) var(--ease-out);
+}
+
+.sn-voice-panel-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.sn-voice-panel-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--avatar-md);
+  height: var(--avatar-md);
+  color: var(--muted);
+}
+
+.sn-voice-panel-connected .sn-voice-panel-icon {
+  color: var(--accent);
+}
+
+.sn-voice-panel-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.sn-voice-panel-status {
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.sn-voice-panel-connected .sn-voice-panel-status {
+  color: var(--accent-text);
+}
+
+.sn-voice-panel-moderated .sn-voice-panel-status {
+  color: var(--danger-text);
+}
+
+.sn-voice-panel-channel {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.sn-voice-panel-notice {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.sn-voice-leave:hover {
+  color: var(--danger);
+}
+
+.sn-voice-panel-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+/* Mute and Deafen: on means not heard or not hearing, so on is `danger`. */
+.sn-voice-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-8);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-instant) var(--ease-standard),
+    color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-voice-toggle:hover {
+  background: var(--panel-raised);
+  color: var(--text-strong);
+}
+
+.sn-voice-toggle[aria-pressed="true"] {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+/* The body of a voice channel: who is in it, and the way in. Centred while
+   it fits; `safe` starts a crowded room at the top, so none of it is out of
+   scrolling's reach. */
+.sn-voice-room {
+  display: grid;
+  align-content: safe center;
+  justify-items: center;
+  gap: var(--space-16);
+  height: 100%;
+  padding: var(--space-24) var(--space-16);
+  overflow-y: auto;
+  text-align: center;
+}
+
+.sn-voice-room-members {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sn-voice-room-member {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-6);
+  width: 112px;
+  padding: var(--space-12) var(--space-8);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  animation: sn-fade-in var(--duration-base) var(--ease-out);
+  transition: background-color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-voice-room-member:hover {
+  background: var(--panel-raised);
+}
+
+.sn-voice-room-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.sn-voice-room-empty,
+.sn-voice-room-count,
+.sn-voice-room-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.sn-voice-room-note {
+  max-width: 44ch;
+}
+
 /* ---------- Member list ---------- */
 
 .sn-members {
@@ -2273,14 +2508,6 @@ textarea.sn-input {
   font-size: 21px;
   line-height: 28px;
   font-weight: 700;
-}
-
-.sn-channel-note {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  padding: var(--space-16);
-  color: var(--muted);
 }
 
 /* A modal's body while what it shows is loading, or failed to. */

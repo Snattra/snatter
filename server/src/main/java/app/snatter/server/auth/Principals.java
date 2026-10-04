@@ -34,6 +34,6 @@ public class Principals {
     private AccountPrincipal resolve(AccountId accountId, String username, SessionId sessionId) {
         RoleService.Resolution resolution = roles.resolve(accountId);
         return new AccountPrincipal(accountId, username, sessionId, resolution.owner(), resolution.permissions(),
-            resolution.roleIds(), resolution.timedOutUntil());
+            resolution.granted(), resolution.roleIds(), resolution.timedOutUntil());
     }
 }

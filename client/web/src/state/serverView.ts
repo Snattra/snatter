@@ -7,6 +7,7 @@ import type {
   ReadState,
   Role,
   ServerInfo,
+  VoiceState,
 } from "../api/types";
 import { isAfter, later } from "./ids";
 
@@ -38,6 +39,8 @@ export interface ServerView {
   typing: Record<string, Record<string, number>>;
   /** By channel id, for the channels that keep messages. */
   reading: Record<string, Reading>;
+  /** Who is in the voice channels the member can see, by account id, in the order they joined. */
+  voice: Record<string, VoiceState>;
 }
 
 export function fromReady(ready: Ready): ServerView {
@@ -53,6 +56,7 @@ export function fromReady(ready: Ready): ServerView {
     channels: byId(ready.channels),
     typing: {},
     reading: Object.fromEntries(ready.readStates.map((state) => [state.channelId, fromReadState(state)])),
+    voice: Object.fromEntries(ready.voiceStates.map((state) => [state.accountId, state])),
   };
 }
 
@@ -97,6 +101,7 @@ export function applyFrame(view: ServerView, frame: Event, now: number): ServerV
         channels: without(view.channels, frame.channelId),
         typing: without(view.typing, frame.channelId),
         reading: without(view.reading, frame.channelId),
+        voice: Object.fromEntries(Object.entries(view.voice).filter(([, state]) => state.channelId !== frame.channelId)),
       };
     case "typing_started": {
       const current = Object.entries(view.typing[frame.channelId] ?? {}).filter(([, until]) => until > now);
@@ -129,9 +134,21 @@ export function applyFrame(view: ServerView, frame: Event, now: number): ServerV
         : state;
       return { ...view, reading: { ...view.reading, [frame.readState.channelId]: merged } };
     }
+    case "voice_state_updated": {
+      const state = frame.voiceState;
+      const before = view.voice[state.accountId];
+      // Someone who moved goes last in their new channel, as the server lists them.
+      const voice = before === undefined || before.channelId === state.channelId ? { ...view.voice } : without(view.voice, state.accountId);
+      voice[state.accountId] = state;
+      return { ...view, voice };
+    }
+    case "voice_state_deleted":
+      return { ...view, voice: without(view.voice, frame.accountId) };
     case "message_updated":
     case "message_deleted":
     case "messages_purged":
+    case "voice_refused":
+    case "voice_ended":
       return view;
     default:
       // Only a frame type from a newer server gets here, and it changes nothing
@@ -169,6 +186,11 @@ export function canSend(view: ServerView): boolean {
 /** Whether to offer inviting people: only needed while registration is invite only. */
 export function canInvite(view: ServerView): boolean {
   return view.info.registration.mode === "invite_only" && can(view, "CREATE_INVITE");
+}
+
+/** Who is in a voice channel, in the order they joined. */
+export function voiceIn(view: ServerView, channelId: string): VoiceState[] {
+  return Object.values(view.voice).filter((state) => state.channelId === channelId);
 }
 
 /** Who is typing in a channel right now, other than the member themselves. */

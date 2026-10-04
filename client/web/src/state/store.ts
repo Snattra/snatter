@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ChannelLog } from "./channelLog";
 import type { ServerView } from "./serverView";
+import { type LocalVoice, noVoice } from "./voice";
 
 /**
  * - `unknown`: the stored session has not been looked at yet
@@ -32,6 +33,8 @@ export interface ServerEntry {
   logs: Record<string, ChannelLog>;
   /** Why the server ended the last session, to show when signing in again. */
   notice: string | null;
+  /** Voice as this app asked for it; kept across reconnects, which join again. */
+  voice: LocalVoice;
 }
 
 interface ServersState {
@@ -53,5 +56,5 @@ export function useServer(origin: string): ServerEntry {
 }
 
 export function blank(origin: string): ServerEntry {
-  return { origin, status: "unknown", view: null, logs: {}, notice: null };
+  return { origin, status: "unknown", view: null, logs: {}, notice: null, voice: noVoice };
 }

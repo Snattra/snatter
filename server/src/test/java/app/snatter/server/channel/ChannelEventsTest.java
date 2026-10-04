@@ -31,7 +31,7 @@ class ChannelEventsTest {
     /** The real owner account, since system notices reference their author. */
     private AccountPrincipal owner() {
         return new AccountPrincipal(new AccountId(data.owner().id()), data.owner().username(),
-            new SessionId(UUID.randomUUID()), true, Permission.all(), Set.of(), null);
+            new SessionId(UUID.randomUUID()), true, Permission.all(), Permission.all(), Set.of(), null);
     }
 
     @Inject

@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from "react";
+import { Fragment, type ReactNode, useRef, useState } from "react";
 import type { Account, Channel } from "../api/types";
 import { platform } from "../platform/platform";
 import type { ServerConnection } from "../servers/ServerConnection";
@@ -38,6 +38,7 @@ import { ProfileModal } from "./profile";
 import { ServerSettingsModal } from "./serverSettings";
 import { Banner, Skeleton } from "./surfaces";
 import { aheadTime } from "./time";
+import { VoiceHeaderButton, VoiceMembers, VoicePanel, VoiceRoom, useVoiceSounds } from "./voice";
 
 /** How often the member's typing is announced again while they keep typing, as the contract asks. */
 const TYPING_REPEAT_MS = 8_000;
@@ -68,6 +69,7 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
   const selected = channels.find((c) => c.id === selectedId) ?? channels[0] ?? null;
   const someoneTyping = view !== null && selected !== null && Object.keys(view.typing[selected.id] ?? {}).length > 0;
   const now = useNow(someoneTyping ? 1000 : null);
+  useVoiceSounds(view, entry.voice);
 
   const membersToggle = (
     <IconButton
@@ -126,26 +128,38 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
               )
             }
             footer={
-              <UserPanel
-                origin={connection.origin}
-                account={view.account}
-                action={
-                  <Button variant="link" onClick={() => void connection.logOut()}>
-                    Sign out
-                  </Button>
-                }
-              />
+              <>
+                <VoicePanel
+                  connection={connection}
+                  view={view}
+                  local={entry.voice}
+                  reconnecting={entry.status === "reconnecting"}
+                />
+                <UserPanel
+                  origin={connection.origin}
+                  account={view.account}
+                  action={
+                    <Button variant="link" onClick={() => void connection.logOut()}>
+                      Sign out
+                    </Button>
+                  }
+                />
+              </>
             }
           >
             <ChannelList>
               {channels.map((channel) => (
-                <ChannelItem
-                  key={channel.id}
-                  channel={channel}
-                  selected={channel.id === selected?.id}
-                  unread={channel.id !== selected?.id && hasUnread(view, channel.id)}
-                  onClick={() => setSelectedId(channel.id)}
-                />
+                <Fragment key={channel.id}>
+                  <ChannelItem
+                    channel={channel}
+                    selected={channel.id === selected?.id}
+                    unread={channel.id !== selected?.id && hasUnread(view, channel.id)}
+                    onClick={() => setSelectedId(channel.id)}
+                  />
+                  {channel.type !== "text" && (
+                    <VoiceMembers origin={connection.origin} view={view} channel={channel} onOpen={openProfile} />
+                  )}
+                </Fragment>
               ))}
               {manageChannels && (
                 <ChannelAction
@@ -167,6 +181,9 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
         }
         header={
           <ChannelHeader channel={selected}>
+            {selected !== null && selected.type !== "text" && (
+              <VoiceHeaderButton connection={connection} channel={selected} local={entry.voice} />
+            )}
             {manageChannels && selected !== null && (
               <IconButton
                 icon="settings"
@@ -230,7 +247,13 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
               onEdit={(messageId) => setEditingMessage(messageId === null ? null : { channelId: selected.id, messageId })}
             />
           ) : (
-            <p className="sn-channel-note">This is a voice channel. It has no messages, and voice is not built yet.</p>
+            <VoiceRoom
+              connection={connection}
+              view={view}
+              channel={selected}
+              local={entry.voice}
+              onOpenProfile={openProfile}
+            />
           ))}
       </AppShell>
       {dialog?.kind === "server-settings" && manageServer && (
