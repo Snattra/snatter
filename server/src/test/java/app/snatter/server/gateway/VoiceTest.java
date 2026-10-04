@@ -147,6 +147,36 @@ class VoiceTest {
     }
 
     @Test
+    void aTakeoverIsConfirmedAndOutlastsWhatTheOtherConnectionHadWaiting() throws InterruptedException {
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User watcher = TestUsers.register();
+        UUID den = data.createChannel(ChannelTypeDto.VOICE, "Den");
+        try (GatewayTestClient first = GatewayTestClient.identified(alice.token());
+             GatewayTestClient second = GatewayTestClient.identified(TestUsers.newSession(alice).token());
+             GatewayTestClient watcherGateway = GatewayTestClient.identified(watcher.token())) {
+            first.send(join(lounge));
+            second.await(GatewayVoiceStateUpdatedDto.class, in(alice, lounge));
+
+            // Joining the same channel the same way changes nothing anyone sees, but the joining connection hears it.
+            second.send(join(lounge));
+            assertEquals(JOINED_ELSEWHERE, first.await(GatewayVoiceEndedDto.class).getReason());
+            second.await(GatewayVoiceStateUpdatedDto.class, in(alice, lounge));
+
+            // The second connection's mute waits its turn, as it just joined; the first takes voice over meanwhile.
+            second.send(new GatewayVoiceStateDto().channelId(lounge).selfMuted(true).selfDeafened(false));
+            first.send(join(den));
+            assertEquals(JOINED_ELSEWHERE, second.await(GatewayVoiceEndedDto.class).getReason());
+            watcherGateway.await(GatewayVoiceStateUpdatedDto.class, in(alice, den));
+
+            // What the second connection had waiting does not take voice back once its turn comes.
+            Thread.sleep(500);
+            awaitMarker(watcherGateway, owner);
+            watcherGateway.assertNone(GatewayVoiceStateUpdatedDto.class,
+                frame -> in(alice, lounge).test(frame) && frame.getVoiceState().getSelfMuted());
+        }
+    }
+
+    @Test
     void joiningNeedsAVisibleVoiceChannelConnectAndRoom() {
         UUID seers = data.createRole("Seers");
         UUID hidden = data.createChannel(ChannelTypeDto.VOICE, "Hidden", seers);

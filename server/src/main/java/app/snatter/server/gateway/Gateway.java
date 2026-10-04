@@ -457,7 +457,9 @@ public class Gateway {
             return;
         }
         if (current != null && !here) {
-            send(current.holder(), seq -> new GatewayVoiceEndedDto().seq(seq).reason(VoiceEndReasonDto.JOINED_ELSEWHERE));
+            endVoice(current, VoiceEndReasonDto.JOINED_ELSEWHERE);
+            // Told its own state again, even when nothing about it changed, as word that this connection holds it now.
+            client.voiceStates.remove(accountId);
         }
         // Taken out first, so someone who moves is listed last in their new channel.
         voice.remove(accountId);
@@ -517,10 +519,20 @@ public class Gateway {
                 ? VoiceEndReasonDto.CHANNEL_UNAVAILABLE
                 : member.has(Permission.CONNECT) ? null : VoiceEndReasonDto.FORBIDDEN;
             if (reason != null) {
-                voice.remove(held.state().accountId());
-                send(held.holder(), seq -> new GatewayVoiceEndedDto().seq(seq).reason(reason));
+                endVoice(held, reason);
             }
         }
+    }
+
+    /**
+     * Takes the member out of voice without their asking, telling the
+     * connection that held it why. A frame still waiting from that connection
+     * is dropped, or it would take voice back.
+     */
+    private void endVoice(Voice held, VoiceEndReasonDto reason) {
+        voice.remove(held.state().accountId());
+        held.holder().voicePending = null;
+        send(held.holder(), seq -> new GatewayVoiceEndedDto().seq(seq).reason(reason));
     }
 
     /** Tells every client what changed among those in the voice channels it can see. */
