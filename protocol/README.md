@@ -48,11 +48,14 @@ older client that ignores it still works.
 
 ## Changing the API
 
-1. Edit `openapi/openapi.yaml`. Unless `info.version` already moved since the
-   last release, bump it: the minor version for an addition, the major version
-   for a breaking change. Note the change in `CHANGELOG.md`, and move
-   `Protocol.CURRENT` in the server and `PROTOCOL_VERSION` in the web client
-   along; a test on each side fails until they match.
+1. Edit `openapi/openapi.yaml` and bump `info.version`. A breaking change
+   moves the major version in the same pull request: CI compares the contract
+   with main and fails otherwise (`check-breaking.sh`, which also runs
+   locally with oasdiff and yq). An addition moves the minor version, unless
+   it already moved since the last release. Note the change in
+   `CHANGELOG.md`, and move `Protocol.CURRENT` in the server and
+   `PROTOCOL_VERSION` in the web client along; a test on each side fails
+   until they match.
 2. Build the server (`mvn verify` in `server/`) and adjust the resource
    classes until it compiles and the tests pass.
 3. Every error response uses the `ApiError` schema with a stable `error`
@@ -62,3 +65,6 @@ older client that ignores it still works.
    type across all its responses, so its error responses carry a description
    only and the success response is declared as `application/octet-stream`.
    See `getBlob` for the pattern.
+5. Lint the contract with `npx @redocly/cli@2.57.0 lint` in this directory,
+   the version CI uses; the rules are in `redocly.yaml`. Operations open to
+   anyone say so with `security: []`.

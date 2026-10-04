@@ -1,0 +1,298 @@
+# Builds and tests what a change touches: the server, the client, the
+# contract and the container images. Runs on pull requests and on main, and
+# on main also publishes the images.
+#
+# Each part runs only when its files change. Require the "CI result" check
+# rather than the parts: a part skipped for lack of changes counts as passed
+# there, while a required check that never ran would block the merge.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A new push to a pull request supersedes the run before it; on main every
+  # commit gets a result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Find changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+      client: ${{ steps.filter.outputs.client }}
+      protocol: ${{ steps.filter.outputs.protocol }}
+      images: ${{ steps.filter.outputs.images }}
+    steps:
+      # Pull requests are compared through the API; pushes need the history.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          # The server and the client are both built from the contract, so a
+          # change to it runs them too.
+          filters: |
+            server:
+              - 'server/**'
+              - 'protocol/openapi/**'
+              - '.github/workflows/ci.yml'
+            client:
+              - 'client/**'
+              - 'protocol/openapi/**'
+              - '.github/workflows/ci.yml'
+            protocol:
+              - 'protocol/**'
+              - '.github/workflows/ci.yml'
+            images:
+              - 'server/**'
+              - 'client/**'
+              - 'protocol/openapi/**'
+              - 'compose.yaml'
+              - '.dockerignore'
+              - '.github/workflows/ci.yml'
+
+  server:
+    name: Server
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The oldest JDK the server supports. Maven comes with the runner.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+          cache-dependency-path: server/pom.xml
+      - run: mvn -B -ntp verify
+
+  client:
+    name: Client
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # Type checks, then builds.
+      - run: npm run build
+
+  protocol:
+    name: Protocol
+    needs: changes
+    if: needs.changes.outputs.protocol == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: protocol
+    steps:
+      # On a pull request this is the merge into the base branch, whose first
+      # parent holds the contract as the base branch has it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      # Rules in redocly.yaml. Errors fail the job; warnings show on the diff.
+      - run: npx --yes @redocly/cli@2.57.0 lint --format=github-actions
+      # Lists the contract's changes in the job summary. yq comes with the
+      # runner.
+      - name: Check for breaking changes
+        if: github.event_name == 'pull_request'
+        env:
+          OASDIFF_URL: https://github.com/oasdiff/oasdiff/releases/download/v1.33.0/oasdiff_1.33.0_linux_amd64.tar.gz
+          OASDIFF_SHA256: 43a4e328e2d13ba1552d760aa68d2485c75c5621f309f6ff64ae895188345247
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/oasdiff.tar.gz" "$OASDIFF_URL"
+          echo "$OASDIFF_SHA256  $RUNNER_TEMP/oasdiff.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP" oasdiff
+          PATH="$RUNNER_TEMP:$PATH" ./check-breaking.sh HEAD^1
+
+  images:
+    name: Images
+    needs: changes
+    if: needs.changes.outputs.images == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint the Dockerfiles
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" -w /repo
+          ghcr.io/hadolint/hadolint:v2.15.1-debian@sha256:9a3944b7fddcb947d1ffd90829ac1a6e5c30479223358f249d8b96c7d0019e27
+          hadolint $(git ls-files '*Dockerfile*')
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Tagged with the names compose.yaml gives them, so that it runs these.
+      - name: Build the server image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: server/Dockerfile
+          tags: snatter-server:local
+          load: true
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,scope=server,mode=max
+      - name: Build the web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: client/web/Dockerfile
+          tags: snatter-web:local
+          load: true
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+      # Runs the installation compose.yaml describes and reaches it as a
+      # browser would: the app, the API and the gateway, all through the web
+      # container.
+      - name: Smoke test
+        run: |
+          docker compose up -d --no-build
+          curl -fsS --retry 30 --retry-delay 2 --retry-all-errors -w '\n' http://localhost:8080/api/v1/server-info
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          curl -fsSI http://localhost:8080/ | grep -qi '^content-security-policy:'
+          # The handshake answers 101, then the connection stays open.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 3 \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            http://localhost:8080/api/v1/gateway || true)
+          echo "Gateway handshake: $code"
+          [ "$code" = 101 ]
+      - name: Show the logs
+        if: failure()
+        run: docker compose logs
+
+  signoff:
+    name: Sign-off
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      # Every commit but merges carries a Signed-off-by from its author, as
+      # CONTRIBUTING.md asks, except Dependabot's, which cannot.
+      - name: Check every commit is signed off
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          unsigned=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/commits" --jq '
+            .[]
+            | select((.parents | length) == 1 and .author.login != "dependabot[bot]")
+            | (.commit.author.email | ascii_downcase) as $email
+            | select([.commit.message | split("\n")[] | select(startswith("Signed-off-by:"))
+                     | capture("<(?<email>[^>]+)>").email | ascii_downcase] | index($email) | not)
+            | "\(.sha[0:7]) \(.commit.message | split("\n")[0]) (\(.commit.author.email))"')
+          if [ -n "$unsigned" ]; then
+            echo "::error::Commits without a sign-off by their author (see CONTRIBUTING.md):"
+            echo "$unsigned"
+            echo "Sign them off with: git rebase --signoff origin/$BASE_REF && git push --force-with-lease"
+            exit 1
+          fi
+
+  result:
+    name: CI result
+    needs: [changes, server, client, protocol, images, signoff]
+    # Also when the run is cancelled: skipped, this check would count as
+    # passed.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+
+  # Once everything passed on main: ghcr.io/snattra/snatter-server and
+  # snatter-web, tagged `main` and `sha-<commit>`. Built again from the cache
+  # the images job left, so nothing is compiled twice. Releases will add
+  # version tags in the metadata steps, and `latest`.
+  publish:
+    name: Publish images
+    needs: [changes, result]
+    if: github.event_name == 'push' && needs.changes.outputs.images == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: server
+        with:
+          images: ghcr.io/snattra/snatter-server
+          tags: |
+            type=ref,event=branch
+            type=sha
+      - name: Push the server image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: server/Dockerfile
+          push: true
+          tags: ${{ steps.server.outputs.tags }}
+          labels: ${{ steps.server.outputs.labels }}
+          cache-from: type=gha,scope=server
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: web
+        with:
+          images: ghcr.io/snattra/snatter-web
+          tags: |
+            type=ref,event=branch
+            type=sha
+      - name: Push the web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: client/web/Dockerfile
+          push: true
+          tags: ${{ steps.web.outputs.tags }}
+          labels: ${{ steps.web.outputs.labels }}
+          cache-from: type=gha,scope=web

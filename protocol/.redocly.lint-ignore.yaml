@@ -1,0 +1,10 @@
+# Lint findings in openapi.yaml that are deliberate. See redocly.yaml.
+openapi/openapi.yaml:
+  # Server info is public and not rate limited, so it has no 4XX to declare.
+  operation-4xx-response:
+    - '#/paths/~1api~1v1~1server-info/get/responses'
+  # The gateway frames travel over the WebSocket, which no path describes.
+  no-unused-components:
+    - '#/components/schemas/GatewayCloseReason'
+    - '#/components/schemas/GatewayClientFrame'
+    - '#/components/schemas/GatewayServerFrame'

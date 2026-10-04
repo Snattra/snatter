@@ -96,6 +96,7 @@ paths:
       operationId: getServerInfo
       summary: Describe this server
       description: Public. Clients call this first to learn what they are talking to.
+      security: []
       responses:
         "200":
           description: Server description
@@ -165,6 +166,7 @@ paths:
         base64-encoded JSON object `{algorithm, challenge, number, salt, signature}`.
         Each challenge expires after a few minutes and can be used once.
         Only needed when `ServerInfo.registration.challengeRequired` is true.
+      security: []
       responses:
         "200":
           description: A fresh challenge
@@ -186,6 +188,7 @@ paths:
         very first account on a fresh server. When
         `ServerInfo.registration.challengeRequired` is true the request must
         carry a solved challenge in `altcha`.
+      security: []
       requestBody:
         required: true
         content:
@@ -232,6 +235,7 @@ paths:
       tags: [auth]
       operationId: login
       summary: Log in with username and password
+      security: []
       requestBody:
         required: true
         content:
@@ -641,6 +645,7 @@ paths:
         Public. Tells a prospective member which community the invite is for
         and who sent it. Unknown or revoked codes answer 404; expired or used-up
         codes answer 410.
+      security: []
       parameters:
         - name: code
           in: path
@@ -1311,6 +1316,7 @@ paths:
       description: |
         Public. Blobs are immutable and their ids unguessable, so responses may be
         cached indefinitely. `Account.avatarId` values are fetched here.
+      security: []
       parameters:
         - name: id
           in: path
