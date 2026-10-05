@@ -98,7 +98,8 @@ public final class IceConnection implements AutoCloseable {
         IceProcessingState state = (IceProcessingState) event.getNewValue();
         if (state == IceProcessingState.COMPLETED) {
             CandidatePair pair = component.getSelectedPair();
-            connected.complete(new Path(component.getSocket(), pair.getRemoteCandidate().getTransportAddress()));
+            InetSocketAddress remote = plain(pair.getRemoteCandidate().getTransportAddress());
+            connected.complete(new Path(component.getSocket(), remote));
         } else if (state == IceProcessingState.FAILED) {
             connected.completeExceptionally(new IOException("ICE failed"));
         }

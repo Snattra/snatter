@@ -41,7 +41,8 @@ class MediaPortTest {
             server.start(peer.agent.getLocalUfrag(), peer.agent.getLocalPassword());
             CandidatePair pair = peer.connect();
             IceConnection.Path path = server.connected().toCompletableFuture().get(10, SECONDS);
-            assertEquals(pair.getLocalCandidate().getTransportAddress(), path.remote());
+            TransportAddress peerAddress = pair.getLocalCandidate().getTransportAddress();
+            assertEquals(new InetSocketAddress(peerAddress.getAddress(), peerAddress.getPort()), path.remote());
 
             // Shaped like RTP, which is what will travel this way.
             byte[] sent = {(byte) 0x80, 111, 0, 1, 0, 0, 0, 0, 0, 0, 0, 42, 1, 2, 3};
