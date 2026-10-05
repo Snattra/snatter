@@ -198,12 +198,39 @@ function VoiceToggle(props: { icon: IconName; label: string; pressed: boolean; o
   );
 }
 
-/** In the channel header of a channel with voice: join it, or leave it. */
-export function VoiceHeaderButton({ connection, channel, local }: { connection: ServerConnection; channel: Channel; local: LocalVoice }) {
-  return local.channelId === channel.id ? (
-    <IconButton icon="call-end" label="Leave voice" onClick={() => connection.leaveVoice()} />
-  ) : (
-    <IconButton icon="headset" label="Join voice" onClick={() => join(connection, channel.id)} />
+interface VoiceHeaderButtonProps {
+  connection: ServerConnection;
+  view: ServerView;
+  channel: Channel;
+  local: LocalVoice;
+}
+
+/**
+ * In the header of a voice and text channel, whose body is its messages:
+ * the way into its voice, or out of it, labelled so it is found. A voice
+ * channel has its way in in its body instead.
+ */
+export function VoiceHeaderButton({ connection, view, channel, local }: VoiceHeaderButtonProps) {
+  if (local.channelId === channel.id) {
+    const joining = voiceStatus(local, view.voice[view.account.id]) === "joining";
+    return (
+      <Button size="sm" busy={joining} onClick={() => connection.leaveVoice()}>
+        {!joining && <Icon name="call-end" />}
+        {joining ? "Joining…" : "Leave voice"}
+      </Button>
+    );
+  }
+  const allowed = can(view, "CONNECT");
+  return (
+    <Button
+      size="sm"
+      disabled={!allowed}
+      title={allowed ? undefined : "You don't have permission to join voice."}
+      onClick={() => join(connection, channel.id)}
+    >
+      <Icon name="headset" />
+      Join voice
+    </Button>
   );
 }
 
