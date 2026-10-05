@@ -4,11 +4,11 @@ import io.quarkus.runtime.Startup;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import org.ice4j.Transport;
 import org.ice4j.TransportAddress;
 import org.ice4j.ice.harvest.AbstractUdpListener;
@@ -36,23 +36,37 @@ public class MediaPort {
     public MediaPort(MediaConfig config) throws UnknownHostException {
         configureIce4j();
         // Looked up first, so a name that does not resolve leaves no sockets open.
-        Optional<InetAddress> address = config.address().isPresent()
-            ? Optional.of(InetAddress.getByName(config.address().get()))
-            : Optional.empty();
+        InetAddress reached = config.address().isPresent() ? InetAddress.getByName(config.address().get()) : null;
         sockets = open(config.port());
         harvesters.addAll(sockets);
-        address.ifPresent(reached -> {
-            for (SinglePortUdpHarvester socket : sockets) {
-                TransportAddress local = socket.getLocalAddress();
-                // An IPv4 address stands in front of IPv4 sockets only, and a socket on it needs no stand-in.
-                if (local.getAddress().getClass() == reached.getClass() && !local.getAddress().equals(reached)) {
+        if (reached != null && !standInFront(reached)) {
+            close();
+            String family = reached instanceof Inet6Address ? "IPv6" : "IPv4";
+            throw new IllegalStateException(config.address().get() + " is an " + family
+                + " address, but the voice port has no " + family + " socket for it to stand in front of");
+        }
+        LOG.infof("Voice on UDP %s%s", sockets.stream().map(SinglePortUdpHarvester::getLocalAddress).toList(),
+            config.address().map(address -> ", reached at " + address).orElse(""));
+    }
+
+    /**
+     * Offers the configured address in front of each socket of its family,
+     * IPv4 or IPv6, and says whether there was one. A socket on the address
+     * itself needs no stand-in.
+     */
+    private boolean standInFront(InetAddress reached) {
+        boolean sameFamily = false;
+        for (SinglePortUdpHarvester socket : sockets) {
+            TransportAddress local = socket.getLocalAddress();
+            if (local.getAddress().getClass() == reached.getClass()) {
+                sameFamily = true;
+                if (!local.getAddress().equals(reached)) {
                     harvesters.add(new StaticMappingCandidateHarvester(
                         new TransportAddress(reached, local.getPort(), Transport.UDP), local));
                 }
             }
-        });
-        LOG.infof("Voice on UDP %s%s", sockets.stream().map(SinglePortUdpHarvester::getLocalAddress).toList(),
-            config.address().map(reached -> ", reached at " + reached).orElse(""));
+        }
+        return sameFamily;
     }
 
     /**

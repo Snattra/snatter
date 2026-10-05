@@ -513,7 +513,8 @@ warning, and none at all fails the start. Every connection shares the port:
 ice4j's `SinglePortUdpHarvester` tells them apart by the ICE username in
 their first packet. `snatter.media.address` names the address people reach
 the port at behind NAT or in a container, offered as a server-reflexive
-candidate in front of each socket of its family, IPv4 or IPv6.
+candidate in front of each socket of its family, IPv4 or IPv6; with no
+socket of its family, the start fails.
 
 **The peer leads ICE.** `IceConnection` is the server's side for one
 connection: its credentials and candidates go into the offer, and it leaves
