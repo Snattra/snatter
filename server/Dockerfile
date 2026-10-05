@@ -37,7 +37,8 @@ USER 0
 RUN mkdir -p /var/lib/snatter && chown 185:0 /var/lib/snatter
 ENV SNATTER_STORAGE_ROOT=/var/lib/snatter
 
-EXPOSE 8080
+# HTTP, and voice over UDP.
+EXPOSE 8080 8080/udp
 USER 185
 ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
 ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
