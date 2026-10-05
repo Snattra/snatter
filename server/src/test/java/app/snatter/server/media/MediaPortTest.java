@@ -1,6 +1,7 @@
 package app.snatter.server.media;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.stream.Collectors.toSet;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,9 +11,11 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.io.IOException;
 import java.net.DatagramPacket;
-import java.net.InetAddress;
+import java.net.Inet4Address;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.ice4j.Transport;
 import org.ice4j.TransportAddress;
@@ -53,25 +56,19 @@ class MediaPortTest {
     }
 
     @Test
-    void theConfiguredAddressIsOfferedInFrontOfTheMachinesOwn() {
+    void theConfiguredAddressStandsInFrontOfEachSocketOfItsFamily() {
         try (IceConnection server = port.open()) {
-            var hostPorts = server.candidates().stream()
-                .filter(c -> c.type().equals("host") && isIpv4(c))
-                .map(Candidate::port)
-                .sorted()
-                .toList();
-            var mappedPorts = server.candidates().stream()
-                .filter(c -> c.type().equals("srflx") && c.address().equals("203.0.113.7"))
-                .map(Candidate::port)
-                .sorted()
-                .toList();
-            assertFalse(hostPorts.isEmpty());
-            assertEquals(hostPorts, mappedPorts);
+            Set<InetSocketAddress> sockets = server.candidates().stream()
+                .filter(c -> c.type().equals("host") && c.address().getAddress() instanceof Inet4Address)
+                .map(Candidate::address)
+                .collect(toSet());
+            List<Candidate> reflexive = server.candidates().stream().filter(c -> c.type().equals("srflx")).toList();
+            assertFalse(sockets.isEmpty());
+            assertEquals(sockets, reflexive.stream().map(Candidate::related).collect(toSet()));
+            for (Candidate c : reflexive) {
+                assertEquals(new InetSocketAddress("203.0.113.7", c.related().getPort()), c.address());
+            }
         }
-    }
-
-    private static boolean isIpv4(Candidate candidate) {
-        return new InetSocketAddress(candidate.address(), candidate.port()).getAddress().getAddress().length == 4;
     }
 
     /** Stands in for a browser: it leads the checks, as browsers will with the server. */
@@ -88,7 +85,7 @@ class MediaPortTest {
             stream.setRemotePassword(server.password());
             for (Candidate c : server.candidates()) {
                 component.addRemoteCandidate(new RemoteCandidate(
-                    new TransportAddress(InetAddress.getByName(c.address()), c.port(), Transport.UDP), component,
+                    new TransportAddress(c.address().getAddress(), c.address().getPort(), Transport.UDP), component,
                     CandidateType.parse(c.type()), c.foundation(), c.priority(), null));
             }
         }

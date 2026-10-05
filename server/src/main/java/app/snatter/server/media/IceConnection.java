@@ -8,6 +8,7 @@ import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import org.ice4j.TransportAddress;
 import org.ice4j.ice.Agent;
 import org.ice4j.ice.CandidatePair;
 import org.ice4j.ice.Component;
@@ -25,8 +26,13 @@ import org.ice4j.ice.harvest.CandidateHarvester;
  */
 public final class IceConnection implements AutoCloseable {
 
-    /** A candidate to offer: an address the peer may send its checks to. */
-    public record Candidate(String foundation, long priority, String address, int port, String type) {
+    /**
+     * A candidate to offer: an address the peer may send its checks to. A
+     * server-reflexive one, the configured address, stands in front of one
+     * of the machine's own: its related address. A host candidate has none.
+     */
+    public record Candidate(String foundation, long priority, String type, InetSocketAddress address,
+                            InetSocketAddress related) {
     }
 
     /** The path the checks found: the socket to read and write media on, and the peer's address. */
@@ -63,9 +69,14 @@ public final class IceConnection implements AutoCloseable {
 
     public List<Candidate> candidates() {
         return component.getLocalCandidates().stream()
-            .map(c -> new Candidate(c.getFoundation(), c.getPriority(), c.getTransportAddress().getHostAddress(),
-                c.getTransportAddress().getPort(), c.getType().toString()))
+            .map(c -> new Candidate(c.getFoundation(), c.getPriority(), c.getType().toString(),
+                plain(c.getTransportAddress()), plain(c.getRelatedAddress())))
             .toList();
+    }
+
+    /** The address without ice4j's transport, or null. */
+    private static InetSocketAddress plain(TransportAddress address) {
+        return address == null ? null : new InetSocketAddress(address.getAddress(), address.getPort());
     }
 
     /** Starts answering the peer's checks, once its credentials are known. */

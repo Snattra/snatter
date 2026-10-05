@@ -3,12 +3,15 @@ package app.snatter.server.media;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.ice4j.Transport;
 import org.ice4j.TransportAddress;
+import org.ice4j.ice.harvest.AbstractUdpListener;
 import org.ice4j.ice.harvest.CandidateHarvester;
 import org.ice4j.ice.harvest.SinglePortUdpHarvester;
 import org.ice4j.ice.harvest.StaticMappingCandidateHarvester;
@@ -32,24 +35,44 @@ public class MediaPort {
 
     public MediaPort(MediaConfig config) throws UnknownHostException {
         configureIce4j();
-        sockets = SinglePortUdpHarvester.createHarvesters(config.port());
-        if (sockets.isEmpty()) {
-            throw new IllegalStateException("Could not open UDP port " + config.port() + " for voice on any address");
-        }
+        // Looked up first, so a name that does not resolve leaves no sockets open.
+        Optional<InetAddress> address = config.address().isPresent()
+            ? Optional.of(InetAddress.getByName(config.address().get()))
+            : Optional.empty();
+        sockets = open(config.port());
         harvesters.addAll(sockets);
-        if (config.address().isPresent()) {
-            InetAddress address = InetAddress.getByName(config.address().get());
+        address.ifPresent(reached -> {
             for (SinglePortUdpHarvester socket : sockets) {
                 TransportAddress local = socket.getLocalAddress();
                 // An IPv4 address stands in front of IPv4 sockets only, and a socket on it needs no stand-in.
-                if (local.getAddress().getClass() == address.getClass() && !local.getAddress().equals(address)) {
+                if (local.getAddress().getClass() == reached.getClass() && !local.getAddress().equals(reached)) {
                     harvesters.add(new StaticMappingCandidateHarvester(
-                        new TransportAddress(address, local.getPort(), Transport.UDP), local));
+                        new TransportAddress(reached, local.getPort(), Transport.UDP), local));
                 }
             }
-        }
+        });
         LOG.infof("Voice on UDP %s%s", sockets.stream().map(SinglePortUdpHarvester::getLocalAddress).toList(),
-            config.address().map(address -> ", reached at " + address).orElse(""));
+            config.address().map(reached -> ", reached at " + reached).orElse(""));
+    }
+
+    /**
+     * Opens the port on every address of the machine that it can. An address
+     * it cannot open is a warning, as it may be one nobody uses; none at all
+     * fails the start.
+     */
+    private static List<SinglePortUdpHarvester> open(int port) {
+        List<SinglePortUdpHarvester> opened = new ArrayList<>();
+        for (TransportAddress address : AbstractUdpListener.getAllowedAddresses(port)) {
+            try {
+                opened.add(new SinglePortUdpHarvester(address));
+            } catch (IOException e) {
+                LOG.warnf("Could not open UDP %s for voice: %s", address, e.getMessage());
+            }
+        }
+        if (opened.isEmpty()) {
+            throw new IllegalStateException("Could not open UDP port " + port + " for voice on any address");
+        }
+        return opened;
     }
 
     /**

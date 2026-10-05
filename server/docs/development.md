@@ -508,11 +508,12 @@ follow.
 
 **One UDP port.** `MediaPort` opens `snatter.media.port`
 (`SNATTER_MEDIA_PORT`, 8080 by default, the HTTP port's number) at start, on
-every address of the machine, and fails the start when it cannot. Every
-connection shares it: ice4j's `SinglePortUdpHarvester` tells them apart by
-the ICE username in their first packet. `snatter.media.address` names the
-address people reach the port at behind NAT or in a container, offered as a
-server-reflexive candidate in front of each IPv4 socket.
+every address of the machine it can. An address it cannot open is a
+warning, and none at all fails the start. Every connection shares the port:
+ice4j's `SinglePortUdpHarvester` tells them apart by the ICE username in
+their first packet. `snatter.media.address` names the address people reach
+the port at behind NAT or in a container, offered as a server-reflexive
+candidate in front of each socket of its family, IPv4 or IPv6.
 
 **The peer leads ICE.** `IceConnection` is the server's side for one
 connection: its credentials and candidates go into the offer, and it leaves
