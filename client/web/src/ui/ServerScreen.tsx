@@ -181,8 +181,8 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
         }
         header={
           <ChannelHeader channel={selected}>
-            {selected !== null && selected.type !== "text" && (
-              <VoiceHeaderButton connection={connection} channel={selected} local={entry.voice} />
+            {selected !== null && selected.type === "voice_text" && (
+              <VoiceHeaderButton connection={connection} view={view} channel={selected} local={entry.voice} />
             )}
             {manageChannels && selected !== null && (
               <IconButton
