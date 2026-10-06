@@ -67,6 +67,8 @@ there is no configuration file to mount.
 | `SNATTER_STORAGE_ROOT` | `./data` (`/var/lib/snatter` in the container) | Directory for everything the server keeps: the database and uploaded content such as avatars |
 | `SNATTER_DB_PATH`      | `snatter.db` in `SNATTER_STORAGE_ROOT`          | The SQLite database file, if it should live elsewhere |
 | `QUARKUS_HTTP_PORT`    | `8080`                                         | Port the server listens on     |
+| `SNATTER_MEDIA_PORT`   | `8080`                                         | UDP port for voice. Open it, and publish it from a container, beside the HTTP port |
+| `SNATTER_MEDIA_ADDRESS` | none                                          | The address people reach the voice port at, when the server is behind NAT or in a container: a public IP address or a host name |
 
 Behind a reverse proxy, also set `QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING`
 and `QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED` to `true` so rate limits see the

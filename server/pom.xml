@@ -29,6 +29,7 @@
         <quarkus.platform.version>3.39.4</quarkus.platform.version>
         <quarkus-jdbi.version>1.10.1</quarkus-jdbi.version>
         <sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
+        <ice4j.version>3.2-21-g3d9cdaa</ice4j.version>
         <!-- The hand-written OpenAPI document in the Apache-licensed protocol
              module is the API contract. Server interfaces and DTOs are
              generated from it on every build. -->
@@ -105,6 +106,12 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-flyway</artifactId>
+        </dependency>
+        <!-- Voice media: ICE from Jitsi's ice4j. See docs/development.md. -->
+        <dependency>
+            <groupId>org.jitsi</groupId>
+            <artifactId>ice4j</artifactId>
+            <version>${ice4j.version}</version>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

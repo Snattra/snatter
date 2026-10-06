@@ -21,12 +21,11 @@ splitting by technical layer:
 | `channel`     | Channels, ordering, required roles                   |
 | `message`     | Messages, replies, paging, system notices            |
 | `gateway`     | WebSocket gateway: identify, ready, events, voice    |
+| `media`       | Voice transport: the UDP port, ICE                   |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
 | `persistence` | JDBI producer and small JDBC helpers                 |
-
-Planned: `media`.
 
 ## Database
 
@@ -498,6 +497,40 @@ listening stays logged in, and closes connections whose session is gone.
 WebSocket has written them. A connection with more than
 1000 frames outstanding is closed with `too_slow`;
 the client reconnects and gets a fresh `ready`.
+
+## Voice media
+
+Voice travels over WebRTC, through the server: each browser connects to the
+server rather than to the others, and the server forwards the audio. The
+`media` package carries it, on Jitsi's ice4j for ICE. So far it has the
+connection itself; encryption, signalling over the gateway and forwarding
+follow.
+
+**One UDP port.** `MediaPort` opens `snatter.media.port`
+(`SNATTER_MEDIA_PORT`, 8080 by default, the HTTP port's number) at start, on
+every address of the machine it can. An address it cannot open is a
+warning, and none at all fails the start. Every connection shares the port:
+ice4j's `SinglePortUdpHarvester` tells them apart by the ICE username in
+their first packet. `snatter.media.address` names the address people reach
+the port at behind NAT or in a container, offered as a server-reflexive
+candidate in front of each socket of its family, IPv4 or IPv6; with no
+socket of its family, the start fails.
+
+**The peer leads ICE.** `IceConnection` is the server's side for one
+connection: its credentials and candidates go into the offer, and it leaves
+the checks to the peer, as with a server that implements ICE lite. The
+peer's address comes from its checks, so the server takes none of its
+candidates, which browsers hide behind mDNS names anyway. `connected()`
+gives the socket and address to carry media on once the peer has picked a
+path.
+
+**ice4j settings** are system properties, which `MediaPort` sets before
+ice4j loads: no link-local addresses, and no probe of the EC2 metadata
+address at every start. application.properties turns its logging down to
+warnings, and keeps in the native executable the files ice4j's
+configuration library reads. In tests the port is any free one, with a documentation address
+in front of it, and `MediaPortTest` connects an ice4j agent standing in for
+a browser.
 
 ## Registration policy
 
