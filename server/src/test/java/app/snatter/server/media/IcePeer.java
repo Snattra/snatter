@@ -4,6 +4,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 import app.snatter.server.media.IceConnection.Candidate;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import org.ice4j.Transport;
 import org.ice4j.TransportAddress;
@@ -23,12 +24,17 @@ final class IcePeer implements AutoCloseable {
     final Component component;
 
     IcePeer(IceConnection server) throws IOException {
+        this(server.ufrag(), server.password(), server.candidates());
+    }
+
+    /** From what the server's offer says. */
+    IcePeer(String ufrag, String password, List<Candidate> candidates) throws IOException {
         agent.setControlling(true);
         IceMediaStream stream = agent.createMediaStream("media");
         component = agent.createComponent(stream, KeepAliveStrategy.SELECTED_ONLY, true);
-        stream.setRemoteUfrag(server.ufrag());
-        stream.setRemotePassword(server.password());
-        for (Candidate c : server.candidates()) {
+        stream.setRemoteUfrag(ufrag);
+        stream.setRemotePassword(password);
+        for (Candidate c : candidates) {
             component.addRemoteCandidate(new RemoteCandidate(
                 new TransportAddress(c.address().getAddress(), c.address().getPort(), Transport.UDP), component,
                 CandidateType.parse(c.type()), c.foundation(), c.priority(), null));
