@@ -21,7 +21,7 @@ splitting by technical layer:
 | `channel`     | Channels, ordering, required roles                   |
 | `message`     | Messages, replies, paging, system notices            |
 | `gateway`     | WebSocket gateway: identify, ready, events, voice    |
-| `media`       | Voice transport: the UDP port, ICE, DTLS-SRTP        |
+| `media`       | Voice transport: SDP, ICE, DTLS-SRTP on one UDP port |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
@@ -504,8 +504,8 @@ Voice travels over WebRTC, through the server: each browser connects to the
 server rather than to the others, and the server forwards the audio. The
 `media` package carries it, on Jitsi's ice4j for ICE and jitsi-srtp for
 encryption, with keys from a DTLS handshake by BouncyCastle. So far it has
-the connection and its encryption; signalling over the gateway and
-forwarding follow.
+a member's connection, from the offer to the keys; signalling over the
+gateway and forwarding follow.
 
 **One UDP port.** `MediaPort` opens `snatter.media.port`
 (`SNATTER_MEDIA_PORT`, 8080 by default, the HTTP port's number) at start, on
@@ -537,6 +537,18 @@ source's keys are kept only once a packet from it decrypts, and for four
 sources at most, so neither stray packets nor the peer can fill memory.
 `SrtpConnectionTest` adds a BouncyCastle DTLS client and jitsi-srtp to the
 stand-in browser, written apart from the server's code.
+
+**The server offers, the browser answers.** `VoiceConnection` is one
+member's connection, with ICE and SRTP behind it. Its offer has one audio
+m-line, on which the member sends their voice: Opus, capped at the channel's
+bitrate with `maxaveragebitrate`, with every candidate up front and
+`a=ice-lite`. From the answer it needs only the ICE credentials, the SHA-256
+fingerprint, and `a=setup:active`, the browser starting DTLS; an answer
+without them is refused with `InvalidAnswerException`. `ready()` completes
+once ICE and the handshake are done, and fails if either does, or if the
+peer has not connected within 30 seconds. `VoiceConnectionTest` has the
+stand-in browser read the offer and answer it as Chrome would, and
+`SdpTest` reads answers shaped like Chrome's and Firefox's.
 
 **ice4j settings** are system properties, which `MediaPort` sets before
 ice4j loads: no link-local addresses, and no probe of the EC2 metadata
