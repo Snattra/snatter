@@ -128,13 +128,17 @@ public final class SrtpConnection implements AutoCloseable {
     private void read(Consumer<RtpPacket> received) {
         byte[] buffer = new byte[DATAGRAM_LIMIT];
         DatagramPacket datagram = new DatagramPacket(buffer, buffer.length);
-        while (!closed) {
+        while (true) {
             try {
                 datagram.setLength(buffer.length);
                 path.socket().receive(datagram);
             } catch (IOException e) {
                 // The ICE connection closed the socket.
                 close();
+                return;
+            }
+            // Closed while waiting: whatever woke the thread is not handed on.
+            if (closed) {
                 return;
             }
             int length = datagram.getLength();
