@@ -21,7 +21,7 @@ splitting by technical layer:
 | `channel`     | Channels, ordering, required roles                   |
 | `message`     | Messages, replies, paging, system notices            |
 | `gateway`     | WebSocket gateway: identify, ready, events, voice    |
-| `media`       | Voice transport: the UDP port, ICE                   |
+| `media`       | Voice transport: the UDP port, ICE, DTLS-SRTP        |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
@@ -502,9 +502,10 @@ the client reconnects and gets a fresh `ready`.
 
 Voice travels over WebRTC, through the server: each browser connects to the
 server rather than to the others, and the server forwards the audio. The
-`media` package carries it, on Jitsi's ice4j for ICE. So far it has the
-connection itself; encryption, signalling over the gateway and forwarding
-follow.
+`media` package carries it, on Jitsi's ice4j for ICE and jitsi-srtp for
+encryption, with keys from a DTLS handshake by BouncyCastle. So far it has
+the connection and its encryption; signalling over the gateway and
+forwarding follow.
 
 **One UDP port.** `MediaPort` opens `snatter.media.port`
 (`SNATTER_MEDIA_PORT`, 8080 by default, the HTTP port's number) at start, on
@@ -523,6 +524,19 @@ peer's address comes from its checks, so the server takes none of its
 candidates, which browsers hide behind mDNS names anyway. `connected()`
 gives the socket and address to carry media on once the peer has picked a
 path.
+
+**Encryption is DTLS-SRTP.** `SrtpConnection` runs over that path. Its
+certificate is made for the connection and its fingerprint goes into the
+offer; the answer names the peer's, and the handshake fails unless the peer
+shows that certificate. The peer starts the handshake, as browsers do when
+they answer, so the server is the DTLS server: DTLS 1.2 with an ECDSA
+certificate, and SRTP with AES-GCM, or AES-CM and HMAC-SHA1 when that is all
+the peer offers. The socket carries DTLS and SRTP alike, told apart by their
+first byte. RTP is decrypted and handed on, and RTCP is dropped for now. A
+source's keys are kept only once a packet from it decrypts, and for four
+sources at most, so neither stray packets nor the peer can fill memory.
+`SrtpConnectionTest` adds a BouncyCastle DTLS client and jitsi-srtp to the
+stand-in browser, written apart from the server's code.
 
 **ice4j settings** are system properties, which `MediaPort` sets before
 ice4j loads: no link-local addresses, and no probe of the EC2 metadata

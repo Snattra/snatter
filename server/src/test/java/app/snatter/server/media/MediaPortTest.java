@@ -9,24 +9,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import app.snatter.server.media.IceConnection.Candidate;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
-import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.Inet4Address;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import org.ice4j.Transport;
 import org.ice4j.TransportAddress;
-import org.ice4j.ice.Agent;
 import org.ice4j.ice.CandidatePair;
-import org.ice4j.ice.CandidateType;
-import org.ice4j.ice.Component;
-import org.ice4j.ice.IceMediaStream;
-import org.ice4j.ice.IceProcessingState;
-import org.ice4j.ice.KeepAliveStrategy;
-import org.ice4j.ice.RemoteCandidate;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
@@ -37,7 +27,7 @@ class MediaPortTest {
 
     @Test
     void aPeerFindsThePortAndWhatItSendsArrives() throws Exception {
-        try (IceConnection server = port.open(); Peer peer = new Peer(server)) {
+        try (IceConnection server = port.open(); IcePeer peer = new IcePeer(server)) {
             server.start(peer.agent.getLocalUfrag(), peer.agent.getLocalPassword());
             CandidatePair pair = peer.connect();
             IceConnection.Path path = server.connected().toCompletableFuture().get(10, SECONDS);
@@ -69,45 +59,6 @@ class MediaPortTest {
             for (Candidate c : reflexive) {
                 assertEquals(new InetSocketAddress("203.0.113.7", c.related().getPort()), c.address());
             }
-        }
-    }
-
-    /** Stands in for a browser: it leads the checks, as browsers will with the server. */
-    private static final class Peer implements AutoCloseable {
-
-        final Agent agent = new Agent();
-        final Component component;
-
-        Peer(IceConnection server) throws IOException {
-            agent.setControlling(true);
-            IceMediaStream stream = agent.createMediaStream("media");
-            component = agent.createComponent(stream, KeepAliveStrategy.SELECTED_ONLY, true);
-            stream.setRemoteUfrag(server.ufrag());
-            stream.setRemotePassword(server.password());
-            for (Candidate c : server.candidates()) {
-                component.addRemoteCandidate(new RemoteCandidate(
-                    new TransportAddress(c.address().getAddress(), c.address().getPort(), Transport.UDP), component,
-                    CandidateType.parse(c.type()), c.foundation(), c.priority(), null));
-            }
-        }
-
-        /** Runs the checks and returns the pair the peer picked. */
-        CandidatePair connect() throws Exception {
-            CompletableFuture<CandidatePair> completed = new CompletableFuture<>();
-            agent.addStateChangeListener(event -> {
-                if (event.getNewValue() == IceProcessingState.COMPLETED) {
-                    completed.complete(component.getSelectedPair());
-                } else if (event.getNewValue() == IceProcessingState.FAILED) {
-                    completed.completeExceptionally(new IOException("the peer's checks failed"));
-                }
-            });
-            agent.startConnectivityEstablishment();
-            return completed.get(10, SECONDS);
-        }
-
-        @Override
-        public void close() {
-            agent.free();
         }
     }
 }
