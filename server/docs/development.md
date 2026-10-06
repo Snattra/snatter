@@ -533,9 +533,10 @@ they answer, so the server is the DTLS server: DTLS 1.2 with an ECDSA
 certificate, and SRTP with AES-GCM, or AES-CM and HMAC-SHA1 when that is all
 the peer offers. The socket carries DTLS and SRTP alike, told apart by their
 first byte. RTP is decrypted and handed on, and RTCP is dropped for now. A
-source's keys are kept only once a packet from it decrypts, so stray packets
-cannot fill memory. `SrtpConnectionTest` adds a BouncyCastle DTLS client and
-jitsi-srtp to the stand-in browser, written apart from the server's code.
+source's keys are kept only once a packet from it decrypts, and for four
+sources at most, so neither stray packets nor the peer can fill memory.
+`SrtpConnectionTest` adds a BouncyCastle DTLS client and jitsi-srtp to the
+stand-in browser, written apart from the server's code.
 
 **ice4j settings** are system properties, which `MediaPort` sets before
 ice4j loads: no link-local addresses, and no probe of the EC2 metadata

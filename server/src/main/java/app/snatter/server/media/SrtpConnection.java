@@ -52,6 +52,8 @@ public final class SrtpConnection implements AutoCloseable {
     private static final int SEND_LIMIT = 1200;
     /** The longest tag SRTP appends: AES-GCM's. */
     private static final int TAG_LENGTH = 16;
+    /** A browser sends its voice from one source; this allows for a few more, and drops the rest. */
+    static final int MAX_SOURCES = 4;
 
     private final DtlsIdentity identity = DtlsIdentity.generate();
     private final Records records = new Records();
@@ -161,6 +163,10 @@ public final class SrtpConnection implements AutoCloseable {
             SrtpCryptoContext context = incoming.get(ssrc);
             boolean known = context != null;
             if (!known) {
+                if (incoming.size() >= MAX_SOURCES) {
+                    LOG.debugf("Dropped RTP from source %d: too many sources", Integer.toUnsignedLong(ssrc));
+                    return;
+                }
                 context = keys.deriveContext(ssrc, 0);
             }
             SrtpErrorStatus status = context.reverseTransformPacket(packet, false);
@@ -168,7 +174,8 @@ public final class SrtpConnection implements AutoCloseable {
                 LOG.debugf("Dropped RTP from source %d: %s", Integer.toUnsignedLong(ssrc), status);
                 return;
             }
-            // Kept only once a packet proves the source is the peer's, so others can't fill the map.
+            // Kept only once a packet proves the source is the peer's, so others can't fill the map,
+            // and capped, so the peer can't either.
             if (!known) {
                 incoming.put(ssrc, context);
             }

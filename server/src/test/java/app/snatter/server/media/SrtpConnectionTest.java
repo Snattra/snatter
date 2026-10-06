@@ -1,9 +1,11 @@
 package app.snatter.server.media;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.quarkus.test.junit.QuarkusTest;
@@ -36,6 +38,7 @@ import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 import org.bouncycastle.tls.TlsAuthentication;
 import org.bouncycastle.tls.TlsCredentials;
 import org.bouncycastle.tls.TlsFatalAlert;
+import org.bouncycastle.tls.TlsFatalAlertReceived;
 import org.bouncycastle.tls.TlsSRTPUtils;
 import org.bouncycastle.tls.TlsServerCertificate;
 import org.bouncycastle.tls.TlsUtils;
@@ -89,11 +92,33 @@ class SrtpConnectionTest {
              SrtpConnection srtp = new SrtpConnection()) {
             DtlsPeer peer = new DtlsPeer(icePeer, SRTPProtectionProfile.SRTP_AEAD_AES_128_GCM);
             srtp.start(connect(ice, icePeer, peer), DtlsIdentity.generate().fingerprint(), packet -> { });
-            assertThrows(IOException.class, () -> peer.handshake(srtp.fingerprint()));
+            TlsFatalAlertReceived told = assertThrows(TlsFatalAlertReceived.class,
+                () -> peer.handshake(srtp.fingerprint()));
+            assertEquals(AlertDescription.bad_certificate, told.getAlertDescription());
             ExecutionException failed = assertThrows(ExecutionException.class,
                 () -> srtp.ready().toCompletableFuture().get(10, SECONDS));
             TlsFatalAlert alert = assertInstanceOf(TlsFatalAlert.class, failed.getCause());
             assertEquals(AlertDescription.bad_certificate, alert.getAlertDescription());
+        }
+    }
+
+    @Test
+    void aPeerSendsFromAFewSourcesAtMost() throws Exception {
+        try (IceConnection ice = port.open(); IcePeer icePeer = new IcePeer(ice);
+             SrtpConnection srtp = new SrtpConnection()) {
+            DtlsPeer peer = new DtlsPeer(icePeer, SRTPProtectionProfile.SRTP_AEAD_AES_128_GCM);
+            BlockingQueue<RtpPacket> received = new LinkedBlockingQueue<>();
+            srtp.start(connect(ice, icePeer, peer), peer.fingerprint(), received::add);
+            peer.handshake(srtp.fingerprint());
+            srtp.ready().toCompletableFuture().get(10, SECONDS);
+
+            for (int ssrc = 1; ssrc <= SrtpConnection.MAX_SOURCES + 1; ssrc++) {
+                peer.send(rtp(ssrc, "source " + ssrc));
+            }
+            for (int ssrc = 1; ssrc <= SrtpConnection.MAX_SOURCES; ssrc++) {
+                assertEquals(ssrc, received.poll(5, SECONDS).ssrc());
+            }
+            assertNull(received.poll(500, MILLISECONDS));
         }
     }
 
@@ -197,6 +222,12 @@ class SrtpConnectionTest {
             @Override
             protected ProtocolVersion[] getSupportedVersions() {
                 return ProtocolVersion.DTLSv12.only();
+            }
+
+            /** So a server that never answers fails the test rather than hanging it. */
+            @Override
+            public int getHandshakeTimeoutMillis() {
+                return 10_000;
             }
 
             @Override
