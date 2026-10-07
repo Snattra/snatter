@@ -577,6 +577,10 @@ public class Gateway {
             close(client, GatewayClose.NOT_IDENTIFIED);
             return;
         }
+        if (frame.getSdp() == null) {
+            close(client, GatewayClose.INVALID_FRAME);
+            return;
+        }
         if (client.media == null || client.mediaAnswered) {
             return;
         }

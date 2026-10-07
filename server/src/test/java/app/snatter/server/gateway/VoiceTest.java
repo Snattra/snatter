@@ -1,5 +1,6 @@
 package app.snatter.server.gateway;
 
+import static app.snatter.client.model.GatewayCloseReasonDto.INVALID_FRAME;
 import static app.snatter.client.model.PermissionDto.SEND_MESSAGES;
 import static app.snatter.client.model.VoiceEndReasonDto.CHANNEL_UNAVAILABLE;
 import static app.snatter.client.model.VoiceEndReasonDto.CONNECTION_FAILED;
@@ -358,6 +359,17 @@ class VoiceTest {
             aliceGateway.send(new GatewayVoiceAnswerDto().sdp("v=0\r\n"));
             assertEquals(CONNECTION_FAILED, aliceGateway.await(GatewayVoiceEndedDto.class).getReason());
             watcherGateway.await(GatewayVoiceStateDeletedDto.class, left(alice));
+        }
+    }
+
+    @Test
+    void anAnswerWithoutItsSdpIsAnInvalidFrame() {
+        TestUsers.User alice = TestUsers.register();
+        try (GatewayTestClient gateway = GatewayTestClient.identified(alice.token())) {
+            gateway.send(join(lounge));
+            gateway.await(GatewayVoiceOfferDto.class);
+            gateway.send("{\"type\":\"voice_answer\"}");
+            assertEquals(new GatewayTestClient.Closed(4000, INVALID_FRAME), gateway.awaitClose());
         }
     }
 
