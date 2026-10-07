@@ -5,6 +5,7 @@ import app.snatter.server.account.AccountId;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.Channel;
 import app.snatter.server.channel.ChannelId;
+import app.snatter.server.media.VoiceConnection;
 import app.snatter.server.role.Role;
 import app.snatter.server.role.RoleId;
 import io.quarkus.websockets.next.WebSocketConnection;
@@ -37,6 +38,10 @@ final class Client {
     Long voiceAppliedAt;
     /** A {@code voice_state} that came too soon after the last, waiting for its turn; a newer one replaces it. */
     GatewayVoiceStateDto voicePending;
+    /** The connection that carries its audio while it is in voice; null otherwise. */
+    VoiceConnection media;
+    /** Whether it has answered the offer for {@link #media}. */
+    boolean mediaAnswered;
 
     Client(WebSocketConnection connection) {
         this.connection = connection;

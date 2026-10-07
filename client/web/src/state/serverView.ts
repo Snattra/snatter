@@ -149,6 +149,7 @@ export function applyFrame(view: ServerView, frame: Event, now: number): ServerV
     case "messages_purged":
     case "voice_refused":
     case "voice_ended":
+    case "voice_offer":
       return view;
     default:
       // Only a frame type from a newer server gets here, and it changes nothing

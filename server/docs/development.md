@@ -479,6 +479,17 @@ So moving into a channel someone cannot see is leaving, to them. Inside
 `syncChannels` the voice states of a channel leave before its
 `channel_deleted` and arrive after its `channel_created`.
 
+**Voice signalling.** The connection in voice holds the `VoiceConnection`
+that carries its audio (`Client.media`, see "Voice media"). Joining, or
+taking voice over, opens one at the channel's bitrate and sends its offer
+as `voice_offer`, after the connection's own `voice_state_updated`. The
+first `voice_answer` to it starts ICE and DTLS; later ones, and those from
+connections not in voice, are ignored. An answer that cannot be used, or a
+connection that fails or is not up 30 seconds after the offer, ends voice
+with `connection_failed`, checked on the dispatcher so a connection closed
+or replaced meanwhile is left alone. Whatever ends the member's voice closes
+the connection; moving to another channel keeps it.
+
 **Read markers.** `ready` carries the member's read state for every visible
 channel with messages, creating markers for channels seen for the first
 time. A channel revealed later is followed by `read_state_updated` with its
@@ -503,9 +514,9 @@ the client reconnects and gets a fresh `ready`.
 Voice travels over WebRTC, through the server: each browser connects to the
 server rather than to the others, and the server forwards the audio. The
 `media` package carries it, on Jitsi's ice4j for ICE and jitsi-srtp for
-encryption, with keys from a DTLS handshake by BouncyCastle. So far it has
-a member's connection, from the offer to the keys; signalling over the
-gateway and forwarding follow.
+encryption, with keys from a DTLS handshake by BouncyCastle. The gateway
+offers a connection to whoever joins voice ("Voice signalling" above), and
+receives their audio; forwarding it to the others follows.
 
 **One UDP port.** `MediaPort` opens `snatter.media.port`
 (`SNATTER_MEDIA_PORT`, 8080 by default, the HTTP port's number) at start, on
