@@ -47,7 +47,7 @@ info:
        caller can see and how far they have read each one.
     3. From then on the server pushes events. Each carries `seq`, counting
        up from 1 (`ready`) per connection, so gaps are detectable. The
-       client may send `typing` and `voice_state` frames.
+       client may send `typing`, `voice_state` and `voice_answer` frames.
 
     The connection carries state, not history: on reconnecting, a client
     gets a fresh `ready` and fetches messages it missed with
@@ -72,6 +72,15 @@ info:
     hears `voice_refused` when it cannot join or move, and `voice_ended`
     when it is taken out of voice without asking. Closing the connection
     leaves voice, so a client that reconnects joins again.
+
+    The connection in voice carries the member's audio over WebRTC, to the
+    server rather than to the others. On joining, or taking voice over from
+    another connection, it gets `voice_offer`, the server's SDP offer, and
+    answers with `voice_answer`. The client is the DTLS client, and finds
+    the server at the addresses in the offer, all of them there from the
+    start. Voice ends with `connection_failed` when the answer cannot be
+    used, or when the connection is not up within 30 seconds of the offer.
+    Moving to another channel keeps the connection.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -2554,12 +2563,14 @@ components:
         - $ref: "#/components/schemas/GatewayIdentify"
         - $ref: "#/components/schemas/GatewayTyping"
         - $ref: "#/components/schemas/GatewayVoiceState"
+        - $ref: "#/components/schemas/GatewayVoiceAnswer"
       discriminator:
         propertyName: type
         mapping:
           identify: "#/components/schemas/GatewayIdentify"
           typing: "#/components/schemas/GatewayTyping"
           voice_state: "#/components/schemas/GatewayVoiceState"
+          voice_answer: "#/components/schemas/GatewayVoiceAnswer"
 
     GatewayIdentify:
       type: object
@@ -2636,6 +2647,22 @@ components:
           type: boolean
           description: The member turned sound off; this mutes them too
 
+    GatewayVoiceAnswer:
+      type: object
+      description: |
+        The client's SDP answer to the `voice_offer` it got (RFC 8829). It
+        makes the client the DTLS client (`a=setup:active`) and gives a
+        SHA-256 fingerprint of its certificate. An answer the server cannot
+        use ends voice with `connection_failed`. One from a connection that
+        is not in voice, or that has answered already, is ignored.
+      required: [type, sdp]
+      properties:
+        type:
+          type: string
+        sdp:
+          type: string
+          description: The answer's session description
+
     VoiceState:
       type: object
       description: |
@@ -2678,10 +2705,14 @@ components:
         - `channel_unavailable`: the channel was deleted, or the member can no
           longer see it
         - `forbidden`: the member no longer holds `CONNECT`, as when timed out
+        - `connection_failed`: the voice connection did not come up: the
+          `voice_answer` could not be used, or the connection was not up
+          within 30 seconds of the `voice_offer`
       enum:
         - joined_elsewhere
         - channel_unavailable
         - forbidden
+        - connection_failed
 
     PresenceStatus:
       type: string
@@ -2724,6 +2755,7 @@ components:
         - $ref: "#/components/schemas/GatewayVoiceStateDeleted"
         - $ref: "#/components/schemas/GatewayVoiceRefused"
         - $ref: "#/components/schemas/GatewayVoiceEnded"
+        - $ref: "#/components/schemas/GatewayVoiceOffer"
       discriminator:
         propertyName: type
         mapping:
@@ -2749,6 +2781,7 @@ components:
           voice_state_deleted: "#/components/schemas/GatewayVoiceStateDeleted"
           voice_refused: "#/components/schemas/GatewayVoiceRefused"
           voice_ended: "#/components/schemas/GatewayVoiceEnded"
+          voice_offer: "#/components/schemas/GatewayVoiceOffer"
 
     GatewayServerFrameBase:
       type: object
@@ -3064,3 +3097,20 @@ components:
           properties:
             reason:
               $ref: "#/components/schemas/VoiceEndReason"
+
+    GatewayVoiceOffer:
+      description: |
+        The server's SDP offer for this connection's voice (RFC 8829), sent
+        when it joins voice or takes it over; answer with `voice_answer`.
+        It asks for one audio stream, the member's own voice, in Opus at up
+        to the channel's bitrate, and lists every address the server can be
+        reached at. It ends with `a=end-of-candidates`: the server sends no
+        more candidates.
+      allOf:
+        - $ref: "#/components/schemas/GatewayServerFrameBase"
+        - type: object
+          required: [sdp]
+          properties:
+            sdp:
+              type: string
+              description: The offer's session description

@@ -22,7 +22,9 @@ import app.snatter.api.model.GatewayServerFrameDto;
 import app.snatter.api.model.GatewayServerUpdatedDto;
 import app.snatter.api.model.GatewayTypingDto;
 import app.snatter.api.model.GatewayTypingStartedDto;
+import app.snatter.api.model.GatewayVoiceAnswerDto;
 import app.snatter.api.model.GatewayVoiceEndedDto;
+import app.snatter.api.model.GatewayVoiceOfferDto;
 import app.snatter.api.model.GatewayVoiceRefusedDto;
 import app.snatter.api.model.GatewayVoiceStateDeletedDto;
 import app.snatter.api.model.GatewayVoiceStateDto;
@@ -49,6 +51,9 @@ import app.snatter.server.channel.ChannelEvent;
 import app.snatter.server.channel.ChannelId;
 import app.snatter.server.channel.ChannelRepository;
 import app.snatter.server.channel.ChannelResource;
+import app.snatter.server.media.InvalidAnswerException;
+import app.snatter.server.media.MediaPort;
+import app.snatter.server.media.VoiceConnection;
 import app.snatter.server.message.MessageEvent;
 import app.snatter.server.message.MessageResource;
 import app.snatter.server.message.ReadState;
@@ -86,6 +91,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -113,7 +119,9 @@ import org.jboss.logging.Logger;
  * typing is passed on without being remembered, and clients time it out. A
  * member is in at most one voice channel, held by the connection that joined
  * it, and leaves when that connection goes. Voice states are sent as
- * differences too, of who is in the channels each client can see.
+ * differences too, of who is in the channels each client can see. The
+ * connection in voice also holds the {@link VoiceConnection} that carries
+ * its audio, offered when it joins and closed when it leaves.
  */
 @ApplicationScoped
 public class Gateway {
@@ -141,6 +149,7 @@ public class Gateway {
     private final ServerSettingsService settings;
     private final ServerInfoDtos serverInfo;
     private final GatewayConfig config;
+    private final MediaPort media;
     private final ObjectMapper json;
     private final ObjectWriter frameWriter;
     private final ScheduledExecutorService dispatcher;
@@ -163,7 +172,7 @@ public class Gateway {
 
     public Gateway(Principals principals, AuthService auth, AccountRepository accounts, RoleRepository roles,
                    ChannelRepository channels, ReadStateRepository readStates, ServerSettingsService settings,
-                   ServerInfoDtos serverInfo, GatewayConfig config, ObjectMapper json) {
+                   ServerInfoDtos serverInfo, GatewayConfig config, MediaPort media, ObjectMapper json) {
         this.principals = principals;
         this.auth = auth;
         this.accounts = accounts;
@@ -173,6 +182,7 @@ public class Gateway {
         this.settings = settings;
         this.serverInfo = serverInfo;
         this.config = config;
+        this.media = media;
         this.json = json;
         this.frameWriter = json.writerFor(GatewayServerFrameDto.class);
         this.dispatcher = Executors.newSingleThreadScheduledExecutor(task -> {
@@ -222,6 +232,7 @@ public class Gateway {
                 case GatewayIdentifyDto identify -> identify(client, identify);
                 case GatewayTypingDto typing -> typing(client, typing.getChannelId());
                 case GatewayVoiceStateDto voiceState -> voiceStateReceived(client, voiceState);
+                case GatewayVoiceAnswerDto answer -> voiceAnswered(client, answer);
             }
         });
     }
@@ -232,6 +243,8 @@ public class Gateway {
             if (client != null && client.identified()) {
                 wentAway(client.principal.accountId());
                 leaveVoice(client);
+                // Whatever else happened, a closed connection's media goes with it.
+                closeMedia(client);
             }
         });
     }
@@ -439,6 +452,7 @@ public class Gateway {
         if (channelId == null) {
             if (here) {
                 voice.remove(accountId);
+                closeMedia(client);
                 syncVoice();
             }
             return;
@@ -472,6 +486,10 @@ public class Gateway {
         voice.remove(accountId);
         voice.put(accountId, new Voice(client, state));
         syncVoice();
+        // Telling everyone may have closed this connection as too slow, which took it out of voice.
+        if (!here && client.live()) {
+            offerMedia(client, client.channels.get(channelId));
+        }
     }
 
     /** Why the connection may not join the channel, if it may not. */
@@ -505,6 +523,7 @@ public class Gateway {
         Voice current = voice.get(accountId);
         if (current != null && current.holder() == client) {
             voice.remove(accountId);
+            closeMedia(client);
             syncVoice();
         }
     }
@@ -538,8 +557,69 @@ public class Gateway {
      */
     private void endVoice(Voice held, VoiceEndReasonDto reason) {
         voice.remove(held.state().accountId());
+        closeMedia(held.holder());
         held.holder().voicePending = null;
         send(held.holder(), seq -> new GatewayVoiceEndedDto().seq(seq).reason(reason));
+    }
+
+    /** Opens a voice connection for the connection that just came into voice, and offers it. */
+    private void offerMedia(Client client, Channel channel) {
+        VoiceConnection connection = new VoiceConnection(media.open(), channel.voice().bitrate());
+        client.media = connection;
+        client.mediaAnswered = false;
+        connection.ready().whenComplete((done, failure) -> run(() -> mediaSettled(client, connection, failure)));
+        send(client, seq -> new GatewayVoiceOfferDto().seq(seq).sdp(connection.offer()));
+    }
+
+    /** Applies the answer to the connection's offer; any other is ignored. */
+    private void voiceAnswered(Client client, GatewayVoiceAnswerDto frame) {
+        if (!client.identified()) {
+            close(client, GatewayClose.NOT_IDENTIFIED);
+            return;
+        }
+        if (frame.getSdp() == null) {
+            close(client, GatewayClose.INVALID_FRAME);
+            return;
+        }
+        if (client.media == null || client.mediaAnswered) {
+            return;
+        }
+        client.mediaAnswered = true;
+        try {
+            // Forwarding what arrives comes later; until then it is dropped.
+            client.media.accept(frame.getSdp(), packet -> { });
+        } catch (InvalidAnswerException e) {
+            LOG.debugf("Unusable voice answer from %s: %s", client.principal.accountId(), e.getMessage());
+            endVoice(voice.get(client.principal.accountId()), VoiceEndReasonDto.CONNECTION_FAILED);
+            syncVoice();
+        }
+    }
+
+    /**
+     * Once a voice connection is up or has failed. Failing ends voice, unless
+     * the connection was closed or replaced meanwhile.
+     */
+    private void mediaSettled(Client client, VoiceConnection connection, Throwable failure) {
+        if (client.media != connection) {
+            return;
+        }
+        AccountId accountId = client.principal.accountId();
+        if (failure == null) {
+            LOG.debugf("Voice connected for %s", accountId);
+            return;
+        }
+        Throwable cause = failure instanceof CompletionException && failure.getCause() != null
+            ? failure.getCause() : failure;
+        LOG.infof("Voice connection for %s failed: %s", accountId, cause);
+        endVoice(voice.get(accountId), VoiceEndReasonDto.CONNECTION_FAILED);
+        syncVoice();
+    }
+
+    private static void closeMedia(Client client) {
+        if (client.media != null) {
+            client.media.close();
+            client.media = null;
+        }
     }
 
     /** Tells every client what changed among those in the voice channels it can see. */

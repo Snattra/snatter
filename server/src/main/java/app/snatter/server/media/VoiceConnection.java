@@ -1,6 +1,7 @@
 package app.snatter.server.media;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
@@ -13,8 +14,11 @@ import java.util.function.Consumer;
  */
 public final class VoiceConnection implements AutoCloseable {
 
-    /** About as long as browsers keep trying ICE before they give up. */
-    private static final long CONNECT_SECONDS = 30;
+    /**
+     * From the offer: time to answer and for ICE and DTLS to connect, about
+     * as long as browsers keep trying ICE before they give up.
+     */
+    private static final Duration DEADLINE = Duration.ofSeconds(30);
 
     private final IceConnection ice;
     private final SrtpConnection srtp = new SrtpConnection();
@@ -23,8 +27,14 @@ public final class VoiceConnection implements AutoCloseable {
 
     /** Offers to receive the member's voice at up to {@code bitrate} bits per second. */
     public VoiceConnection(IceConnection ice, int bitrate) {
+        this(ice, bitrate, DEADLINE);
+    }
+
+    /** With a deadline other than browsers', which tests use to see it pass. */
+    VoiceConnection(IceConnection ice, int bitrate, Duration deadline) {
         this.ice = ice;
         offer = Sdp.offer(ice.ufrag(), ice.password(), srtp.fingerprint(), ice.candidates(), bitrate);
+        ready.orTimeout(deadline.toMillis(), TimeUnit.MILLISECONDS);
     }
 
     /** The SDP offer, for the peer to answer. */
@@ -40,8 +50,7 @@ public final class VoiceConnection implements AutoCloseable {
     public void accept(String answer, Consumer<RtpPacket> received) throws InvalidAnswerException {
         Sdp.Answer peer = Sdp.answer(answer);
         ice.start(peer.iceUfrag(), peer.icePassword());
-        ice.connected().toCompletableFuture()
-            .orTimeout(CONNECT_SECONDS, TimeUnit.SECONDS)
+        ice.connected()
             .thenCompose(path -> {
                 srtp.start(path, peer.fingerprint(), received);
                 return srtp.ready();
@@ -55,7 +64,11 @@ public final class VoiceConnection implements AutoCloseable {
             });
     }
 
-    /** Completes once the peer is connected and the keys are agreed, or fails when either fails. */
+    /**
+     * Completes once the peer is connected and the keys are agreed. Fails
+     * when either fails, or when that has not happened within 30 seconds of
+     * the offer; the owner then closes the connection.
+     */
     public CompletionStage<Void> ready() {
         return ready.minimalCompletionStage();
     }

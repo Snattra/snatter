@@ -1,13 +1,16 @@
 package app.snatter.server.gateway;
 
+import static app.snatter.client.model.GatewayCloseReasonDto.INVALID_FRAME;
 import static app.snatter.client.model.PermissionDto.SEND_MESSAGES;
 import static app.snatter.client.model.VoiceEndReasonDto.CHANNEL_UNAVAILABLE;
+import static app.snatter.client.model.VoiceEndReasonDto.CONNECTION_FAILED;
 import static app.snatter.client.model.VoiceEndReasonDto.FORBIDDEN;
 import static app.snatter.client.model.VoiceEndReasonDto.JOINED_ELSEWHERE;
 import static app.snatter.server.testing.ApiClientFactory.channelsApi;
 import static app.snatter.server.testing.ApiClientFactory.moderationApi;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import app.snatter.client.model.ChannelCreateDto;
@@ -18,7 +21,9 @@ import app.snatter.client.model.GatewayMemberUpdatedDto;
 import app.snatter.client.model.GatewayMessageCreatedDto;
 import app.snatter.client.model.GatewayTypingDto;
 import app.snatter.client.model.GatewayTypingStartedDto;
+import app.snatter.client.model.GatewayVoiceAnswerDto;
 import app.snatter.client.model.GatewayVoiceEndedDto;
+import app.snatter.client.model.GatewayVoiceOfferDto;
 import app.snatter.client.model.GatewayVoiceRefusedDto;
 import app.snatter.client.model.GatewayVoiceStateDeletedDto;
 import app.snatter.client.model.GatewayVoiceStateDto;
@@ -26,11 +31,13 @@ import app.snatter.client.model.GatewayVoiceStateUpdatedDto;
 import app.snatter.client.model.TimeoutCreateDto;
 import app.snatter.client.model.VoiceRefusalDto;
 import app.snatter.client.model.VoiceStateDto;
+import app.snatter.server.media.StandInBrowser;
 import app.snatter.server.testing.GatewayTestClient;
 import app.snatter.server.testing.Messages;
 import app.snatter.server.testing.TestDataService;
 import app.snatter.server.testing.TestUsers;
 import io.quarkus.test.junit.QuarkusTest;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -317,6 +324,71 @@ class VoiceTest {
                 between++;
             }
             assertTrue(between < 5, "the others got " + between + " states on the way to the last");
+        }
+    }
+
+    @Test
+    void joiningOffersAVoiceConnectionThatTheAnswerBringsUp() throws Exception {
+        TestUsers.User alice = TestUsers.register();
+        UUID den = data.createChannel(ChannelTypeDto.VOICE, "Den");
+        try (GatewayTestClient gateway = GatewayTestClient.identified(alice.token())) {
+            gateway.send(join(lounge));
+            String offer = gateway.await(GatewayVoiceOfferDto.class).getSdp();
+            try (StandInBrowser browser = new StandInBrowser(offer)) {
+                gateway.send(new GatewayVoiceAnswerDto().sdp(browser.answer()));
+                browser.connect();
+            }
+
+            // Moving to another channel keeps the connection, so nothing is offered again.
+            gateway.send(join(den));
+            gateway.await(GatewayVoiceStateUpdatedDto.class, in(alice, den));
+            awaitMarker(gateway, owner);
+            gateway.assertNone(GatewayVoiceOfferDto.class, frame -> true);
+        }
+    }
+
+    @Test
+    void anAnswerTheServerCannotUseEndsVoice() {
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User watcher = TestUsers.register();
+        try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
+             GatewayTestClient watcherGateway = GatewayTestClient.identified(watcher.token())) {
+            aliceGateway.send(join(lounge));
+            aliceGateway.await(GatewayVoiceOfferDto.class);
+
+            aliceGateway.send(new GatewayVoiceAnswerDto().sdp("v=0\r\n"));
+            assertEquals(CONNECTION_FAILED, aliceGateway.await(GatewayVoiceEndedDto.class).getReason());
+            watcherGateway.await(GatewayVoiceStateDeletedDto.class, left(alice));
+        }
+    }
+
+    @Test
+    void anAnswerWithoutItsSdpIsAnInvalidFrame() {
+        TestUsers.User alice = TestUsers.register();
+        try (GatewayTestClient gateway = GatewayTestClient.identified(alice.token())) {
+            gateway.send(join(lounge));
+            gateway.await(GatewayVoiceOfferDto.class);
+            gateway.send("{\"type\":\"voice_answer\"}");
+            assertEquals(new GatewayTestClient.Closed(4000, INVALID_FRAME), gateway.awaitClose());
+        }
+    }
+
+    @Test
+    void aConnectionThatFailsEndsVoice() throws Exception {
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User watcher = TestUsers.register();
+        try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
+             GatewayTestClient watcherGateway = GatewayTestClient.identified(watcher.token())) {
+            aliceGateway.send(join(lounge));
+            try (StandInBrowser browser = new StandInBrowser(aliceGateway.await(GatewayVoiceOfferDto.class).getSdp())) {
+                // The answer names a certificate other than the one the browser shows, so DTLS fails.
+                String another = String.join(":", Collections.nCopies(32, "00"));
+                aliceGateway.send(new GatewayVoiceAnswerDto()
+                    .sdp(browser.answer().replaceFirst("(a=fingerprint:sha-256 )\\S+", "$1" + another)));
+                assertThrows(Exception.class, browser::connect);
+            }
+            assertEquals(CONNECTION_FAILED, aliceGateway.await(GatewayVoiceEndedDto.class).getReason());
+            watcherGateway.await(GatewayVoiceStateDeletedDto.class, left(alice));
         }
     }
 }

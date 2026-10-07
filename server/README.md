@@ -51,6 +51,11 @@ mvn verify -Dnative -Dquarkus.native.container-build=true
 ./target/snatter-server-*-runner
 ```
 
+The native build fails for now: the libraries that carry voice keep
+objects in static fields that native images refuse. Making them work is
+[#10](https://github.com/Snattra/snatter/issues/10); until then, run the
+jar or the container image.
+
 Build the container image used by the root `compose.yaml`:
 
 ```

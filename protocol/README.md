@@ -12,8 +12,6 @@ while the server and official client remain AGPL.
 | `openapi/openapi.yaml` | The HTTP API and the WebSocket gateway's frames, OpenAPI 3.0. Hand-written; this is the source of truth. |
 | `CHANGELOG.md`         | What changed in each protocol version.           |
 
-Planned: the media signalling protocol.
-
 ## How the contract is used
 
 The specification is written first. The server build generates JAX-RS
