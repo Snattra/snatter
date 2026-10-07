@@ -1,6 +1,7 @@
 package app.snatter.server.media;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
@@ -17,7 +18,7 @@ public final class VoiceConnection implements AutoCloseable {
      * From the offer: time to answer and for ICE and DTLS to connect, about
      * as long as browsers keep trying ICE before they give up.
      */
-    private static final long CONNECT_SECONDS = 30;
+    private static final Duration DEADLINE = Duration.ofSeconds(30);
 
     private final IceConnection ice;
     private final SrtpConnection srtp = new SrtpConnection();
@@ -26,9 +27,14 @@ public final class VoiceConnection implements AutoCloseable {
 
     /** Offers to receive the member's voice at up to {@code bitrate} bits per second. */
     public VoiceConnection(IceConnection ice, int bitrate) {
+        this(ice, bitrate, DEADLINE);
+    }
+
+    /** With a deadline other than browsers', which tests use to see it pass. */
+    VoiceConnection(IceConnection ice, int bitrate, Duration deadline) {
         this.ice = ice;
         offer = Sdp.offer(ice.ufrag(), ice.password(), srtp.fingerprint(), ice.candidates(), bitrate);
-        ready.orTimeout(CONNECT_SECONDS, TimeUnit.SECONDS);
+        ready.orTimeout(deadline.toMillis(), TimeUnit.MILLISECONDS);
     }
 
     /** The SDP offer, for the peer to answer. */

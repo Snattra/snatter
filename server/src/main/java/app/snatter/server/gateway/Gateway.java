@@ -243,6 +243,8 @@ public class Gateway {
             if (client != null && client.identified()) {
                 wentAway(client.principal.accountId());
                 leaveVoice(client);
+                // Whatever else happened, a closed connection's media goes with it.
+                closeMedia(client);
             }
         });
     }
@@ -484,7 +486,8 @@ public class Gateway {
         voice.remove(accountId);
         voice.put(accountId, new Voice(client, state));
         syncVoice();
-        if (!here) {
+        // Telling everyone may have closed this connection as too slow, which took it out of voice.
+        if (!here && client.live()) {
             offerMedia(client, client.channels.get(channelId));
         }
     }
