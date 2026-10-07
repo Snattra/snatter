@@ -7,8 +7,9 @@
 # the server-data volume.
 #
 # Open http://localhost:8080. The web container serves the app and forwards
-# /api, including the gateway, to the server, so everything is on that one
-# port; the server itself is not published.
+# /api, including the gateway, to the server, so all of that is on one port.
+# Voice goes to the server directly, on UDP 8080, at SNATTER_MEDIA_ADDRESS
+# (see below).
 
 name: snatter
 
@@ -25,6 +26,15 @@ services:
       # container can reach the server.
       QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING: "true"
       QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED: "true"
+      # The address browsers reach this machine at, such as its LAN or public
+      # address. Unset, the server offers only its container's addresses,
+      # which browsers on other machines cannot reach, nor can browsers on
+      # this one under Docker Desktop.
+      SNATTER_MEDIA_ADDRESS: ${SNATTER_MEDIA_ADDRESS:-}
+    ports:
+      # Voice, on the same number outside as inside, since the server offers
+      # its own port number.
+      - "8080:8080/udp"
     volumes:
       - server-data:/var/lib/snatter
 

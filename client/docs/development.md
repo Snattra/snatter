@@ -11,6 +11,7 @@ the client README.
 | `gateway/`             | The gateway connection: identify, sequence checks, reconnects |
 | `state/`               | The per-server view, channel message logs, the store holding them, and the forms for channels and settings |
 | `servers/`             | `ServerConnection`: session, REST and gateway of one server |
+| `media/`               | `VoiceCall`: the microphone and the WebRTC connection that carries it |
 | `auth/`                | Registration challenge solving                            |
 | `platform/`            | What the app needs from where it runs                     |
 | `ui/`                  | React components, hooks and icons                         |
@@ -249,6 +250,26 @@ gateway confirms. A deleted notice disappears. From a member's profile,
 `MANAGE_MESSAGES` deletes everything they sent in the last hour, day or
 week; the gateway then sends one `messages_purged` frame per channel, and
 `withPurged` turns the author's held messages in its range into deleted ones.
+
+## Voice
+
+`state/voice.ts` holds voice as this app asked for it (`LocalVoice`), and the
+member's own `VoiceState` in the view says where the server has them.
+Joining asks for the microphone first (`media/VoiceCall.ts`), so a member
+who refuses it or has none is not joined, with a notice saying why, and the
+server's offer can be answered the moment it comes. The server sends
+`voice_offer` once the member is in; `VoiceCall` answers it on a new
+`RTCPeerConnection`, putting the microphone on the line the offer made for
+it, and `ServerConnection` sends `voice_answer`. No STUN server is set: the
+offer lists every address of the server, and the server learns the
+browser's from its checks. The voice panel says "Voice connected" only once
+the server has the member in the channel asked for and the connection is up
+(`audioConnected`). Muting turns the microphone's track off. Leaving, or the
+server ending voice, closes the connection and lets go of the microphone.
+When the gateway reconnects, the server has closed the audio connection
+along with it; the app keeps the microphone, joins again on `ready`, and
+answers the new offer. Nothing is played yet: forwarding the others' audio
+comes next.
 
 ## Platform
 
