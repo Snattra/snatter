@@ -75,8 +75,14 @@ export function endNotice(reason: VoiceEndReason, timedOut: boolean): string {
   }
 }
 
-/** What to tell the member when joining failed because the microphone could not be used. */
-export function microphoneNotice(error: unknown): string {
+/**
+ * What to tell the member when joining failed because the microphone could
+ * not be used. Browsers give it only to secure pages, HTTPS or localhost.
+ */
+export function microphoneNotice(error: unknown, secure: boolean): string {
+  if (!secure) {
+    return "Voice needs the app to be opened over HTTPS.";
+  }
   switch (error instanceof Error ? error.name : null) {
     case "NotAllowedError":
       return "Allow microphone access to join voice.";

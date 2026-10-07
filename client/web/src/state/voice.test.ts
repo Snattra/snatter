@@ -56,12 +56,20 @@ describe("notices", () => {
 
 describe("microphoneNotice", () => {
   it("says why the microphone could not be used", () => {
-    expect(microphoneNotice(new DOMException("denied", "NotAllowedError"))).toBe("Allow microphone access to join voice.");
-    expect(microphoneNotice(new DOMException("none", "NotFoundError"))).toBe("No microphone was found.");
-    expect(microphoneNotice(new DOMException("busy", "NotReadableError"))).toBe(
+    expect(microphoneNotice(new DOMException("denied", "NotAllowedError"), true)).toBe(
+      "Allow microphone access to join voice.",
+    );
+    expect(microphoneNotice(new DOMException("none", "NotFoundError"), true)).toBe("No microphone was found.");
+    expect(microphoneNotice(new DOMException("busy", "NotReadableError"), true)).toBe(
       "Your microphone couldn't be started. Another app may be using it.",
     );
-    expect(microphoneNotice(new TypeError("no mediaDevices"))).toBe("Your microphone couldn't be used.");
+    expect(microphoneNotice(new Error("something else"), true)).toBe("Your microphone couldn't be used.");
+  });
+
+  it("says when the page is not secure, where browsers give no microphone at all", () => {
+    expect(microphoneNotice(new TypeError("navigator.mediaDevices is undefined"), false)).toBe(
+      "Voice needs the app to be opened over HTTPS.",
+    );
   });
 });
 

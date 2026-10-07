@@ -269,7 +269,7 @@ export class ServerConnection {
       call = await VoiceCall.start((audioConnected) => this.updateVoice((voice) => ({ ...voice, audioConnected })));
     } catch (e) {
       if (this.entry().voice.channelId !== null) {
-        this.updateVoice((voice) => ({ ...voice, channelId: null, notice: microphoneNotice(e) }));
+        this.updateVoice((voice) => ({ ...voice, channelId: null, notice: microphoneNotice(e, window.isSecureContext) }));
       }
       return;
     } finally {

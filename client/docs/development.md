@@ -257,7 +257,9 @@ week; the gateway then sends one `messages_purged` frame per channel, and
 member's own `VoiceState` in the view says where the server has them.
 Joining asks for the microphone first (`media/VoiceCall.ts`), so a member
 who refuses it or has none is not joined, with a notice saying why, and the
-server's offer can be answered the moment it comes. The server sends
+server's offer can be answered the moment it comes. Browsers give the
+microphone only to secure pages, HTTPS or localhost; elsewhere the notice
+says voice needs HTTPS. The server sends
 `voice_offer` once the member is in; `VoiceCall` answers it on a new
 `RTCPeerConnection`, putting the microphone on the line the offer made for
 it, and `ServerConnection` sends `voice_answer`. No STUN server is set: the
