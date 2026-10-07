@@ -13,6 +13,7 @@ import type {
 } from "../api/types";
 import { solveChallenge } from "../auth/altcha";
 import { Gateway } from "../gateway/Gateway";
+import { VoiceCall } from "../media/VoiceCall";
 import { platform } from "../platform/platform";
 import {
   type ChannelLog,
@@ -34,7 +35,7 @@ import { isTimedOut } from "../state/moderation";
 import { type Outdated, compatibility, isOutdated } from "../state/protocol";
 import { type ServerView, applyFrame, fromReady } from "../state/serverView";
 import { type ServerEntry, blank, useServers } from "../state/store";
-import { type LocalVoice, endNotice, micOff, noVoice, refusalNotice } from "../state/voice";
+import { type LocalVoice, endNotice, micOff, microphoneNotice, noVoice, refusalNotice } from "../state/voice";
 import { describeError } from "../ui/errors";
 
 export interface Registration {
@@ -60,6 +61,10 @@ export class ServerConnection {
   private gateway: Gateway | null = null;
   /** Channels with a page on its way, so scrolling does not ask twice. */
   private readonly fetching = new Set<string>();
+  /** The microphone and audio connection while the member is in voice here. */
+  private call: VoiceCall | null = null;
+  /** Whether the microphone is being asked for, so joining twice asks once. */
+  private callStarting = false;
 
   constructor(readonly origin: string) {
     this.api = createApi(origin, () => this.token);
@@ -221,15 +226,25 @@ export class ServerConnection {
 
   // --- Voice ------------------------------------------------------------------
   // The store shows what was asked for at once; the member's own voice state
-  // in the view says when the server has done it.
+  // in the view says when the server has done it, and `audioConnected` when
+  // the audio connection it offered is up.
 
-  /** Joins a voice channel, or moves there from the one the member is in. */
+  /**
+   * Joins a voice channel, or moves there from the one the member is in.
+   * Joining asks for the microphone first, so the server's offer can be
+   * answered as soon as it comes.
+   */
   joinVoice(channelId: string): void {
     this.updateVoice((voice) => ({ ...voice, channelId, notice: null }));
-    this.sendVoice();
+    if (this.call !== null) {
+      this.sendVoice();
+    } else if (!this.callStarting) {
+      void this.startCall();
+    }
   }
 
   leaveVoice(): void {
+    this.closeCall();
     this.updateVoice((voice) => ({ ...voice, channelId: null, notice: null }));
     this.gateway?.send({ type: "voice_state", channelId: null, selfMuted: false, selfDeafened: false });
   }
@@ -246,14 +261,60 @@ export class ServerConnection {
     this.sendVoice();
   }
 
+  /** Gets the microphone, then joins the channel asked for by then, unless the member gave up meanwhile. */
+  private async startCall(): Promise<void> {
+    this.callStarting = true;
+    let call: VoiceCall;
+    try {
+      call = await VoiceCall.start((audioConnected) => this.updateVoice((voice) => ({ ...voice, audioConnected })));
+    } catch (e) {
+      if (this.entry().voice.channelId !== null) {
+        this.updateVoice((voice) => ({ ...voice, channelId: null, notice: microphoneNotice(e, window.isSecureContext) }));
+      }
+      return;
+    } finally {
+      this.callStarting = false;
+    }
+    if (this.entry().voice.channelId === null) {
+      call.close();
+      return;
+    }
+    this.call = call;
+    this.sendVoice();
+  }
+
+  /** Answers the server's offer for the voice this connection is in. */
+  private async answer(offer: string): Promise<void> {
+    const call = this.call;
+    if (call === null) {
+      return;
+    }
+    try {
+      const sdp = await call.answer(offer);
+      if (this.call === call) {
+        this.gateway?.send({ type: "voice_answer", sdp });
+      }
+    } catch (e) {
+      // The server ends voice with connection_failed when no answer comes.
+      console.error("Could not answer the voice offer", e);
+    }
+  }
+
+  private closeCall(): void {
+    this.call?.close();
+    this.call = null;
+    this.updateVoice((voice) => ({ ...voice, audioConnected: false }));
+  }
+
   dismissVoiceNotice(): void {
     this.updateVoice((voice) => ({ ...voice, notice: null }));
   }
 
-  /** Tells the server where the member wants to be, if anywhere. */
+  /** Tells the server where the member wants to be, if anywhere, and mutes the microphone to match. */
   private sendVoice(): void {
     const voice = this.entry().voice;
-    if (voice.channelId !== null) {
+    this.call?.setMuted(micOff(voice));
+    if (voice.channelId !== null && this.call !== null) {
       this.gateway?.send({
         type: "voice_state",
         channelId: voice.channelId,
@@ -275,11 +336,18 @@ export class ServerConnection {
       case "voice_refused":
         if (frame.channelId === voice.channelId) {
           const notice = refusalNotice(frame.reason, view?.channels[frame.channelId], timedOut);
+          if (frame.currentChannelId == null) {
+            this.closeCall();
+          }
           this.updateVoice((current) => ({ ...current, channelId: frame.currentChannelId ?? null, notice }));
         }
         break;
       case "voice_ended":
+        this.closeCall();
         this.updateVoice((current) => ({ ...current, channelId: null, notice: endNotice(frame.reason, timedOut) }));
+        break;
+      case "voice_offer":
+        void this.answer(frame.sdp);
         break;
       default:
         break;
@@ -550,6 +618,7 @@ export class ServerConnection {
 
   private start(token: string): void {
     this.gateway?.stop();
+    this.closeCall();
     this.token = token;
     this.update({ status: "connecting", notice: null, voice: noVoice });
     this.gateway = new Gateway(Gateway.urlFor(this.origin), token, {
@@ -577,7 +646,11 @@ export class ServerConnection {
           this.applyToVoice(frame);
         }
       },
-      reconnecting: () => this.update({ status: "reconnecting" }),
+      reconnecting: () => {
+        // The server closed the audio connection with the gateway's; the next ready joins again and gets a new offer.
+        this.call?.disconnect();
+        this.update({ status: "reconnecting" });
+      },
       ended: (reason) => {
         if (reason === "client_outdated") {
           this.stopOutdated(reason);
@@ -593,12 +666,14 @@ export class ServerConnection {
   private stopOutdated(outdated: Outdated): void {
     this.gateway?.stop();
     this.gateway = null;
+    this.closeCall();
     this.update({ status: outdated, view: null, voice: noVoice });
   }
 
   private async signOut(notice: string | null): Promise<void> {
     this.gateway?.stop();
     this.gateway = null;
+    this.closeCall();
     this.token = null;
     await platform.secrets.delete(this.secretKey);
     this.update({ status: "signed_out", view: null, logs: {}, notice, voice: noVoice });

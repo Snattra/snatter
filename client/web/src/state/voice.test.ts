@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Channel } from "../api/types";
-import { endNotice, micOff, noVoice, quietScene, refusalNotice, voiceSound, voiceStatus } from "./voice";
+import { endNotice, micOff, microphoneNotice, noVoice, quietScene, refusalNotice, voiceSound, voiceStatus } from "./voice";
 
 const lounge: Channel = {
   id: "lounge",
@@ -14,12 +14,16 @@ const lounge: Channel = {
 };
 
 describe("voiceStatus", () => {
-  it("is connected only once the server has the member in the channel asked for", () => {
+  it("is connected only once the server has the member in the channel asked for, with audio connected", () => {
     const asked = { ...noVoice, channelId: "lounge" };
+    const audio = { ...asked, audioConnected: true };
     expect(voiceStatus(noVoice, undefined)).toBe("out");
     expect(voiceStatus(asked, undefined)).toBe("joining");
-    expect(voiceStatus(asked, { accountId: "me", channelId: "den", selfMuted: false, selfDeafened: false })).toBe("joining");
+    expect(voiceStatus(audio, { accountId: "me", channelId: "den", selfMuted: false, selfDeafened: false })).toBe("joining");
     expect(voiceStatus(asked, { accountId: "me", channelId: "lounge", selfMuted: false, selfDeafened: false })).toBe(
+      "joining",
+    );
+    expect(voiceStatus(audio, { accountId: "me", channelId: "lounge", selfMuted: false, selfDeafened: false })).toBe(
       "connected",
     );
     // In voice on another device is not in voice here.
@@ -45,7 +49,27 @@ describe("notices", () => {
   it("say why voice ended, also for reasons added later", () => {
     expect(endNotice("joined_elsewhere", false)).toBe("You joined voice on another device.");
     expect(endNotice("forbidden", true)).toBe("You left voice because you were timed out.");
+    expect(endNotice("connection_failed", false)).toBe("Voice couldn't connect to the server.");
     expect(endNotice("kicked" as never, false)).toBe("You were disconnected from voice.");
+  });
+});
+
+describe("microphoneNotice", () => {
+  it("says why the microphone could not be used", () => {
+    expect(microphoneNotice(new DOMException("denied", "NotAllowedError"), true)).toBe(
+      "Allow microphone access to join voice.",
+    );
+    expect(microphoneNotice(new DOMException("none", "NotFoundError"), true)).toBe("No microphone was found.");
+    expect(microphoneNotice(new DOMException("busy", "NotReadableError"), true)).toBe(
+      "Your microphone couldn't be started. Another app may be using it.",
+    );
+    expect(microphoneNotice(new Error("something else"), true)).toBe("Your microphone couldn't be used.");
+  });
+
+  it("says when the page is not secure, where browsers give no microphone at all", () => {
+    expect(microphoneNotice(new TypeError("navigator.mediaDevices is undefined"), false)).toBe(
+      "Voice needs the app to be opened over HTTPS.",
+    );
   });
 });
 

@@ -46,9 +46,15 @@ docker compose up --build
 This builds the server and the web app from source and starts them in the
 production profile. Open http://localhost:8080 and create the first account,
 which becomes the owner. The web container serves the app and forwards `/api`
-to the server, so the API is on the same port (try `/api/v1/server-info`); the
-server is not published on its own. The server keeps everything, its SQLite
-database and uploaded content, in the `server-data` volume, so
+to the server, so the API is on the same port (try `/api/v1/server-info`).
+Voice goes to the server directly, over UDP on port 8080: set
+`SNATTER_MEDIA_ADDRESS` to the address browsers reach this machine at, such
+as its LAN address; without it the server offers only its container's
+addresses, which browsers usually cannot reach. Browsers give pages the
+microphone only over HTTPS, or at `localhost`, so for voice from other
+machines put a reverse proxy that terminates TLS in front of the web
+container. The server keeps everything, its
+SQLite database and uploaded content, in the `server-data` volume, so
 `docker compose down` keeps your data and `docker compose down -v` wipes it.
 To publish on another port, set `SNATTER_HTTP_PORT` in a `.env` file (see
 `.env.example`).

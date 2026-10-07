@@ -12,14 +12,22 @@ export interface LocalVoice {
   selfDeafened: boolean;
   /** Why voice was refused or ended, until dismissed or the next join. */
   notice: string | null;
+  /** Whether the connection carrying the member's audio to the server is up. */
+  audioConnected: boolean;
 }
 
-export const noVoice: LocalVoice = { channelId: null, selfMuted: false, selfDeafened: false, notice: null };
+export const noVoice: LocalVoice = {
+  channelId: null,
+  selfMuted: false,
+  selfDeafened: false,
+  notice: null,
+  audioConnected: false,
+};
 
 /**
  * - `out`: not in voice here
- * - `joining`: asked to join and waiting for the server, also after reconnecting
- * - `connected`: in the channel asked for
+ * - `joining`: asked to join and waiting for the server or the audio connection, also after reconnecting
+ * - `connected`: in the channel asked for, with audio connected
  */
 export type VoiceStatus = "out" | "joining" | "connected";
 
@@ -27,7 +35,7 @@ export function voiceStatus(local: LocalVoice, own: VoiceState | undefined): Voi
   if (local.channelId === null) {
     return "out";
   }
-  return own?.channelId === local.channelId ? "connected" : "joining";
+  return own?.channelId === local.channelId && local.audioConnected ? "connected" : "joining";
 }
 
 /** Whether the member's microphone is off, by their choice: muted, or deafened, which mutes too. */
@@ -60,8 +68,30 @@ export function endNotice(reason: VoiceEndReason, timedOut: boolean): string {
       return "You left voice because the channel is no longer available.";
     case "forbidden":
       return timedOut ? "You left voice because you were timed out." : "You left voice because you no longer have permission.";
+    case "connection_failed":
+      return "Voice couldn't connect to the server.";
     default:
       return "You were disconnected from voice.";
+  }
+}
+
+/**
+ * What to tell the member when joining failed because the microphone could
+ * not be used. Browsers give it only to secure pages, HTTPS or localhost.
+ */
+export function microphoneNotice(error: unknown, secure: boolean): string {
+  if (!secure) {
+    return "Voice needs the app to be opened over HTTPS.";
+  }
+  switch (error instanceof Error ? error.name : null) {
+    case "NotAllowedError":
+      return "Allow microphone access to join voice.";
+    case "NotFoundError":
+      return "No microphone was found.";
+    case "NotReadableError":
+      return "Your microphone couldn't be started. Another app may be using it.";
+    default:
+      return "Your microphone couldn't be used.";
   }
 }
 
