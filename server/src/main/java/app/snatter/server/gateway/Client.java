@@ -40,8 +40,6 @@ final class Client {
     GatewayVoiceStateDto voicePending;
     /** The connection that carries its audio while it is in voice; null otherwise. */
     VoiceConnection media;
-    /** Whether it has answered the offer for {@link #media}. */
-    boolean mediaAnswered;
 
     Client(WebSocketConnection connection) {
         this.connection = connection;

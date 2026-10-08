@@ -10,6 +10,7 @@ import static app.snatter.server.testing.ApiClientFactory.channelsApi;
 import static app.snatter.server.testing.ApiClientFactory.moderationApi;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -389,6 +390,41 @@ class VoiceTest {
             }
             assertEquals(CONNECTION_FAILED, aliceGateway.await(GatewayVoiceEndedDto.class).getReason());
             watcherGateway.await(GatewayVoiceStateDeletedDto.class, left(alice));
+        }
+    }
+
+    @Test
+    void membersInAVoiceChannelHearEachOther() throws Exception {
+        TestUsers.User alice = TestUsers.register();
+        TestUsers.User bob = TestUsers.register();
+        try (GatewayTestClient aliceGateway = GatewayTestClient.identified(alice.token());
+             GatewayTestClient bobGateway = GatewayTestClient.identified(bob.token())) {
+            aliceGateway.send(join(lounge));
+            try (StandInBrowser aliceBrowser = new StandInBrowser(aliceGateway.await(GatewayVoiceOfferDto.class).getSdp())) {
+                aliceGateway.send(new GatewayVoiceAnswerDto().sdp(aliceBrowser.answer()));
+                aliceBrowser.connect();
+
+                // Bob comes: he is offered alice's voice, and alice his.
+                bobGateway.send(join(lounge));
+                String bobOffer = bobGateway.await(GatewayVoiceOfferDto.class).getSdp();
+                String aliceAgain = aliceGateway.await(GatewayVoiceOfferDto.class,
+                    frame -> frame.getSdp().contains("a=msid:" + bob.id() + " ")).getSdp();
+                aliceGateway.send(new GatewayVoiceAnswerDto().sdp(aliceBrowser.answer(aliceAgain)));
+                try (StandInBrowser bobBrowser = new StandInBrowser(bobOffer)) {
+                    bobGateway.send(new GatewayVoiceAnswerDto().sdp(bobBrowser.answer()));
+                    bobBrowser.connect();
+
+                    // Bob speaks until alice hears him, as her answer reaches the server in its own time.
+                    byte[] heard = null;
+                    for (int sequence = 1; heard == null && sequence <= 50; sequence++) {
+                        bobBrowser.send(StandInBrowser.rtp(0x1234_5678, sequence, "from bob"));
+                        heard = aliceBrowser.receive(100);
+                    }
+                    assertNotNull(heard, "alice never heard bob");
+                    int ssrc = (heard[8] & 0xff) << 24 | (heard[9] & 0xff) << 16 | (heard[10] & 0xff) << 8 | heard[11] & 0xff;
+                    assertEquals(StandInBrowser.ssrcOf(aliceAgain, bob.id().toString()), ssrc);
+                }
+            }
         }
     }
 }

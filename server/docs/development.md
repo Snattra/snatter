@@ -481,13 +481,19 @@ So moving into a channel someone cannot see is leaving, to them. Inside
 
 **Voice signalling.** The connection in voice holds the `VoiceConnection`
 that carries its audio (`Client.media`, see "Voice media"). Joining, or
-taking voice over, opens one at the channel's bitrate and sends its offer
-as `voice_offer`, after the connection's own `voice_state_updated`. The
-first `voice_answer` to it starts ICE and DTLS; later ones, and those from
-connections not in voice, are ignored. An answer that cannot be used, or a
-connection that fails or is not up 30 seconds after the offer, ends voice
-with `connection_failed`, checked on the dispatcher so a connection closed
-or replaced meanwhile is left alone. Whatever ends the member's voice closes
+taking voice over, opens one. After every voice or channel change,
+`syncMedia` gives each connection the others in its channel and the
+channel's bitrate (`VoiceConnection.hear`), and sends `voice_offer` to those
+with an offer to make, after the voice states it follows from. Each
+`voice_answer` goes to `VoiceConnection.accept`, which may hand back the
+next offer; one with no offer waiting, or from a connection not in voice,
+is ignored. An answer that cannot be used, an offer not answered within
+`snatter.gateway.voice-answer-timeout` (10 seconds), or a connection that
+fails or is not up 30 seconds after the first offer, ends voice with
+`connection_failed`, checked on the dispatcher so a connection closed or
+replaced meanwhile is left alone. Without the answer deadline, an offer
+never answered would hold back every later one, and the member would not
+hear anyone who came after. Whatever ends the member's voice closes
 the connection; moving to another channel keeps it.
 
 **Read markers.** `ready` carries the member's read state for every visible
@@ -516,7 +522,7 @@ server rather than to the others, and the server forwards the audio. The
 `media` package carries it, on Jitsi's ice4j for ICE and jitsi-srtp for
 encryption, with keys from a DTLS handshake by BouncyCastle. The gateway
 offers a connection to whoever joins voice ("Voice signalling" above), and
-receives their audio; forwarding it to the others follows.
+forwards each member's voice to the others in their channel.
 
 **One UDP port.** `MediaPort` opens `snatter.media.port`
 (`SNATTER_MEDIA_PORT`, 8080 by default, the HTTP port's number) at start, on
@@ -550,16 +556,33 @@ sources at most, so neither stray packets nor the peer can fill memory.
 stand-in browser, written apart from the server's code.
 
 **The server offers, the browser answers.** `VoiceConnection` is one
-member's connection, with ICE and SRTP behind it. Its offer has one audio
-m-line, on which the member sends their voice: Opus, capped at the channel's
-bitrate with `maxaveragebitrate`, with every candidate up front and
-`a=ice-lite`. From the answer it needs only the ICE credentials, the SHA-256
-fingerprint, and `a=setup:active`, the browser starting DTLS; an answer
-without them is refused with `InvalidAnswerException`. `ready()` completes
-once ICE and the handshake are done, and fails if either does, or if the
-peer has not connected within 30 seconds. `VoiceConnectionTest` has the
-stand-in browser read the offer and answer it as Chrome would, and
-`SdpTest` reads answers shaped like Chrome's and Firefox's.
+member's connection, with ICE and SRTP behind it. Its offer's first m-line
+takes the member's voice: Opus, capped at the channel's bitrate with
+`maxaveragebitrate`, with DTX (`usedtx=1`) so silence costs next to nothing,
+every candidate up front and `a=ice-lite`. Each further m-line carries one
+other member's voice, `sendonly`, as a source the server picks and a stream
+named after their account id (`a=msid`). The line of a member who left goes
+`inactive` and carries the next to come, as a new source, so lines are
+reused rather than piling up. Each change is a new offer of the same
+session with a higher version, sent only once the last is answered; a
+change meanwhile waits for the answer. From an answer it needs only the
+ICE credentials, the SHA-256 fingerprint, and `a=setup:active`, the browser
+starting DTLS; an answer without them is refused with
+`InvalidAnswerException`. `ready()` completes once ICE and the handshake are
+done, and fails if either does, or if the peer has not connected within 30
+seconds of the first offer.
+
+**Forwarding.** Each member's decrypted RTP goes to every other member in
+their channel (`VoiceConnection.hear` names them), on that member's line:
+the packet is copied, given the line's source, and encrypted for the
+listener. A line starts carrying only once the listener's browser has
+answered the offer that made it, and stops at once when its member leaves;
+the SRTP context of a source the server stops sending is dropped. Payload
+types need no rewriting, as every line uses Opus at 111. RTCP is not
+forwarded. `VoiceConnectionTest` has two stand-in browsers hear each other
+and checks lines are reused; `VoiceTest` does it through the gateway, and
+`SdpTest` checks the offer's text and reads answers shaped like Chrome's
+and Firefox's.
 
 **ice4j settings** are system properties, which `MediaPort` sets before
 ice4j loads: no link-local addresses, and no probe of the EC2 metadata
