@@ -51,6 +51,8 @@ public final class VoiceConnection implements AutoCloseable {
     private long version;
     /** The lines as offered, while the peer has not answered. */
     private List<Line> offered;
+    /** When that offer was made, from {@link System#nanoTime()}. */
+    private long offeredAt;
     /** The lines as the peer last answered them: those it can play. */
     private List<Line> answered = List.of();
     /** Whether something changed since the offer waiting for its answer. */
@@ -134,6 +136,7 @@ public final class VoiceConnection implements AutoCloseable {
 
     private String offer() {
         offered = List.copyOf(lines);
+        offeredAt = System.nanoTime();
         changed = false;
         version++;
         List<SendLine> sending = lines.stream()
@@ -160,6 +163,15 @@ public final class VoiceConnection implements AutoCloseable {
         offered = null;
         publishSources();
         return changed ? Optional.of(offer()) : Optional.empty();
+    }
+
+    /**
+     * Whether an offer has waited for its answer for {@code limit} or longer.
+     * Until it is answered no change is offered, so the member would hear no
+     * one who came after.
+     */
+    public boolean unansweredFor(Duration limit) {
+        return offered != null && System.nanoTime() - offeredAt >= limit.toNanos();
     }
 
     private void connect(Sdp.Answer peer) {

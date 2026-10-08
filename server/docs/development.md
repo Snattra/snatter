@@ -487,10 +487,13 @@ channel's bitrate (`VoiceConnection.hear`), and sends `voice_offer` to those
 with an offer to make, after the voice states it follows from. Each
 `voice_answer` goes to `VoiceConnection.accept`, which may hand back the
 next offer; one with no offer waiting, or from a connection not in voice,
-is ignored. An answer that cannot be used, or a connection that fails or is
-not up 30 seconds after the first offer, ends voice with
+is ignored. An answer that cannot be used, an offer not answered within
+`snatter.gateway.voice-answer-timeout` (10 seconds), or a connection that
+fails or is not up 30 seconds after the first offer, ends voice with
 `connection_failed`, checked on the dispatcher so a connection closed or
-replaced meanwhile is left alone. Whatever ends the member's voice closes
+replaced meanwhile is left alone. Without the answer deadline, an offer
+never answered would hold back every later one, and the member would not
+hear anyone who came after. Whatever ends the member's voice closes
 the connection; moving to another channel keeps it.
 
 **Read markers.** `ready` carries the member's read state for every visible

@@ -593,8 +593,28 @@ public class Gateway {
         }
     }
 
+    /** Sends the offer and checks, once the client has had its time, that it was answered. */
     private void sendOffer(Client client, String offer) {
         send(client, seq -> new GatewayVoiceOfferDto().seq(seq).sdp(offer));
+        // Sending may have closed the client as too slow, and its media with it.
+        VoiceConnection connection = client.media;
+        if (connection != null) {
+            dispatcher.schedule(guarded(() -> answerDue(client, connection)),
+                config.voiceAnswerTimeout().toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * Ends voice when the offer, or a later one, still waits for its answer:
+     * until it comes no change is offered, and the member would not hear
+     * those who come after.
+     */
+    private void answerDue(Client client, VoiceConnection connection) {
+        if (client.media == connection && connection.unansweredFor(config.voiceAnswerTimeout())) {
+            LOG.infof("Voice offer to %s went unanswered", client.principal.accountId());
+            endVoice(voice.get(client.principal.accountId()), VoiceEndReasonDto.CONNECTION_FAILED);
+            syncVoice();
+        }
     }
 
     /** Applies the answer to the offer waiting for one; any other is ignored. */

@@ -83,8 +83,9 @@ info:
     offer only once the last is answered. The client is the DTLS client, and
     finds the server at the addresses in the offer, all of them there from
     the start. Voice ends with `connection_failed` when an answer cannot be
-    used, or when the connection is not up within 30 seconds of the first
-    offer. Moving to another channel keeps the connection.
+    used, when an offer is not answered within 10 seconds, or when the
+    connection is not up within 30 seconds of the first offer. Moving to
+    another channel keeps the connection.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -2710,9 +2711,10 @@ components:
         - `channel_unavailable`: the channel was deleted, or the member can no
           longer see it
         - `forbidden`: the member no longer holds `CONNECT`, as when timed out
-        - `connection_failed`: the voice connection did not come up: the
-          `voice_answer` could not be used, or the connection was not up
-          within 30 seconds of the `voice_offer`
+        - `connection_failed`: the voice connection did not come up or keep
+          up: a `voice_answer` could not be used, a `voice_offer` went
+          unanswered for 10 seconds, or the connection was not up within 30
+          seconds of the first `voice_offer`
       enum:
         - joined_elsewhere
         - channel_unavailable
