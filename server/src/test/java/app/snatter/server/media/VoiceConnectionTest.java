@@ -92,7 +92,7 @@ class VoiceConnectionTest {
 
                 String next = alice.accept(browser.answer()).orElseThrow();
                 assertTrue(next.contains("o=- " + session(first) + " 2 "), next);
-                assertTrue(next.contains("a=msid:bob voice"), next);
+                assertTrue(next.contains("a=msid:bob voice-1"), next);
                 // Answering again with nothing waiting is ignored.
                 alice.accept(browser.answer(next));
                 assertEquals(Optional.empty(), alice.accept(browser.answer(next)));

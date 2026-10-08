@@ -120,11 +120,11 @@ public final class VoiceConnection implements AutoCloseable {
         lines.add(new Line(String.valueOf(lines.size() + 1), ssrc, other));
     }
 
-    /** A source not in use, so the peer never mistakes one member's voice for another's. */
+    /** A source never used before, so the peer never mistakes one member's voice for another's. */
     private int freshSsrc() {
         while (true) {
             int ssrc = ThreadLocalRandom.current().nextInt();
-            if (ssrc != 0 && lines.stream().noneMatch(line -> line.ssrc() == ssrc)) {
+            if (ssrc != 0 && srtp.claim(ssrc)) {
                 return ssrc;
             }
         }

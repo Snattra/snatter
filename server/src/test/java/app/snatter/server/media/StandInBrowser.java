@@ -102,7 +102,7 @@ public final class StandInBrowser implements AutoCloseable {
     /** The source an offer carries the member's voice as, or null when it carries no line for them. */
     public static Integer ssrcOf(String offer, String member) {
         for (List<String> section : sections(offer)) {
-            if (section.contains("a=msid:" + member + " voice")) {
+            if (section.stream().anyMatch(line -> line.startsWith("a=msid:" + member + " "))) {
                 String ssrc = attribute(section, "ssrc").split(" ")[0];
                 return Integer.parseUnsignedInt(ssrc);
             }

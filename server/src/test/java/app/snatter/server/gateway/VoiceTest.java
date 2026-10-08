@@ -408,7 +408,7 @@ class VoiceTest {
                 bobGateway.send(join(lounge));
                 String bobOffer = bobGateway.await(GatewayVoiceOfferDto.class).getSdp();
                 String aliceAgain = aliceGateway.await(GatewayVoiceOfferDto.class,
-                    frame -> frame.getSdp().contains("a=msid:" + bob.id() + " voice")).getSdp();
+                    frame -> frame.getSdp().contains("a=msid:" + bob.id() + " ")).getSdp();
                 aliceGateway.send(new GatewayVoiceAnswerDto().sdp(aliceBrowser.answer(aliceAgain)));
                 try (StandInBrowser bobBrowser = new StandInBrowser(bobOffer)) {
                     bobGateway.send(new GatewayVoiceAnswerDto().sdp(bobBrowser.answer()));

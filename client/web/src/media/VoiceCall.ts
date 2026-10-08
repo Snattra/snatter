@@ -1,4 +1,5 @@
 import { sessionOf } from "./sdp";
+import { Speakers } from "./speakers";
 
 /**
  * The member's side of voice: their microphone, the WebRTC connection that
@@ -11,9 +12,12 @@ export class VoiceCall {
   private peer: RTCPeerConnection | null = null;
   /** The session the connection answers the server's offers in. */
   private session: string | null = null;
-  /** What plays each of the others' voices, by track; a line the server reuses keeps its track. */
-  private readonly speakers = new Map<string, HTMLAudioElement>();
-  private deafened = false;
+  /** The others' voices, played by an `<audio>` element each. */
+  private readonly speakers = new Speakers((track) => {
+    const audio = new Audio();
+    audio.srcObject = new MediaStream([track]);
+    return audio;
+  });
 
   private constructor(
     private readonly microphone: MediaStream,
@@ -67,22 +71,10 @@ export class VoiceCall {
     };
     peer.ontrack = (event) => {
       if (this.peer === peer) {
-        this.play(event.track);
+        this.speakers.play(event.transceiver.mid ?? event.track.id, event.track);
       }
     };
     return peer;
-  }
-
-  /** Plays another member's voice, once per track, as a line may come back for someone else. */
-  private play(track: MediaStreamTrack): void {
-    if (this.speakers.has(track.id)) {
-      return;
-    }
-    const speaker = new Audio();
-    speaker.srcObject = new MediaStream([track]);
-    speaker.muted = this.deafened;
-    this.speakers.set(track.id, speaker);
-    speaker.play().catch((e: unknown) => console.warn("Could not play a voice", e));
   }
 
   setMuted(muted: boolean): void {
@@ -92,10 +84,7 @@ export class VoiceCall {
   }
 
   setDeafened(deafened: boolean): void {
-    this.deafened = deafened;
-    for (const speaker of this.speakers.values()) {
-      speaker.muted = deafened;
-    }
+    this.speakers.setMuted(deafened);
   }
 
   /** Closes the connection but keeps the microphone, to answer again after the gateway reconnects. */
@@ -106,11 +95,7 @@ export class VoiceCall {
       this.peer.close();
       this.peer = null;
       this.session = null;
-      for (const speaker of this.speakers.values()) {
-        speaker.pause();
-        speaker.srcObject = null;
-      }
-      this.speakers.clear();
+      this.speakers.stop();
       this.connectedChanged(false);
     }
   }

@@ -69,7 +69,7 @@ class SdpTest {
             a=rtcp-mux
             a=rtpmap:111 opus/48000/2
             a=fmtp:111 minptime=10;useinbandfec=1
-            a=msid:0198a3c2-0000-7000-8000-000000000002 voice
+            a=msid:0198a3c2-0000-7000-8000-000000000002 voice-2
             a=ssrc:4026531841 cname:0198a3c2-0000-7000-8000-000000000002
             """).replace("\n", "\r\n"), offer);
     }

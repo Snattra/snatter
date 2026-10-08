@@ -68,7 +68,8 @@ final class Sdp {
             line(sdp, "a=fmtp:" + OPUS + " minptime=10;useinbandfec=1");
             if (send.member() != null) {
                 String ssrc = Integer.toUnsignedString(send.ssrc());
-                line(sdp, "a=msid:" + send.member() + " voice");
+                // A track id of the line's own, as browsers may give it to the track they play.
+                line(sdp, "a=msid:" + send.member() + " voice-" + send.mid());
                 line(sdp, "a=ssrc:" + ssrc + " cname:" + send.member());
             }
         }
