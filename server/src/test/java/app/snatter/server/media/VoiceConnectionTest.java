@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -52,6 +53,13 @@ class VoiceConnectionTest {
                     assertEquals(StandInBrowser.ssrcOf(aliceAgain, "bob"), asHeard.ssrc());
                     asHeard.setSsrc(0x1234_5678);
                     assertArrayEquals(sent, heard);
+
+                    // Another source of bob's is not forwarded, even when its sequence numbers happen to fit:
+                    // they are its own, and could run into the first's on alice's line.
+                    bobBrowser.send(StandInBrowser.rtp(0x0bad_0bad, 3, "from another source"));
+                    assertNull(aliceBrowser.receive(500));
+                    bobBrowser.send(StandInBrowser.rtp(0x1234_5678, 2, "from bob again"));
+                    assertNotNull(aliceBrowser.receive(5000));
                 }
             }
         }

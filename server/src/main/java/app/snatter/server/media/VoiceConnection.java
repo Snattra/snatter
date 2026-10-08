@@ -59,6 +59,8 @@ public final class VoiceConnection implements AutoCloseable {
 
     /** Those who hear this member, read by the reading thread. */
     private volatile List<VoiceConnection> hearers = List.of();
+    /** The source the member's voice comes from; the reading thread's alone. */
+    private Integer voiceSource;
     /** The source each sender's voice goes out as, once the peer can play it; read by others' reading threads. */
     private volatile Map<VoiceConnection, Integer> sources = Map.of();
 
@@ -187,8 +189,18 @@ public final class VoiceConnection implements AutoCloseable {
         sources = Map.copyOf(playable);
     }
 
-    /** The member's voice, decrypted, goes on to everyone who hears them. */
+    /**
+     * The member's voice, decrypted, goes on to everyone who hears them,
+     * from one source only: the first to arrive, as a browser sends its
+     * voice from one. Another's sequence numbers would run into it on the
+     * listeners' lines, which carry them as they are, and reuse their nonces.
+     */
     private void received(RtpPacket packet) {
+        if (voiceSource == null) {
+            voiceSource = packet.ssrc();
+        } else if (packet.ssrc() != voiceSource) {
+            return;
+        }
         for (VoiceConnection hearer : hearers) {
             hearer.forward(this, packet);
         }
