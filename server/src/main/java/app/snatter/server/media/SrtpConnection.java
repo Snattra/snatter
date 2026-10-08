@@ -51,7 +51,7 @@ public final class SrtpConnection implements AutoCloseable {
     /** Fits IPv6's smallest MTU, so the server's handshake records cross any path whole. */
     private static final int SEND_LIMIT = 1200;
     /** The longest tag SRTP appends: AES-GCM's. */
-    private static final int TAG_LENGTH = 16;
+    static final int TAG_LENGTH = 16;
     /** A browser sends its voice from one source; this allows for a few more, and drops the rest. */
     static final int MAX_SOURCES = 4;
 
@@ -123,6 +123,11 @@ public final class SrtpConnection implements AutoCloseable {
         }
         path.socket().send(
             new DatagramPacket(packet.getBuffer(), packet.getOffset(), packet.getLength(), path.remote()));
+    }
+
+    /** Lets go of what was kept for a source the server no longer sends. */
+    public synchronized void forget(int ssrc) {
+        outgoing.remove(ssrc);
     }
 
     private void read(Consumer<RtpPacket> received) {

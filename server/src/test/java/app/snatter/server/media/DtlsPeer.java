@@ -74,11 +74,17 @@ final class DtlsPeer {
 
     /** An RTP packet: version 2, Opus's usual payload type, sequence number 1, timestamp 0. */
     static byte[] rtp(int ssrc, String payload) {
+        return rtp(ssrc, 1, payload);
+    }
+
+    /** With a sequence number of its own, so packets that follow one another are not taken for replays. */
+    static byte[] rtp(int ssrc, int sequence, String payload) {
         byte[] text = payload.getBytes(StandardCharsets.UTF_8);
         byte[] packet = new byte[12 + text.length];
         packet[0] = (byte) 0x80;
         packet[1] = 111;
-        packet[3] = 1;
+        packet[2] = (byte) (sequence >>> 8);
+        packet[3] = (byte) sequence;
         packet[8] = (byte) (ssrc >>> 24);
         packet[9] = (byte) (ssrc >>> 16);
         packet[10] = (byte) (ssrc >>> 8);
@@ -111,10 +117,23 @@ final class DtlsPeer {
     }
 
     byte[] receive() throws Exception {
+        byte[] packet = receive(5000);
+        if (packet == null) {
+            throw new SocketTimeoutException("Nothing arrived");
+        }
+        return packet;
+    }
+
+    /** The next RTP packet, decrypted, or null when none comes in time. */
+    byte[] receive(int timeoutMillis) throws Exception {
         byte[] buffer = new byte[1500];
         DatagramPacket datagram = new DatagramPacket(buffer, buffer.length);
-        socket.setSoTimeout(5000);
-        socket.receive(datagram);
+        socket.setSoTimeout(timeoutMillis);
+        try {
+            socket.receive(datagram);
+        } catch (SocketTimeoutException e) {
+            return null;
+        }
         RtpPacket packet = new RtpPacket(buffer, 0, datagram.getLength());
         assertEquals(SrtpErrorStatus.OK,
             receiving.deriveContext(packet.ssrc(), 0).reverseTransformPacket(packet, false));
