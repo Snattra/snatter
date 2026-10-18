@@ -95,6 +95,36 @@ export function microphoneNotice(error: unknown, secure: boolean): string {
   }
 }
 
+/** The thresholds the member can choose from, in dBFS, and the one they start with. */
+export const THRESHOLD_MIN = -80;
+export const THRESHOLD_MAX = -10;
+export const THRESHOLD_DEFAULT = -50;
+
+const THRESHOLD_KEY = "snatter:pref:input-threshold";
+
+/**
+ * How loud the microphone must be to be sent, as this browser keeps it:
+ * microphones differ, so it stays with the device rather than the account.
+ * Without storage it is the default.
+ */
+export function storedThreshold(): number {
+  try {
+    const stored = localStorage.getItem(THRESHOLD_KEY);
+    const threshold = stored === null ? NaN : Number(stored);
+    return Number.isFinite(threshold) ? Math.min(THRESHOLD_MAX, Math.max(THRESHOLD_MIN, threshold)) : THRESHOLD_DEFAULT;
+  } catch {
+    return THRESHOLD_DEFAULT;
+  }
+}
+
+export function storeThreshold(threshold: number): void {
+  try {
+    localStorage.setItem(THRESHOLD_KEY, String(threshold));
+  } catch {
+    // Not remembered; it applies until the app closes.
+  }
+}
+
 export type VoiceSound = "join" | "leave";
 
 /** The voice channel this app is connected to, if any, and the others in it. */

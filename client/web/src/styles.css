@@ -1474,8 +1474,92 @@ textarea.sn-input {
   line-height: 18px;
 }
 
+.sn-voice-panel-actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
 .sn-voice-leave:hover {
   color: var(--danger);
+}
+
+/* Input sensitivity: the microphone's level in a track, under a slider whose
+   marker is the threshold. The level takes the accent while it is sent. The
+   popover is darker than any pane, so the track is the lightest of them. */
+.sn-sensitivity-meter {
+  display: grid;
+  align-items: center;
+  height: 24px;
+}
+
+.sn-sensitivity-meter::before,
+.sn-sensitivity-level,
+.sn-sensitivity-slider {
+  grid-area: 1 / 1;
+}
+
+.sn-sensitivity-meter::before {
+  content: "";
+  height: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-active);
+}
+
+.sn-sensitivity-level {
+  justify-self: start;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  /* About as long as the gate takes between reports, so the meter moves smoothly. */
+  transition:
+    width 50ms linear,
+    background-color var(--duration-instant) var(--ease-standard);
+}
+
+.sn-sensitivity-level-sent {
+  background: var(--accent);
+}
+
+.sn-sensitivity-slider {
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+
+.sn-sensitivity-slider:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sn-sensitivity-slider::-webkit-slider-runnable-track {
+  height: 24px;
+  background: transparent;
+}
+
+.sn-sensitivity-slider::-moz-range-track {
+  height: 24px;
+  background: transparent;
+}
+
+.sn-sensitivity-slider::-webkit-slider-thumb {
+  width: 4px;
+  height: 20px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: var(--text-strong);
+  appearance: none;
+}
+
+.sn-sensitivity-slider::-moz-range-thumb {
+  width: 4px;
+  height: 20px;
+  border: none;
+  border-radius: 2px;
+  background: var(--text-strong);
 }
 
 .sn-voice-panel-controls {

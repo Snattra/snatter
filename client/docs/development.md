@@ -11,7 +11,7 @@ the client README.
 | `gateway/`             | The gateway connection: identify, sequence checks, reconnects |
 | `state/`               | The per-server view, channel message logs, the store holding them, and the forms for channels and settings |
 | `servers/`             | `ServerConnection`: session, REST and gateway of one server |
-| `media/`               | `VoiceCall`: the microphone and the WebRTC connection that carries it |
+| `media/`               | `VoiceCall`: the microphone, the voice gate after it, and the WebRTC connection that carries it |
 | `auth/`                | Registration challenge solving                            |
 | `platform/`            | What the app needs from where it runs                     |
 | `ui/`                  | React components, hooks and icons                         |
@@ -261,8 +261,8 @@ server's offer can be answered the moment it comes. Browsers give the
 microphone only to secure pages, HTTPS or localhost; elsewhere the notice
 says voice needs HTTPS. The server sends
 `voice_offer` once the member is in; `VoiceCall` answers it on a new
-`RTCPeerConnection`, putting the microphone on the line the offer made for
-it, and `ServerConnection` sends `voice_answer`. Later offers of the same
+`RTCPeerConnection`, putting the gated microphone on the line the offer made
+for it, and `ServerConnection` sends `voice_answer`. Later offers of the same
 session, when the others in the channel change, are answered on the same
 connection; one of another session starts a new one (`media/sdp.ts`). Each
 track the server sends is another member's voice, played by an `<audio>`
@@ -271,8 +271,20 @@ track, and its element. Deafening mutes them all. No STUN server is set: the
 offer lists every address of the server, and the server learns the
 browser's from its checks. The voice panel says "Voice connected" only once
 the server has the member in the channel asked for and the connection is up
-(`audioConnected`). Muting turns the microphone's track off. Leaving, or the
+(`audioConnected`). Muting turns off the track that is sent. Leaving, or the
 server ending voice, closes the connection and lets go of the microphone.
+
+The microphone reaches the connection through the voice gate
+(`media/gate.ts`), which sends only sound louder than the member's
+threshold. It runs in an audio worklet (`media/voiceGate.worklet.ts`), which
+keeps time in a background tab, where the browser slows the page's timers.
+Sound must stay above the threshold for three 10 ms windows to open it, so a
+click doesn't, and what is sent runs 50 ms behind the microphone, so a word
+that opens it keeps its start. It stays open 400 ms after the sound drops,
+then fades out; Opus then sends almost nothing (`usedtx=1`). The member sets
+the threshold in Voice settings, from the voice panel, against a meter of
+the gate's reports. This browser keeps it (`storedThreshold` in
+`state/voice.ts`), as microphones differ between devices.
 When the gateway reconnects, the server has closed the audio connection
 along with it; the app keeps the microphone, joins again on `ready`, and
 answers the new offer.

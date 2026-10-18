@@ -1,16 +1,26 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Account, Channel, VoiceState } from "../api/types";
+import type { MicInput } from "../media/gate";
 import type { ServerConnection } from "../servers/ServerConnection";
 import { isMuted } from "../state/moderation";
 import { type ServerView, can, voiceIn } from "../state/serverView";
-import { type LocalVoice, type VoiceScene, micOff, quietScene, voiceSound, voiceStatus } from "../state/voice";
+import {
+  type LocalVoice,
+  THRESHOLD_MAX,
+  THRESHOLD_MIN,
+  type VoiceScene,
+  micOff,
+  quietScene,
+  voiceSound,
+  voiceStatus,
+} from "../state/voice";
 import { classes } from "./classes";
 import { Button, IconButton } from "./controls";
 import { Icon, type IconName } from "./icons";
 import { useCollapsed } from "./layout";
 import { Avatar } from "./people";
 import { playVoiceSound, unlockSounds } from "./sounds";
-import { Tooltip } from "./surfaces";
+import { Popover, Tooltip } from "./surfaces";
 
 /** Joins voice from a click, which is also what lets the join and leave sounds play. */
 function join(connection: ServerConnection, channelId: string): void {
@@ -157,7 +167,8 @@ export function VoicePanel({ connection, view, local, reconnecting }: VoicePanel
           </span>
           <span className="sn-voice-panel-channel sn-truncate">{channel?.name}</span>
         </span>
-        <span className="sn-collapse-fade">
+        <span className="sn-voice-panel-actions sn-collapse-fade">
+          <VoiceSettingsButton connection={connection} muted={muted} />
           <IconButton icon="call-end" label="Leave voice" className="sn-voice-leave" onClick={() => connection.leaveVoice()} />
         </span>
       </div>
@@ -185,6 +196,85 @@ export function VoicePanel({ connection, view, local, reconnecting }: VoicePanel
       </div>
     </section>
   );
+}
+
+/** Voice settings, from the voice panel: how loud the microphone must be to be sent. */
+function VoiceSettingsButton({ connection, muted }: { connection: ServerConnection; muted: boolean }) {
+  const id = useId();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <IconButton ref={anchor} icon="settings" label="Voice settings" popoverTarget={id} aria-expanded={open} />
+      <Popover id={id} anchor={anchor} title="Voice settings" onToggle={setOpen}>
+        {open && <InputSensitivity connection={connection} muted={muted} />}
+      </Popover>
+    </>
+  );
+}
+
+/**
+ * The threshold as a slider over a meter of the microphone. Sound past the
+ * marker is sent, and the meter takes the accent while it is, so the member
+ * can talk and set the marker between their voice and the room.
+ */
+function InputSensitivity({ connection, muted }: { connection: ServerConnection; muted: boolean }) {
+  const id = useId();
+  const [threshold, setThreshold] = useState(() => connection.inputThreshold);
+  const input = useMicInput(connection);
+  // Read on demand, not announced: it changes 20 times a second.
+  const level = Math.round(Math.max(THRESHOLD_MIN, Math.min(THRESHOLD_MAX, input?.level ?? THRESHOLD_MIN)));
+  const sent = input !== null && input.open && !muted;
+  return (
+    <div className="sn-field">
+      <label htmlFor={id}>Input sensitivity</label>
+      <div className="sn-sensitivity-meter">
+        <span
+          className={classes("sn-sensitivity-level", sent && "sn-sensitivity-level-sent")}
+          style={{ width: `${meterPosition(level)}%` }}
+          role="meter"
+          aria-label="Microphone level"
+          aria-valuemin={THRESHOLD_MIN}
+          aria-valuemax={THRESHOLD_MAX}
+          aria-valuenow={level}
+          aria-valuetext={`${level} dB, ${sent ? "sent" : "not sent"}`}
+        />
+        <input
+          id={id}
+          type="range"
+          className="sn-sensitivity-slider"
+          min={THRESHOLD_MIN}
+          max={THRESHOLD_MAX}
+          step={1}
+          value={threshold}
+          aria-valuetext={`${threshold} dB`}
+          aria-describedby={`${id}-hint`}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            setThreshold(next);
+            connection.setInputThreshold(next);
+          }}
+        />
+      </div>
+      <span className="sn-field-hint" id={`${id}-hint`}>
+        {muted
+          ? "You're muted, so nothing is sent."
+          : "Sound louder than the marker is sent. Talk, and set it between your voice and the room."}
+      </span>
+    </div>
+  );
+}
+
+/** Where a level in dBFS sits along the meter, in percent, on the slider's scale. */
+function meterPosition(level: number): number {
+  return Math.min(100, Math.max(0, ((level - THRESHOLD_MIN) / (THRESHOLD_MAX - THRESHOLD_MIN)) * 100));
+}
+
+/** The microphone's level and whether it is sent, as the gate last reported, or null before it has. */
+function useMicInput(connection: ServerConnection): MicInput | null {
+  const [input, setInput] = useState<MicInput | null>(null);
+  useEffect(() => connection.watchInput(setInput), [connection]);
+  return input;
 }
 
 /** A labelled toggle in the voice panel, tinted `danger` while it is on, since on means not heard or not hearing. */

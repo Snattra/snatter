@@ -1,12 +1,18 @@
+import { trustedScriptUrl } from "../trustedTypes";
+import type { MicInput } from "./gate";
 import { sessionOf } from "./sdp";
 import { Speakers } from "./speakers";
+import type { GateSettings } from "./voiceGate.worklet";
+import gateUrl from "./voiceGate.worklet.ts?worker&url";
 
 /**
  * The member's side of voice: their microphone, the WebRTC connection that
  * carries it to the server, and the voices of the others coming back. The
  * server offers and this answers: first when the member comes into voice,
- * then whenever who they hear changes. Muting turns the microphone's track
- * off and deafening the others' voices, so the connection stays up.
+ * then whenever who they hear changes. The microphone goes through the voice
+ * gate, so only sound louder than the member's threshold is sent. Muting
+ * turns what is sent off and deafening the others' voices, so the
+ * connection stays up.
  */
 export class VoiceCall {
   private peer: RTCPeerConnection | null = null;
@@ -21,13 +27,51 @@ export class VoiceCall {
 
   private constructor(
     private readonly microphone: MediaStream,
+    private readonly audio: AudioContext,
+    private readonly gate: AudioWorkletNode,
+    /** The microphone after the gate: what the server gets. */
+    private readonly sent: MediaStream,
     private readonly connectedChanged: (connected: boolean) => void,
   ) {}
 
-  /** Asks for the microphone first, which fails when the member refuses or has none. */
-  static async start(connectedChanged: (connected: boolean) => void): Promise<VoiceCall> {
+  /**
+   * Asks for the microphone first, which fails when the member refuses or
+   * has none, then puts the gate after it, at the threshold given, in dBFS.
+   * The gate tells `input` how loud the microphone is and whether it is sent.
+   */
+  static async start(
+    threshold: number,
+    connectedChanged: (connected: boolean) => void,
+    input: (input: MicInput) => void,
+  ): Promise<VoiceCall> {
     const microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
-    return new VoiceCall(microphone, connectedChanged);
+    let audio: AudioContext | null = null;
+    try {
+      // At the browser's default rate, which Firefox also takes microphones in at: it can't
+      // connect one to a context at another.
+      audio = new AudioContext();
+      await audio.audioWorklet.addModule(trustedScriptUrl(gateUrl));
+      const gate = new AudioWorkletNode(audio, "voice-gate", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: 1,
+        channelCountMode: "explicit",
+        outputChannelCount: [1],
+        processorOptions: { threshold },
+      });
+      gate.port.onmessage = (event: MessageEvent<MicInput>) => input(event.data);
+      const sent = audio.createMediaStreamDestination();
+      audio.createMediaStreamSource(microphone).connect(gate).connect(sent);
+      // Joining was a click, so the browser lets it run; resuming covers one held back anyway.
+      void audio.resume();
+      return new VoiceCall(microphone, audio, gate, sent.stream, connectedChanged);
+    } catch (e) {
+      void audio?.close();
+      for (const track of microphone.getTracks()) {
+        track.stop();
+      }
+      throw e;
+    }
   }
 
   /**
@@ -46,8 +90,8 @@ export class VoiceCall {
     await peer.setRemoteDescription({ type: "offer", sdp: offer });
     if (fresh) {
       // Takes the line the offer made for the member's voice, which the answer then sends on.
-      for (const track of this.microphone.getAudioTracks()) {
-        peer.addTrack(track, this.microphone);
+      for (const track of this.sent.getAudioTracks()) {
+        peer.addTrack(track, this.sent);
       }
     }
     await peer.setLocalDescription();
@@ -77,10 +121,23 @@ export class VoiceCall {
     return peer;
   }
 
+  /**
+   * Turns what is sent off or on. The gate hears of it first: it sends
+   * silence until it has dropped what it heard while muted, so unmuting
+   * sends none of that.
+   */
   setMuted(muted: boolean): void {
-    for (const track of this.microphone.getAudioTracks()) {
+    const settings: GateSettings = { muted };
+    this.gate.port.postMessage(settings);
+    for (const track of this.sent.getAudioTracks()) {
       track.enabled = !muted;
     }
+  }
+
+  /** How loud, in dBFS, the microphone must be to be sent. */
+  setThreshold(threshold: number): void {
+    const settings: GateSettings = { threshold };
+    this.gate.port.postMessage(settings);
   }
 
   setDeafened(deafened: boolean): void {
@@ -103,7 +160,9 @@ export class VoiceCall {
   /** Closes the connection and lets go of the microphone. */
   close(): void {
     this.disconnect();
-    for (const track of this.microphone.getTracks()) {
+    this.gate.port.onmessage = null;
+    void this.audio.close();
+    for (const track of [...this.microphone.getTracks(), ...this.sent.getTracks()]) {
       track.stop();
     }
   }
