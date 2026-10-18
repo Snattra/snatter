@@ -15,11 +15,21 @@ interface AvatarProps {
   /** `lg` heads a message group. */
   /** `sm` is 24px, for suggestions. */
   size?: "sm" | "md" | "lg";
+  /** Rings the avatar of someone heard speaking in voice. */
+  speaking?: boolean;
 }
 
-export function Avatar({ origin, account, online, arrived = false, size = "md" }: AvatarProps) {
+export function Avatar({ origin, account, online, arrived = false, size = "md", speaking = false }: AvatarProps) {
   return (
-    <span className={classes("sn-avatar", size === "lg" && "sn-avatar-lg", size === "sm" && "sn-avatar-sm", online === false && "sn-avatar-offline")}>
+    <span
+      className={classes(
+        "sn-avatar",
+        size === "lg" && "sn-avatar-lg",
+        size === "sm" && "sn-avatar-sm",
+        online === false && "sn-avatar-offline",
+        speaking && "sn-avatar-speaking",
+      )}
+    >
       <span className="sn-avatar-face" style={account.avatarId ? undefined : { background: colourFor(account.id) }}>
         {account.avatarId ? <img src={`${origin}/api/v1/blobs/${account.avatarId}`} alt="" /> : initials(account.displayName)}
       </span>

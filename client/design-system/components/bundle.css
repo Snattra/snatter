@@ -1017,6 +1017,12 @@ textarea.sn-input {
   transition: opacity var(--duration-slow) var(--ease-standard);
 }
 
+/* Someone heard speaking in voice: a ring in the accent, clear of the face. */
+.sn-avatar-speaking .sn-avatar-face {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .sn-avatar-offline .sn-avatar-face {
   opacity: var(--opacity-offline);
 }

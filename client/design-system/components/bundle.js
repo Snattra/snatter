@@ -726,6 +726,7 @@
           "sn-avatar",
           size !== "md" && "sn-avatar-" + size,
           status === "offline" && "sn-avatar-offline",
+          props.speaking && "sn-avatar-speaking",
           props.className
         ),
         style: props.ring ? { "--sn-ring": "var(--" + props.ring + ")" } : undefined

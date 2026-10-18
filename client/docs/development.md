@@ -285,6 +285,16 @@ then fades out; Opus then sends almost nothing (`usedtx=1`). The member sets
 the threshold in Voice settings, from the voice panel, against a meter of
 the gate's reports. This browser keeps it (`storedThreshold` in
 `state/voice.ts`), as microphones differ between devices.
+
+Who is speaking comes from what this app hears, so only members of the
+member's own channel light up, in step with their voices. `VoiceCall`
+measures the audio level of each line the server sends on ten times a
+second and names its member from the offer's msid (`membersOf` in
+`media/sdp.ts`). Senders gate, so any sound is speech, and a voice counts
+for 300 ms after it drops (`media/speaking.ts`). The member themselves
+speaks while their gate is open, unmuted and connected. `ServerConnection`
+puts the two together for the voice lists, which ring the avatars of those
+speaking (`useSpeaking` in `ui/voice.tsx`).
 When the gateway reconnects, the server has closed the audio connection
 along with it; the app keeps the microphone, joins again on `ready`, and
 answers the new offer.

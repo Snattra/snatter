@@ -283,6 +283,8 @@ export interface AvatarProps {
   size?: "sm" | "md" | "lg";
   /** The surface token the dot's ring cuts into; defaults to `panel`. */
   ring?: "bg" | "panel" | "panel-raised";
+  /** Rings someone heard speaking in voice. */
+  speaking?: boolean;
   className?: string;
 }
 export declare function Avatar(props: AvatarProps): React.ReactElement;
