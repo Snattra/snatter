@@ -736,6 +736,7 @@
         { className: "sn-avatar-face", style: props.src ? undefined : { background: colourFor(props.seed || props.name) } },
         props.src ? h("img", { src: props.src, alt: "" }) : initials(props.name)
       ),
+      props.speaking && h("span", { className: "sn-visually-hidden" }, "Speaking"),
       status &&
         h("span", {
           className: cx("sn-status", status === "online" && "sn-status-online", announce && "sn-status-announce"),

@@ -33,6 +33,7 @@ export function Avatar({ origin, account, online, arrived = false, size = "md", 
       <span className="sn-avatar-face" style={account.avatarId ? undefined : { background: colourFor(account.id) }}>
         {account.avatarId ? <img src={`${origin}/api/v1/blobs/${account.avatarId}`} alt="" /> : initials(account.displayName)}
       </span>
+      {speaking && <span className="sn-visually-hidden">Speaking</span>}
       {online !== undefined && (
         <span
           className={classes("sn-status", online && "sn-status-online", online && arrived && "sn-status-announce")}

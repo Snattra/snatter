@@ -11,9 +11,10 @@ describe("SpeakingTracker", () => {
     expect(tracker.update(levels({ alice: 0, bob: 0 }), 300)).toEqual(new Set());
   });
 
-  it("leaves out sound too quiet to be a voice", () => {
+  it("counts quiet speech a gate let through, but not the silence of a shut one", () => {
     const tracker = new SpeakingTracker();
-    expect(tracker.update(levels({ alice: 0.005 }), 0)).toEqual(new Set());
+    // About -46 dB, which a gate at its default -50 lets through.
+    expect(tracker.update(levels({ alice: 0.005, bob: 0, carol: 0.0005 }), 0)).toEqual(new Set(["alice"]));
   });
 
   it("drops someone who left at once", () => {

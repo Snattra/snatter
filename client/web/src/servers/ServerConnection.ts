@@ -378,11 +378,15 @@ export class ServerConnection {
     };
   };
 
-  /** The member speaks while their voice is sent: the gate is open, they are not muted and the audio connection is up. */
+  /**
+   * Others speak while the member hears them, so not while deafened; the
+   * member speaks while their voice is sent: the gate is open, they are not
+   * muted and the audio connection is up.
+   */
   private updateSpeaking(): void {
     const voice = this.entry().voice;
     const me = this.entry().view?.account.id;
-    const speaking = new Set(this.heard);
+    const speaking = new Set(voice.selfDeafened ? [] : this.heard);
     if (this.call !== null && this.sending && !micOff(voice) && voice.audioConnected && me !== undefined) {
       speaking.add(me);
     }

@@ -1,8 +1,10 @@
 /**
  * WebRTC's audio level, from 0 to 1, a voice coming in must reach to count
- * as speech. A sender's shut gate sends silence, which is 0.
+ * as speech: -60 dB. A sender's shut gate sends silence, which is 0, so
+ * anything above it is sound the sender's gate let through, quiet speech
+ * included.
  */
-const SPEAKING_LEVEL = 0.01;
+const SPEAKING_LEVEL = 0.001;
 /** How long someone still counts as speaking after their voice drops, so the ring doesn't flicker between syllables. */
 const HOLD_MS = 300;
 
