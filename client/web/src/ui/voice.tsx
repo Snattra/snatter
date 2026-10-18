@@ -292,9 +292,6 @@ export function VoiceRoom({ connection, view, channel, local, onOpenProfile }: V
       {!here && (!allowed || full) && (
         <p className="sn-voice-room-note">{allowed ? "It's full." : "You don't have permission to join voice."}</p>
       )}
-      <p className="sn-voice-room-note">
-        Sound isn't built yet. Joining shows the others you're here, but nobody can hear anybody.
-      </p>
     </div>
   );
 }
