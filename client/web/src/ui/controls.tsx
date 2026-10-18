@@ -3,6 +3,7 @@ import {
   type CSSProperties,
   type InputHTMLAttributes,
   type ReactNode,
+  type Ref,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
   useEffect,
@@ -55,6 +56,8 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   icon: IconName;
   /** For toggles, such as showing the member list. */
   pressed?: boolean;
+  /** For a Popover to line up with. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function IconButton({ label, icon, pressed, className, ...rest }: IconButtonProps) {

@@ -13,6 +13,7 @@ import type {
 } from "../api/types";
 import { solveChallenge } from "../auth/altcha";
 import { Gateway } from "../gateway/Gateway";
+import type { MicInput } from "../media/gate";
 import { VoiceCall } from "../media/VoiceCall";
 import { platform } from "../platform/platform";
 import {
@@ -35,7 +36,16 @@ import { isTimedOut } from "../state/moderation";
 import { type Outdated, compatibility, isOutdated } from "../state/protocol";
 import { type ServerView, applyFrame, fromReady } from "../state/serverView";
 import { type ServerEntry, blank, useServers } from "../state/store";
-import { type LocalVoice, endNotice, micOff, microphoneNotice, noVoice, refusalNotice } from "../state/voice";
+import {
+  type LocalVoice,
+  endNotice,
+  micOff,
+  microphoneNotice,
+  noVoice,
+  refusalNotice,
+  storeThreshold,
+  storedThreshold,
+} from "../state/voice";
 import { describeError } from "../ui/errors";
 
 export interface Registration {
@@ -65,6 +75,8 @@ export class ServerConnection {
   private call: VoiceCall | null = null;
   /** Whether the microphone is being asked for, so joining twice asks once. */
   private callStarting = false;
+  /** Those following the microphone's level, as Voice settings does while open. */
+  private readonly inputWatchers = new Set<(input: MicInput) => void>();
 
   constructor(readonly origin: string) {
     this.api = createApi(origin, () => this.token);
@@ -261,12 +273,34 @@ export class ServerConnection {
     this.sendVoice();
   }
 
+  /** How loud the microphone must be to be sent, in dBFS; this browser keeps it for next time. */
+  setInputThreshold(threshold: number): void {
+    storeThreshold(threshold);
+    this.call?.setThreshold(threshold);
+  }
+
+  /** Follows the microphone's level and whether it is sent, while the member is in voice here. */
+  watchInput(watcher: (input: MicInput) => void): () => void {
+    this.inputWatchers.add(watcher);
+    return () => {
+      this.inputWatchers.delete(watcher);
+    };
+  }
+
   /** Gets the microphone, then joins the channel asked for by then, unless the member gave up meanwhile. */
   private async startCall(): Promise<void> {
     this.callStarting = true;
     let call: VoiceCall;
     try {
-      call = await VoiceCall.start((audioConnected) => this.updateVoice((voice) => ({ ...voice, audioConnected })));
+      call = await VoiceCall.start(
+        storedThreshold(),
+        (audioConnected) => this.updateVoice((voice) => ({ ...voice, audioConnected })),
+        (input) => {
+          for (const watcher of this.inputWatchers) {
+            watcher(input);
+          }
+        },
+      );
     } catch (e) {
       if (this.entry().voice.channelId !== null) {
         this.updateVoice((voice) => ({ ...voice, channelId: null, notice: microphoneNotice(e, window.isSecureContext) }));

@@ -1,6 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Channel } from "../api/types";
-import { endNotice, micOff, microphoneNotice, noVoice, quietScene, refusalNotice, voiceSound, voiceStatus } from "./voice";
+import {
+  THRESHOLD_DEFAULT,
+  THRESHOLD_MAX,
+  THRESHOLD_MIN,
+  endNotice,
+  micOff,
+  microphoneNotice,
+  noVoice,
+  quietScene,
+  refusalNotice,
+  storeThreshold,
+  storedThreshold,
+  voiceSound,
+  voiceStatus,
+} from "./voice";
 
 const lounge: Channel = {
   id: "lounge",
@@ -87,5 +101,37 @@ describe("voiceSound", () => {
     expect(voiceSound(lounge("bob", "ann"), lounge("ann"))).toBe("leave");
     expect(voiceSound(lounge("bob"), lounge("bob"))).toBeNull();
     expect(voiceSound(quietScene, quietScene)).toBeNull();
+  });
+});
+
+describe("storedThreshold", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stubStorage(): Map<string, string> {
+    const items = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => items.set(key, value),
+    });
+    return items;
+  }
+
+  it("is what was stored, within the range", () => {
+    stubStorage();
+    expect(storedThreshold()).toBe(THRESHOLD_DEFAULT);
+    storeThreshold(-42);
+    expect(storedThreshold()).toBe(-42);
+    storeThreshold(-200);
+    expect(storedThreshold()).toBe(THRESHOLD_MIN);
+    storeThreshold(5);
+    expect(storedThreshold()).toBe(THRESHOLD_MAX);
+  });
+
+  it("is the default for anything else stored, and without storage", () => {
+    stubStorage().set("snatter:pref:input-threshold", "loud");
+    expect(storedThreshold()).toBe(THRESHOLD_DEFAULT);
+    vi.stubGlobal("localStorage", undefined);
+    expect(storedThreshold()).toBe(THRESHOLD_DEFAULT);
+    expect(() => storeThreshold(-30)).not.toThrow();
   });
 });
