@@ -75,6 +75,8 @@ export class ServerConnection {
   private call: VoiceCall | null = null;
   /** Whether the microphone is being asked for, so joining twice asks once. */
   private callStarting = false;
+  /** How loud, in dBFS, the microphone must be to be sent; kept here too, for when storage isn't. */
+  private threshold = storedThreshold();
   /** Those following the microphone's level, as Voice settings does while open. */
   private readonly inputWatchers = new Set<(input: MicInput) => void>();
 
@@ -273,8 +275,14 @@ export class ServerConnection {
     this.sendVoice();
   }
 
-  /** How loud the microphone must be to be sent, in dBFS; this browser keeps it for next time. */
+  /** How loud the microphone must be to be sent, in dBFS. */
+  get inputThreshold(): number {
+    return this.threshold;
+  }
+
+  /** Changes the threshold, also for a call still starting; this browser keeps it for next time. */
   setInputThreshold(threshold: number): void {
+    this.threshold = threshold;
     storeThreshold(threshold);
     this.call?.setThreshold(threshold);
   }
@@ -293,7 +301,7 @@ export class ServerConnection {
     let call: VoiceCall;
     try {
       call = await VoiceCall.start(
-        storedThreshold(),
+        this.threshold,
         (audioConnected) => this.updateVoice((voice) => ({ ...voice, audioConnected })),
         (input) => {
           for (const watcher of this.inputWatchers) {
@@ -314,6 +322,8 @@ export class ServerConnection {
       return;
     }
     this.call = call;
+    // The member may have moved the slider while the microphone was asked for.
+    call.setThreshold(this.threshold);
     this.sendVoice();
   }
 

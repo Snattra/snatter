@@ -33,7 +33,7 @@ function run(input: Float32Array, threshold = -50, gate?: VoiceGate) {
   return { output, reports, gate };
 }
 
-const DELAY = ms(40);
+const DELAY = ms(50);
 
 describe("VoiceGate", () => {
   it("keeps quiet sound out", () => {
@@ -47,6 +47,16 @@ describe("VoiceGate", () => {
     const input = join(silence(100), tone(300, 0.1));
     const { output } = run(input);
     expect(output.subarray(0, start + DELAY).every((s) => s === 0)).toBe(true);
+    for (let i = start; i < input.length - DELAY; i++) {
+      expect(output[i + DELAY]).toBeCloseTo(input[i] ?? NaN, 6);
+    }
+  });
+
+  it("lets speech through from its start also when it starts late in a window, barely loud enough", () => {
+    // About -49.7 dBFS at a -50 threshold, from 1 ms into a window: that window stays under it.
+    const start = ms(101);
+    const input = join(silence(101), tone(300, 0.0046));
+    const { output } = run(input);
     for (let i = start; i < input.length - DELAY; i++) {
       expect(output[i + DELAY]).toBeCloseTo(input[i] ?? NaN, 6);
     }

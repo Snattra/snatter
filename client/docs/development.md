@@ -279,7 +279,7 @@ The microphone reaches the connection through the voice gate
 threshold. It runs in an audio worklet (`media/voiceGate.worklet.ts`), which
 keeps time in a background tab, where the browser slows the page's timers.
 Sound must stay above the threshold for three 10 ms windows to open it, so a
-click doesn't, and what is sent runs 40 ms behind the microphone, so a word
+click doesn't, and what is sent runs 50 ms behind the microphone, so a word
 that opens it keeps its start. It stays open 400 ms after the sound drops,
 then fades out; Opus then sends almost nothing (`usedtx=1`). The member sets
 the threshold in Voice settings, from the voice panel, against a meter of

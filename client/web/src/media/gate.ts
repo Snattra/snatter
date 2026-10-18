@@ -13,15 +13,17 @@ const WINDOW_MS = 10;
  * gate: a click shorter than a window reaches two at most, a syllable many.
  */
 const OPEN_WINDOWS = 3;
-/**
- * How far the sound sent runs behind the microphone: long enough to have
- * decided before the first of it goes out, so words keep their start.
- */
-const LOOKAHEAD_MS = 40;
 /** How long the gate stays open after the sound drops, so pauses between words stay in. */
 const HOLD_MS = 400;
 /** How long opening and shutting fade, so neither clicks. */
 const FADE_MS = 10;
+/**
+ * How far the sound sent runs behind the microphone: long enough to have
+ * opened fully before the first of it goes out, so words keep their start.
+ * A word starting late in a window may not make that window loud, so it
+ * takes the windows to open after that one, and then the fade.
+ */
+const LOOKAHEAD_MS = (OPEN_WINDOWS + 1) * WINDOW_MS + FADE_MS;
 /** How often the gate reports, in windows. */
 const REPORT_WINDOWS = 5;
 /** The level of silence, so a log of nothing is still a number. */

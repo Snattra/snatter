@@ -45,9 +45,11 @@ export class VoiceCall {
     input: (input: MicInput) => void,
   ): Promise<VoiceCall> {
     const microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // At the device's own rate: Firefox can't take a microphone into a context at another.
-    const audio = new AudioContext();
+    let audio: AudioContext | null = null;
     try {
+      // At the browser's default rate, which Firefox also takes microphones in at: it can't
+      // connect one to a context at another.
+      audio = new AudioContext();
       await audio.audioWorklet.addModule(trustedScriptUrl(gateUrl));
       const gate = new AudioWorkletNode(audio, "voice-gate", {
         numberOfInputs: 1,
@@ -64,7 +66,7 @@ export class VoiceCall {
       void audio.resume();
       return new VoiceCall(microphone, audio, gate, sent.stream, connectedChanged);
     } catch (e) {
-      void audio.close();
+      void audio?.close();
       for (const track of microphone.getTracks()) {
         track.stop();
       }

@@ -11,7 +11,6 @@ import {
   type VoiceScene,
   micOff,
   quietScene,
-  storedThreshold,
   voiceSound,
   voiceStatus,
 } from "../state/voice";
@@ -221,7 +220,7 @@ function VoiceSettingsButton({ connection, muted }: { connection: ServerConnecti
  */
 function InputSensitivity({ connection, muted }: { connection: ServerConnection; muted: boolean }) {
   const id = useId();
-  const [threshold, setThreshold] = useState(storedThreshold);
+  const [threshold, setThreshold] = useState(() => connection.inputThreshold);
   const input = useMicInput(connection);
   return (
     <div className="sn-field sn-sensitivity">
