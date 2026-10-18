@@ -1,9 +1,23 @@
 import { trustedScriptUrl } from "../trustedTypes";
 import type { MicInput } from "./gate";
-import { sessionOf } from "./sdp";
+import { membersOf, sessionOf } from "./sdp";
 import { Speakers } from "./speakers";
+import { SpeakingTracker, sameMembers } from "./speaking";
 import type { GateSettings } from "./voiceGate.worklet";
 import gateUrl from "./voiceGate.worklet.ts?worker&url";
+
+/** How often the voices coming in are measured for who is speaking. */
+const LISTEN_MS = 100;
+
+/** What a call tells the app as it goes. */
+export interface VoiceCallEvents {
+  /** The connection carrying audio came up or went down. */
+  connected(connected: boolean): void;
+  /** How loud the microphone is and whether it is sent, from the gate. */
+  input(input: MicInput): void;
+  /** Who of those this app hears is speaking, by account id, when that changes. */
+  speaking(members: ReadonlySet<string>): void;
+}
 
 /**
  * The member's side of voice: their microphone, the WebRTC connection that
@@ -12,12 +26,17 @@ import gateUrl from "./voiceGate.worklet.ts?worker&url";
  * then whenever who they hear changes. The microphone goes through the voice
  * gate, so only sound louder than the member's threshold is sent. Muting
  * turns what is sent off and deafening the others' voices, so the
- * connection stays up.
+ * connection stays up. Who is speaking comes from the voices coming in.
  */
 export class VoiceCall {
   private peer: RTCPeerConnection | null = null;
   /** The session the connection answers the server's offers in. */
   private session: string | null = null;
+  /** The member on each line the server sends on, by mid, as the last offer said. */
+  private members = new Map<string, string>();
+  private readonly tracker = new SpeakingTracker();
+  private speaking: ReadonlySet<string> = new Set();
+  private listening: ReturnType<typeof setInterval> | null = null;
   /** The others' voices, played by an `<audio>` element each. */
   private readonly speakers = new Speakers((track) => {
     const audio = new Audio();
@@ -31,19 +50,14 @@ export class VoiceCall {
     private readonly gate: AudioWorkletNode,
     /** The microphone after the gate: what the server gets. */
     private readonly sent: MediaStream,
-    private readonly connectedChanged: (connected: boolean) => void,
+    private readonly events: VoiceCallEvents,
   ) {}
 
   /**
    * Asks for the microphone first, which fails when the member refuses or
    * has none, then puts the gate after it, at the threshold given, in dBFS.
-   * The gate tells `input` how loud the microphone is and whether it is sent.
    */
-  static async start(
-    threshold: number,
-    connectedChanged: (connected: boolean) => void,
-    input: (input: MicInput) => void,
-  ): Promise<VoiceCall> {
+  static async start(threshold: number, events: VoiceCallEvents): Promise<VoiceCall> {
     const microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
     let audio: AudioContext | null = null;
     try {
@@ -59,12 +73,12 @@ export class VoiceCall {
         outputChannelCount: [1],
         processorOptions: { threshold },
       });
-      gate.port.onmessage = (event: MessageEvent<MicInput>) => input(event.data);
+      gate.port.onmessage = (event: MessageEvent<MicInput>) => events.input(event.data);
       const sent = audio.createMediaStreamDestination();
       audio.createMediaStreamSource(microphone).connect(gate).connect(sent);
       // Joining was a click, so the browser lets it run; resuming covers one held back anyway.
       void audio.resume();
-      return new VoiceCall(microphone, audio, gate, sent.stream, connectedChanged);
+      return new VoiceCall(microphone, audio, gate, sent.stream, events);
     } catch (e) {
       void audio?.close();
       for (const track of microphone.getTracks()) {
@@ -88,6 +102,9 @@ export class VoiceCall {
     }
     const peer = this.peer ?? this.open();
     await peer.setRemoteDescription({ type: "offer", sdp: offer });
+    if (this.peer === peer) {
+      this.members = membersOf(offer);
+    }
     if (fresh) {
       // Takes the line the offer made for the member's voice, which the answer then sends on.
       for (const track of this.sent.getAudioTracks()) {
@@ -110,7 +127,7 @@ export class VoiceCall {
     this.peer = peer;
     peer.onconnectionstatechange = () => {
       if (this.peer === peer) {
-        this.connectedChanged(peer.connectionState === "connected");
+        this.events.connected(peer.connectionState === "connected");
       }
     };
     peer.ontrack = (event) => {
@@ -118,7 +135,41 @@ export class VoiceCall {
         this.speakers.play(event.transceiver.mid ?? event.track.id, event.track);
       }
     };
+    let measuring = false;
+    this.listening = setInterval(() => {
+      if (!measuring) {
+        measuring = true;
+        void this.listen(peer).finally(() => (measuring = false));
+      }
+    }, LISTEN_MS);
     return peer;
+  }
+
+  /** Measures each voice coming in, by the member on its line, and says when who is speaking changes. */
+  private async listen(peer: RTCPeerConnection): Promise<void> {
+    const levels = new Map<string, number>();
+    for (const transceiver of peer.getTransceivers()) {
+      const member = transceiver.mid === null ? undefined : this.members.get(transceiver.mid);
+      if (member !== undefined) {
+        const stats = await transceiver.receiver.getStats();
+        stats.forEach((entry: RTCStats) => {
+          if (entry.type === "inbound-rtp") {
+            const level = (entry as RTCInboundRtpStreamStats).audioLevel ?? 0;
+            levels.set(member, Math.max(levels.get(member) ?? 0, level));
+          }
+        });
+      }
+    }
+    if (this.peer === peer) {
+      this.heard(this.tracker.update(levels, performance.now()));
+    }
+  }
+
+  private heard(speaking: ReadonlySet<string>): void {
+    if (!sameMembers(speaking, this.speaking)) {
+      this.speaking = speaking;
+      this.events.speaking(speaking);
+    }
   }
 
   /**
@@ -152,8 +203,14 @@ export class VoiceCall {
       this.peer.close();
       this.peer = null;
       this.session = null;
+      this.members = new Map();
+      if (this.listening !== null) {
+        clearInterval(this.listening);
+        this.listening = null;
+      }
       this.speakers.stop();
-      this.connectedChanged(false);
+      this.heard(new Set());
+      this.events.connected(false);
     }
   }
 

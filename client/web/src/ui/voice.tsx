@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { Account, Channel, VoiceState } from "../api/types";
 import type { MicInput } from "../media/gate";
 import type { ServerConnection } from "../servers/ServerConnection";
@@ -60,8 +60,13 @@ function present(view: ServerView, channelId: string): { state: VoiceState; memb
   });
 }
 
+/** Who in the member's voice channel is speaking, as this app hears them, the member included. */
+function useSpeaking(connection: ServerConnection): ReadonlySet<string> {
+  return useSyncExternalStore(connection.watchSpeaking, connection.speakingNow);
+}
+
 interface VoiceMembersProps {
-  origin: string;
+  connection: ServerConnection;
   view: ServerView;
   channel: Channel;
   onOpen: (accountId: string) => void;
@@ -70,10 +75,12 @@ interface VoiceMembersProps {
 /**
  * Those in a voice channel, under its row in the sidebar. Their avatars sit
  * centred where the channel icons do, so collapsing never moves them; each
- * row opens the member's profile.
+ * row opens the member's profile. Those speaking in the member's own channel
+ * are ringed.
  */
-export function VoiceMembers({ origin, view, channel, onOpen }: VoiceMembersProps) {
+export function VoiceMembers({ connection, view, channel, onOpen }: VoiceMembersProps) {
   const collapsed = useCollapsed();
+  const speaking = useSpeaking(connection);
   const inVoice = present(view, channel.id);
   if (inVoice.length === 0) {
     return null;
@@ -89,7 +96,7 @@ export function VoiceMembers({ origin, view, channel, onOpen }: VoiceMembersProp
             title={collapsed ? member.displayName : undefined}
             onClick={() => onOpen(member.id)}
           >
-            <Avatar origin={origin} account={member} size="sm" />
+            <Avatar origin={connection.origin} account={member} size="sm" speaking={speaking.has(member.id)} />
             <span className="sn-voice-member-name sn-truncate sn-collapse-fade">{member.displayName}</span>
             <span className="sn-collapse-fade">
               <VoiceMarks state={state} member={member} />
@@ -332,8 +339,9 @@ interface VoiceRoomProps {
   onOpenProfile: (accountId: string) => void;
 }
 
-/** The body of a voice channel: who is in it, and the way in or out. */
+/** The body of a voice channel: who is in it, ringed while speaking, and the way in or out. */
 export function VoiceRoom({ connection, view, channel, local, onOpenProfile }: VoiceRoomProps) {
+  const speaking = useSpeaking(connection);
   const inVoice = present(view, channel.id);
   const here = local.channelId === channel.id;
   const joining = here && voiceStatus(local, view.voice[view.account.id]) === "joining";
@@ -355,7 +363,7 @@ export function VoiceRoom({ connection, view, channel, local, onOpenProfile }: V
                 aria-haspopup="dialog"
                 onClick={() => onOpenProfile(member.id)}
               >
-                <Avatar origin={connection.origin} account={member} size="lg" />
+                <Avatar origin={connection.origin} account={member} size="lg" speaking={speaking.has(member.id)} />
                 <span className="sn-voice-room-name">
                   <span className="sn-truncate">{member.displayName}</span>
                   <VoiceMarks state={state} member={member} />

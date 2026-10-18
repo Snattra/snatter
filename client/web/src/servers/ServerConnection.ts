@@ -14,6 +14,7 @@ import type {
 import { solveChallenge } from "../auth/altcha";
 import { Gateway } from "../gateway/Gateway";
 import type { MicInput } from "../media/gate";
+import { sameMembers } from "../media/speaking";
 import { VoiceCall } from "../media/VoiceCall";
 import { platform } from "../platform/platform";
 import {
@@ -79,6 +80,12 @@ export class ServerConnection {
   private threshold = storedThreshold();
   /** Those following the microphone's level, as Voice settings does while open. */
   private readonly inputWatchers = new Set<(input: MicInput) => void>();
+  /** Who the call hears speaking, and whether the gate is sending the member's own voice. */
+  private heard: ReadonlySet<string> = new Set();
+  private sending = false;
+  /** Who in the member's voice channel is speaking, the member included. */
+  private speaking: ReadonlySet<string> = new Set();
+  private readonly speakingWatchers = new Set<() => void>();
 
   constructor(readonly origin: string) {
     this.api = createApi(origin, () => this.token);
@@ -300,15 +307,23 @@ export class ServerConnection {
     this.callStarting = true;
     let call: VoiceCall;
     try {
-      call = await VoiceCall.start(
-        this.threshold,
-        (audioConnected) => this.updateVoice((voice) => ({ ...voice, audioConnected })),
-        (input) => {
+      call = await VoiceCall.start(this.threshold, {
+        connected: (audioConnected) => {
+          this.updateVoice((voice) => ({ ...voice, audioConnected }));
+          this.updateSpeaking();
+        },
+        input: (input) => {
           for (const watcher of this.inputWatchers) {
             watcher(input);
           }
+          this.sending = input.open;
+          this.updateSpeaking();
         },
-      );
+        speaking: (members) => {
+          this.heard = members;
+          this.updateSpeaking();
+        },
+      });
     } catch (e) {
       if (this.entry().voice.channelId !== null) {
         this.updateVoice((voice) => ({ ...voice, channelId: null, notice: microphoneNotice(e, window.isSecureContext) }));
@@ -348,6 +363,39 @@ export class ServerConnection {
     this.call?.close();
     this.call = null;
     this.updateVoice((voice) => ({ ...voice, audioConnected: false }));
+    this.heard = new Set();
+    this.sending = false;
+    this.updateSpeaking();
+  }
+
+  /** Who in the member's voice channel is speaking, by account id, the member included; for `useSyncExternalStore`. */
+  readonly speakingNow = (): ReadonlySet<string> => this.speaking;
+
+  readonly watchSpeaking = (watcher: () => void): (() => void) => {
+    this.speakingWatchers.add(watcher);
+    return () => {
+      this.speakingWatchers.delete(watcher);
+    };
+  };
+
+  /**
+   * Others speak while the member hears them, so not while deafened; the
+   * member speaks while their voice is sent: the gate is open, they are not
+   * muted and the audio connection is up.
+   */
+  private updateSpeaking(): void {
+    const voice = this.entry().voice;
+    const me = this.entry().view?.account.id;
+    const speaking = new Set(voice.selfDeafened ? [] : this.heard);
+    if (this.call !== null && this.sending && !micOff(voice) && voice.audioConnected && me !== undefined) {
+      speaking.add(me);
+    }
+    if (!sameMembers(speaking, this.speaking)) {
+      this.speaking = speaking;
+      for (const watcher of this.speakingWatchers) {
+        watcher();
+      }
+    }
   }
 
   dismissVoiceNotice(): void {
@@ -359,6 +407,7 @@ export class ServerConnection {
     const voice = this.entry().voice;
     this.call?.setMuted(micOff(voice));
     this.call?.setDeafened(voice.selfDeafened);
+    this.updateSpeaking();
     if (voice.channelId !== null && this.call !== null) {
       this.gateway?.send({
         type: "voice_state",

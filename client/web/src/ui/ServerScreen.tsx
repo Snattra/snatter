@@ -157,7 +157,7 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
                     onClick={() => setSelectedId(channel.id)}
                   />
                   {channel.type !== "text" && (
-                    <VoiceMembers origin={connection.origin} view={view} channel={channel} onOpen={openProfile} />
+                    <VoiceMembers connection={connection} view={view} channel={channel} onOpen={openProfile} />
                   )}
                 </Fragment>
               ))}
