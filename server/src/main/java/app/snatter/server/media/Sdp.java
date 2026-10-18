@@ -4,15 +4,27 @@ import app.snatter.server.media.IceConnection.Candidate;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * The SDP the server offers and the little it needs from the answer
- * (RFC 8829, JSEP). The offer has one audio m-line, on which the peer sends
- * its voice; the server decides everything else, so the answer only has to
- * say how to reach the peer and which certificate it will show.
+ * (RFC 8829, JSEP). The offer's first m-line takes the member's voice; each
+ * further one carries another member's voice to them. The server decides
+ * everything else, so the answer only has to say how to reach the peer and
+ * which certificate it will show.
  */
 final class Sdp {
+
+    /** Where the server is and which certificate it shows: the same in every offer of a connection. */
+    record Transport(String iceUfrag, String icePassword, String fingerprint, List<Candidate> candidates) {
+    }
+
+    /**
+     * An m-line that carries one member's voice to the peer, as the source
+     * {@code ssrc}, the stream named after the member. One whose member left
+     * is inactive, with no source or member, until it carries someone else.
+     */
+    record SendLine(String mid, int ssrc, String member) {
+    }
 
     /** What the server needs from an answer: the peer's ICE credentials and SHA-256 fingerprint. */
     record Answer(String iceUfrag, String icePassword, String fingerprint) {
@@ -22,47 +34,70 @@ final class Sdp {
     private static final int OPUS = 111;
 
     /**
-     * The offer. ICE lite tells the peer to lead the checks, which it does
-     * anyway as the controlling side. {@code actpass} is what an offer must
-     * say (RFC 8842); browsers answer {@code active}. The bitrate caps what
-     * the peer's encoder sends.
+     * An offer, the {@code version}th of the session. ICE lite tells the peer
+     * to lead the checks, which it does anyway as the controlling side.
+     * {@code actpass} is what an offer must say (RFC 8842); browsers answer
+     * {@code active}, and keep that role in later answers. The bitrate caps
+     * what the peer's encoder sends, and DTX lets it send next to nothing
+     * while the member is silent. The candidates are on the first m-line,
+     * which the others share by BUNDLE.
      */
-    static String offer(String iceUfrag, String icePassword, String fingerprint, List<Candidate> candidates,
-                        int bitrate) {
+    static String offer(long session, long version, Transport transport, int bitrate, List<SendLine> sending) {
         StringBuilder sdp = new StringBuilder();
         line(sdp, "v=0");
-        line(sdp, "o=- " + ThreadLocalRandom.current().nextLong(Long.MAX_VALUE) + " 1 IN IP4 0.0.0.0");
+        line(sdp, "o=- " + session + " " + version + " IN IP4 0.0.0.0");
         line(sdp, "s=-");
         line(sdp, "t=0 0");
-        line(sdp, "a=group:BUNDLE 0");
+        StringBuilder bundle = new StringBuilder("a=group:BUNDLE 0");
+        for (SendLine send : sending) {
+            bundle.append(' ').append(send.mid());
+        }
+        line(sdp, bundle.toString());
         line(sdp, "a=ice-lite");
-        line(sdp, "m=audio 9 UDP/TLS/RTP/SAVPF " + OPUS);
-        line(sdp, "c=IN IP4 0.0.0.0");
-        line(sdp, "a=ice-ufrag:" + iceUfrag);
-        line(sdp, "a=ice-pwd:" + icePassword);
-        line(sdp, "a=fingerprint:sha-256 " + fingerprint);
-        line(sdp, "a=setup:actpass");
-        line(sdp, "a=mid:0");
-        line(sdp, "a=recvonly");
-        line(sdp, "a=rtcp-mux");
-        line(sdp, "a=rtpmap:" + OPUS + " opus/48000/2");
-        line(sdp, "a=fmtp:" + OPUS + " minptime=10;useinbandfec=1;maxaveragebitrate=" + bitrate);
-        for (Candidate c : candidates) {
+        mLine(sdp, transport, "0", "recvonly");
+        line(sdp, "a=fmtp:" + OPUS + " minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=" + bitrate);
+        for (Candidate c : transport.candidates()) {
             String related = c.related() == null ? ""
                 : " raddr " + host(c.related()) + " rport " + c.related().getPort();
             line(sdp, "a=candidate:" + c.foundation() + " 1 udp " + c.priority() + " " + host(c.address()) + " "
                 + c.address().getPort() + " typ " + c.type() + related);
         }
         line(sdp, "a=end-of-candidates");
+        for (SendLine send : sending) {
+            mLine(sdp, transport, send.mid(), send.member() == null ? "inactive" : "sendonly");
+            line(sdp, "a=fmtp:" + OPUS + " minptime=10;useinbandfec=1");
+            if (send.member() != null) {
+                String ssrc = Integer.toUnsignedString(send.ssrc());
+                // A track id of the line's own, as browsers may give it to the track they play.
+                line(sdp, "a=msid:" + send.member() + " voice-" + send.mid());
+                line(sdp, "a=ssrc:" + ssrc + " cname:" + send.member());
+            }
+        }
         return sdp.toString();
     }
 
+    /** What every m-line has: Opus, and the transport, which each must name although BUNDLE shares it. */
+    private static void mLine(StringBuilder sdp, Transport transport, String mid, String direction) {
+        line(sdp, "m=audio 9 UDP/TLS/RTP/SAVPF " + OPUS);
+        line(sdp, "c=IN IP4 0.0.0.0");
+        line(sdp, "a=ice-ufrag:" + transport.iceUfrag());
+        line(sdp, "a=ice-pwd:" + transport.icePassword());
+        line(sdp, "a=fingerprint:sha-256 " + transport.fingerprint());
+        line(sdp, "a=setup:actpass");
+        line(sdp, "a=mid:" + mid);
+        line(sdp, "a=" + direction);
+        line(sdp, "a=rtcp-mux");
+        line(sdp, "a=rtpmap:" + OPUS + " opus/48000/2");
+    }
+
     /**
-     * Reads the answer. Attributes may sit on the m-line or above it, and
-     * the m-line's win. The peer must start the DTLS handshake, as the
-     * server can only be its server.
+     * Reads an answer to an offer of {@code mLines} m-lines. Attributes may
+     * sit on the m-line or above it, and the m-line's win. Only the first
+     * m-line matters: it takes the member's voice, and the others share its
+     * transport. The peer must start the DTLS handshake, as the server can
+     * only be its server.
      */
-    static Answer answer(String sdp) throws InvalidAnswerException {
+    static Answer answer(String sdp, int mLines) throws InvalidAnswerException {
         List<String> session = new ArrayList<>();
         List<List<String>> media = new ArrayList<>();
         for (String line : sdp.split("\r?\n")) {
@@ -71,8 +106,8 @@ final class Sdp {
             }
             (media.isEmpty() ? session : media.getLast()).add(line);
         }
-        if (media.size() != 1) {
-            throw new InvalidAnswerException("Expected 1 m-line, got " + media.size());
+        if (media.size() != mLines) {
+            throw new InvalidAnswerException("The answer has " + media.size() + " m-lines, the offer " + mLines);
         }
         List<String> audio = media.getFirst();
         // m=audio <port> ...: a port of 0 turns the m-line down.

@@ -1,11 +1,23 @@
+import { sessionOf } from "./sdp";
+import { Speakers } from "./speakers";
+
 /**
- * The member's side of voice: their microphone, and the WebRTC connection
- * that carries it to the server. The server offers and this answers, once
- * for every time the member comes into voice. Muting turns the microphone's
- * track off, so the connection stays up.
+ * The member's side of voice: their microphone, the WebRTC connection that
+ * carries it to the server, and the voices of the others coming back. The
+ * server offers and this answers: first when the member comes into voice,
+ * then whenever who they hear changes. Muting turns the microphone's track
+ * off and deafening the others' voices, so the connection stays up.
  */
 export class VoiceCall {
   private peer: RTCPeerConnection | null = null;
+  /** The session the connection answers the server's offers in. */
+  private session: string | null = null;
+  /** The others' voices, played by an `<audio>` element each. */
+  private readonly speakers = new Speakers((track) => {
+    const audio = new Audio();
+    audio.srcObject = new MediaStream([track]);
+    return audio;
+  });
 
   private constructor(
     private readonly microphone: MediaStream,
@@ -18,9 +30,35 @@ export class VoiceCall {
     return new VoiceCall(microphone, connectedChanged);
   }
 
-  /** Answers the server's offer on a new connection, replacing any earlier one, and returns the answer. */
+  /**
+   * Answers the server's offer and returns the answer. An offer of the same
+   * session changes the connection there is; one of another session, as
+   * after the server closed its side, starts a new one.
+   */
   async answer(offer: string): Promise<string> {
-    this.disconnect();
+    const session = sessionOf(offer);
+    const fresh = this.peer === null || session !== this.session;
+    if (fresh) {
+      this.disconnect();
+      this.session = session;
+    }
+    const peer = this.peer ?? this.open();
+    await peer.setRemoteDescription({ type: "offer", sdp: offer });
+    if (fresh) {
+      // Takes the line the offer made for the member's voice, which the answer then sends on.
+      for (const track of this.microphone.getAudioTracks()) {
+        peer.addTrack(track, this.microphone);
+      }
+    }
+    await peer.setLocalDescription();
+    const answer = peer.localDescription;
+    if (this.peer !== peer || answer === null) {
+      throw new Error("The connection closed while answering");
+    }
+    return answer.sdp;
+  }
+
+  private open(): RTCPeerConnection {
     // The server's offer bundles everything on one transport. It lists every
     // address it can be reached at, and learns the browser's from its checks,
     // so no STUN server is needed.
@@ -31,17 +69,12 @@ export class VoiceCall {
         this.connectedChanged(peer.connectionState === "connected");
       }
     };
-    await peer.setRemoteDescription({ type: "offer", sdp: offer });
-    // Takes the line the offer made for the member's voice, which the answer then sends on.
-    for (const track of this.microphone.getAudioTracks()) {
-      peer.addTrack(track, this.microphone);
-    }
-    await peer.setLocalDescription();
-    const answer = peer.localDescription;
-    if (answer === null) {
-      throw new Error("No answer was made");
-    }
-    return answer.sdp;
+    peer.ontrack = (event) => {
+      if (this.peer === peer) {
+        this.speakers.play(event.transceiver.mid ?? event.track.id, event.track);
+      }
+    };
+    return peer;
   }
 
   setMuted(muted: boolean): void {
@@ -50,12 +83,19 @@ export class VoiceCall {
     }
   }
 
+  setDeafened(deafened: boolean): void {
+    this.speakers.setMuted(deafened);
+  }
+
   /** Closes the connection but keeps the microphone, to answer again after the gateway reconnects. */
   disconnect(): void {
     if (this.peer !== null) {
       this.peer.onconnectionstatechange = null;
+      this.peer.ontrack = null;
       this.peer.close();
       this.peer = null;
+      this.session = null;
+      this.speakers.stop();
       this.connectedChanged(false);
     }
   }

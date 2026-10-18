@@ -25,6 +25,14 @@ public final class RtpPacket implements ByteArrayBuffer {
             | (buffer[offset + 10] & 0xff) << 8 | buffer[offset + 11] & 0xff;
     }
 
+    /** Sends it on as another source, as forwarding does: before encrypting, since it is authenticated. */
+    public void setSsrc(int ssrc) {
+        buffer[offset + 8] = (byte) (ssrc >>> 24);
+        buffer[offset + 9] = (byte) (ssrc >>> 16);
+        buffer[offset + 10] = (byte) (ssrc >>> 8);
+        buffer[offset + 11] = (byte) ssrc;
+    }
+
     @Override
     public byte[] getBuffer() {
         return buffer;

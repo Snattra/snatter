@@ -262,7 +262,12 @@ microphone only to secure pages, HTTPS or localhost; elsewhere the notice
 says voice needs HTTPS. The server sends
 `voice_offer` once the member is in; `VoiceCall` answers it on a new
 `RTCPeerConnection`, putting the microphone on the line the offer made for
-it, and `ServerConnection` sends `voice_answer`. No STUN server is set: the
+it, and `ServerConnection` sends `voice_answer`. Later offers of the same
+session, when the others in the channel change, are answered on the same
+connection; one of another session starts a new one (`media/sdp.ts`). Each
+track the server sends is another member's voice, played by an `<audio>`
+element of its own; a line the server reuses for someone else keeps its
+track, and its element. Deafening mutes them all. No STUN server is set: the
 offer lists every address of the server, and the server learns the
 browser's from its checks. The voice panel says "Voice connected" only once
 the server has the member in the channel asked for and the connection is up
@@ -270,8 +275,7 @@ the server has the member in the channel asked for and the connection is up
 server ending voice, closes the connection and lets go of the microphone.
 When the gateway reconnects, the server has closed the audio connection
 along with it; the app keeps the microphone, joins again on `ready`, and
-answers the new offer. Nothing is played yet: forwarding the others' audio
-comes next.
+answers the new offer.
 
 ## Platform
 

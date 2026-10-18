@@ -9,7 +9,9 @@ import java.net.DatagramPacket;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -51,7 +53,7 @@ public final class SrtpConnection implements AutoCloseable {
     /** Fits IPv6's smallest MTU, so the server's handshake records cross any path whole. */
     private static final int SEND_LIMIT = 1200;
     /** The longest tag SRTP appends: AES-GCM's. */
-    private static final int TAG_LENGTH = 16;
+    static final int TAG_LENGTH = 16;
     /** A browser sends its voice from one source; this allows for a few more, and drops the rest. */
     static final int MAX_SOURCES = 4;
 
@@ -62,6 +64,14 @@ public final class SrtpConnection implements AutoCloseable {
     private final Map<Integer, SrtpCryptoContext> incoming = new HashMap<>();
     /** Contexts for the sources the server sends, guarded by this. */
     private final Map<Integer, SrtpCryptoContext> outgoing = new HashMap<>();
+    /** The sources the server may send as, guarded by this. */
+    private final Set<Integer> sending = new HashSet<>();
+    /**
+     * Those it sent as and no longer may, guarded by this: a few bytes for
+     * each member who left while this one stayed. A source is never taken
+     * again, so a new context never repeats an old one's nonces.
+     */
+    private final Set<Integer> retired = new HashSet<>();
     private volatile Path path;
     private volatile SrtpContextFactory incomingKeys;
     private volatile SrtpContextFactory outgoingKeys;
@@ -98,12 +108,14 @@ public final class SrtpConnection implements AutoCloseable {
     }
 
     /**
-     * Encrypts the packet in place and sends it to the peer. Until the
-     * handshake is done there are no keys, and the packet is dropped.
+     * Encrypts the packet in place and sends it to the peer, as a source
+     * claimed with {@link #claim} and not forgotten since. Until the
+     * handshake is done there are no keys, and the packet is dropped, as it
+     * is for any other source.
      */
     public synchronized void send(RtpPacket packet) throws IOException {
         SrtpContextFactory keys = outgoingKeys;
-        if (keys == null || closed) {
+        if (keys == null || closed || !sending.contains(packet.ssrc())) {
             return;
         }
         try {
@@ -123,6 +135,22 @@ public final class SrtpConnection implements AutoCloseable {
         }
         path.socket().send(
             new DatagramPacket(packet.getBuffer(), packet.getOffset(), packet.getLength(), path.remote()));
+    }
+
+    /** Takes a source to send as; false when it is taken, or was once. */
+    public synchronized boolean claim(int ssrc) {
+        return !retired.contains(ssrc) && sending.add(ssrc);
+    }
+
+    /**
+     * Stops sending as the source for good and lets go of its context. A
+     * packet still on its way for it is dropped by {@link #send}, which
+     * holds the same lock, rather than starting the context over.
+     */
+    public synchronized void forget(int ssrc) {
+        sending.remove(ssrc);
+        retired.add(ssrc);
+        outgoing.remove(ssrc);
     }
 
     private void read(Consumer<RtpPacket> received) {

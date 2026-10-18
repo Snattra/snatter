@@ -14,4 +14,8 @@ public interface GatewayConfig {
     /** How long a new connection may take to identify before it is closed. */
     @WithDefault("PT10S")
     Duration identifyTimeout();
+
+    /** How long a client may take to answer a voice offer before its voice ends. */
+    @WithDefault("PT10S")
+    Duration voiceAnswerTimeout();
 }

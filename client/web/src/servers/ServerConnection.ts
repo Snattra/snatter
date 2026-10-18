@@ -310,10 +310,11 @@ export class ServerConnection {
     this.updateVoice((voice) => ({ ...voice, notice: null }));
   }
 
-  /** Tells the server where the member wants to be, if anywhere, and mutes the microphone to match. */
+  /** Tells the server where the member wants to be, if anywhere, and mutes and deafens the call to match. */
   private sendVoice(): void {
     const voice = this.entry().voice;
     this.call?.setMuted(micOff(voice));
+    this.call?.setDeafened(voice.selfDeafened);
     if (voice.channelId !== null && this.call !== null) {
       this.gateway?.send({
         type: "voice_state",

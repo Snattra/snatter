@@ -121,7 +121,8 @@ import org.jboss.logging.Logger;
  * it, and leaves when that connection goes. Voice states are sent as
  * differences too, of who is in the channels each client can see. The
  * connection in voice also holds the {@link VoiceConnection} that carries
- * its audio, offered when it joins and closed when it leaves.
+ * its audio, opened when it joins and closed when it leaves; after every
+ * change, {@code syncMedia} gives each the others in its channel.
  */
 @ApplicationScoped
 public class Gateway {
@@ -488,7 +489,8 @@ public class Gateway {
         syncVoice();
         // Telling everyone may have closed this connection as too slow, which took it out of voice.
         if (!here && client.live()) {
-            offerMedia(client, client.channels.get(channelId));
+            openMedia(client);
+            syncMedia();
         }
     }
 
@@ -562,16 +564,60 @@ public class Gateway {
         send(held.holder(), seq -> new GatewayVoiceEndedDto().seq(seq).reason(reason));
     }
 
-    /** Opens a voice connection for the connection that just came into voice, and offers it. */
-    private void offerMedia(Client client, Channel channel) {
-        VoiceConnection connection = new VoiceConnection(media.open(), channel.voice().bitrate());
+    /** Opens a voice connection for the connection that just came into voice; {@code syncMedia} offers it. */
+    private void openMedia(Client client) {
+        VoiceConnection connection = new VoiceConnection(media.open(), client.principal.accountId().toString());
         client.media = connection;
-        client.mediaAnswered = false;
         connection.ready().whenComplete((done, failure) -> run(() -> mediaSettled(client, connection, failure)));
-        send(client, seq -> new GatewayVoiceOfferDto().seq(seq).sdp(connection.offer()));
     }
 
-    /** Applies the answer to the connection's offer; any other is ignored. */
+    /**
+     * Gives each voice connection the others in its channel, whose voice it
+     * carries and who hear its member, and the channel's bitrate. Those
+     * whose part changed get a new offer, or once they answer the last.
+     */
+    private void syncMedia() {
+        for (Voice held : List.copyOf(voice.values())) {
+            Client client = held.holder();
+            Channel channel = client.channels.get(held.state().channelId());
+            // Closed meanwhile, as too slow for an earlier offer, or no longer in a channel it can see.
+            if (client.media == null || channel == null || channel.voice() == null) {
+                continue;
+            }
+            List<VoiceConnection> others = voice.values().stream()
+                .filter(other -> other.holder() != client && other.holder().media != null
+                    && other.state().channelId().equals(channel.id()))
+                .map(other -> other.holder().media)
+                .toList();
+            client.media.hear(others, channel.voice().bitrate()).ifPresent(offer -> sendOffer(client, offer));
+        }
+    }
+
+    /** Sends the offer and checks, once the client has had its time, that it was answered. */
+    private void sendOffer(Client client, String offer) {
+        send(client, seq -> new GatewayVoiceOfferDto().seq(seq).sdp(offer));
+        // Sending may have closed the client as too slow, and its media with it.
+        VoiceConnection connection = client.media;
+        if (connection != null) {
+            dispatcher.schedule(guarded(() -> answerDue(client, connection)),
+                config.voiceAnswerTimeout().toMillis(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * Ends voice when the offer, or a later one, still waits for its answer:
+     * until it comes no change is offered, and the member would not hear
+     * those who come after.
+     */
+    private void answerDue(Client client, VoiceConnection connection) {
+        if (client.media == connection && connection.unansweredFor(config.voiceAnswerTimeout())) {
+            LOG.infof("Voice offer to %s went unanswered", client.principal.accountId());
+            endVoice(voice.get(client.principal.accountId()), VoiceEndReasonDto.CONNECTION_FAILED);
+            syncVoice();
+        }
+    }
+
+    /** Applies the answer to the offer waiting for one; any other is ignored. */
     private void voiceAnswered(Client client, GatewayVoiceAnswerDto frame) {
         if (!client.identified()) {
             close(client, GatewayClose.NOT_IDENTIFIED);
@@ -581,13 +627,11 @@ public class Gateway {
             close(client, GatewayClose.INVALID_FRAME);
             return;
         }
-        if (client.media == null || client.mediaAnswered) {
+        if (client.media == null) {
             return;
         }
-        client.mediaAnswered = true;
         try {
-            // Forwarding what arrives comes later; until then it is dropped.
-            client.media.accept(frame.getSdp(), packet -> { });
+            client.media.accept(frame.getSdp()).ifPresent(offer -> sendOffer(client, offer));
         } catch (InvalidAnswerException e) {
             LOG.debugf("Unusable voice answer from %s: %s", client.principal.accountId(), e.getMessage());
             endVoice(voice.get(client.principal.accountId()), VoiceEndReasonDto.CONNECTION_FAILED);
@@ -622,13 +666,14 @@ public class Gateway {
         }
     }
 
-    /** Tells every client what changed among those in the voice channels it can see. */
+    /** Tells every client what changed among those in the voice channels it can see, then syncs media. */
     private void syncVoice() {
         for (Client client : liveClients()) {
             Map<AccountId, VoiceState> now = visibleVoice(client.channels);
             sendVoiceRemovals(client, now);
             sendVoiceUpdates(client, now);
         }
+        syncMedia();
     }
 
     private void sendVoiceRemovals(Client client, Map<AccountId, VoiceState> now) {
@@ -800,6 +845,8 @@ public class Gateway {
         for (Client client : liveClients()) {
             syncChannels(client, allChannels);
         }
+        // After syncChannels, so a channel's new bitrate is offered.
+        syncMedia();
     }
 
     private void syncRoles(Client client, List<Role> allRoles) {

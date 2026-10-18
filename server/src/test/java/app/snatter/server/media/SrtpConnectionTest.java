@@ -4,9 +4,11 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -47,8 +49,34 @@ class SrtpConnectionTest {
                 arrived.getOffset() + arrived.getLength()));
 
             byte[] back = DtlsPeer.rtp(0x9abc_def0, "from the server");
+            assertTrue(srtp.claim(0x9abc_def0));
             srtp.send(new RtpPacket(back.clone(), 0, back.length));
             assertArrayEquals(back, peer.receive());
+        }
+    }
+
+    @Test
+    void aForgottenSourceIsNeverSentAsAgain() throws Exception {
+        try (IceConnection ice = port.open(); IcePeer icePeer = new IcePeer(ice);
+             SrtpConnection srtp = new SrtpConnection()) {
+            DtlsPeer peer = new DtlsPeer(icePeer, SRTPProtectionProfile.SRTP_AEAD_AES_128_GCM);
+            srtp.start(connect(ice, icePeer, peer), peer.fingerprint(), packet -> { });
+            peer.handshake(srtp.fingerprint());
+            srtp.ready().toCompletableFuture().get(10, SECONDS);
+
+            // Only a claimed source goes out.
+            byte[] unclaimed = DtlsPeer.rtp(1, "unclaimed");
+            srtp.send(new RtpPacket(unclaimed.clone(), 0, unclaimed.length));
+            assertNull(peer.receive(500));
+
+            // A packet for a source forgotten while it was on its way, as when its member left, is dropped,
+            // and the source is never taken again.
+            assertTrue(srtp.claim(2));
+            srtp.forget(2);
+            byte[] late = DtlsPeer.rtp(2, "late");
+            srtp.send(new RtpPacket(late.clone(), 0, late.length));
+            assertNull(peer.receive(500));
+            assertFalse(srtp.claim(2));
         }
     }
 

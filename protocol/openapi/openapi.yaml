@@ -73,14 +73,19 @@ info:
     when it is taken out of voice without asking. Closing the connection
     leaves voice, so a client that reconnects joins again.
 
-    The connection in voice carries the member's audio over WebRTC, to the
-    server rather than to the others. On joining, or taking voice over from
-    another connection, it gets `voice_offer`, the server's SDP offer, and
-    answers with `voice_answer`. The client is the DTLS client, and finds
-    the server at the addresses in the offer, all of them there from the
-    start. Voice ends with `connection_failed` when the answer cannot be
-    used, or when the connection is not up within 30 seconds of the offer.
-    Moving to another channel keeps the connection.
+    The connection in voice carries the member's audio over WebRTC, through
+    the server: it sends the member's voice to the server, and the server
+    forwards the voice of everyone else in the channel to it. On joining, or
+    taking voice over from another connection, it gets `voice_offer`, the
+    server's SDP offer, and answers with `voice_answer`. Whenever the others
+    in the channel change, or its bitrate, it gets another `voice_offer` for
+    the same connection, and answers that too; the server sends the next
+    offer only once the last is answered. The client is the DTLS client, and
+    finds the server at the addresses in the offer, all of them there from
+    the start. Voice ends with `connection_failed` when an answer cannot be
+    used, when an offer is not answered within 10 seconds, or when the
+    connection is not up within 30 seconds of the first offer. Moving to
+    another channel keeps the connection.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -2650,11 +2655,12 @@ components:
     GatewayVoiceAnswer:
       type: object
       description: |
-        The client's SDP answer to the `voice_offer` it got (RFC 8829). It
-        makes the client the DTLS client (`a=setup:active`) and gives a
-        SHA-256 fingerprint of its certificate. An answer the server cannot
-        use ends voice with `connection_failed`. One from a connection that
-        is not in voice, or that has answered already, is ignored.
+        The client's SDP answer to the last `voice_offer` it got (RFC 8829),
+        with an m-line for each of the offer's. It makes the client the DTLS
+        client (`a=setup:active`) and gives a SHA-256 fingerprint of its
+        certificate. An answer the server cannot use ends voice with
+        `connection_failed`. One from a connection that is not in voice, or
+        with no offer waiting for an answer, is ignored.
       required: [type, sdp]
       properties:
         type:
@@ -2705,9 +2711,10 @@ components:
         - `channel_unavailable`: the channel was deleted, or the member can no
           longer see it
         - `forbidden`: the member no longer holds `CONNECT`, as when timed out
-        - `connection_failed`: the voice connection did not come up: the
-          `voice_answer` could not be used, or the connection was not up
-          within 30 seconds of the `voice_offer`
+        - `connection_failed`: the voice connection did not come up or keep
+          up: a `voice_answer` could not be used, a `voice_offer` went
+          unanswered for 10 seconds, or the connection was not up within 30
+          seconds of the first `voice_offer`
       enum:
         - joined_elsewhere
         - channel_unavailable
@@ -3101,11 +3108,16 @@ components:
     GatewayVoiceOffer:
       description: |
         The server's SDP offer for this connection's voice (RFC 8829), sent
-        when it joins voice or takes it over; answer with `voice_answer`.
-        It asks for one audio stream, the member's own voice, in Opus at up
-        to the channel's bitrate, and lists every address the server can be
-        reached at. It ends with `a=end-of-candidates`: the server sends no
-        more candidates.
+        when it joins voice or takes it over, and again for the same session
+        when the others in the channel change; answer each with
+        `voice_answer`. The first m-line takes the member's own voice, in
+        Opus at up to the channel's bitrate, with discontinuous transmission
+        while they are silent. Each further m-line carries the voice of one
+        other member, as a stream whose id (in `a=msid`) is their account id.
+        The line of a member who left becomes inactive, and carries the next
+        to come. The first m-line lists every address the server can be
+        reached at, ending with `a=end-of-candidates`, and the others share
+        its transport by BUNDLE.
       allOf:
         - $ref: "#/components/schemas/GatewayServerFrameBase"
         - type: object
