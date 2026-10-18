@@ -1486,10 +1486,6 @@ textarea.sn-input {
 /* Input sensitivity: the microphone's level in a track, under a slider whose
    marker is the threshold. The level takes the accent while it is sent. The
    popover is darker than any pane, so the track is the lightest of them. */
-.sn-sensitivity {
-  width: 260px;
-}
-
 .sn-sensitivity-meter {
   display: grid;
   align-items: center;

@@ -121,7 +121,14 @@ export class VoiceCall {
     return peer;
   }
 
+  /**
+   * Turns what is sent off or on. The gate hears of it first: it sends
+   * silence until it has dropped what it heard while muted, so unmuting
+   * sends none of that.
+   */
   setMuted(muted: boolean): void {
+    const settings: GateSettings = { muted };
+    this.gate.port.postMessage(settings);
     for (const track of this.sent.getAudioTracks()) {
       track.enabled = !muted;
     }

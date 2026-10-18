@@ -50,6 +50,7 @@ export class VoiceGate {
   private loud = 0;
   private quiet = 0;
   private open = false;
+  private muted = false;
   private gain = 0;
   private peak = SILENCE;
   private windows = 0;
@@ -65,6 +66,19 @@ export class VoiceGate {
     this.fadeStep = 1000 / (sampleRate * FADE_MS);
   }
 
+  /**
+   * While muted nothing comes out, though the gate goes on measuring. On
+   * unmuting it drops what it heard meanwhile from the delay, so none of that
+   * goes out late.
+   */
+  setMuted(muted: boolean): void {
+    if (this.muted && !muted) {
+      this.delay.fill(0);
+      this.gain = 0;
+    }
+    this.muted = muted;
+  }
+
   /** Writes the gated sound to `output`, from `input`, or silence when the microphone gave none. */
   process(input: Float32Array | undefined, output: Float32Array): void {
     for (let i = 0; i < output.length; i++) {
@@ -77,7 +91,7 @@ export class VoiceGate {
       this.delay[this.delayAt] = sample;
       this.delayAt = (this.delayAt + 1) % this.delay.length;
       this.gain = this.open ? Math.min(1, this.gain + this.fadeStep) : Math.max(0, this.gain - this.fadeStep);
-      output[i] = delayed * this.gain;
+      output[i] = this.muted ? 0 : delayed * this.gain;
     }
   }
 

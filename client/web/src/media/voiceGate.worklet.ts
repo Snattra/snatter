@@ -13,10 +13,8 @@ declare function registerProcessor(
   processor: new (options: { processorOptions: { threshold: number } }) => AudioWorkletProcessor,
 ): void;
 
-/** What the app sends it: a new threshold, in dBFS. */
-export interface GateSettings {
-  threshold: number;
-}
+/** What the app sends it: a new threshold, in dBFS, or whether the member is muted. */
+export type GateSettings = { threshold: number } | { muted: boolean };
 
 class VoiceGateProcessor extends AudioWorkletProcessor {
   private readonly gate: VoiceGate;
@@ -27,7 +25,11 @@ class VoiceGateProcessor extends AudioWorkletProcessor {
       this.port.postMessage(input),
     );
     this.port.onmessage = (event: MessageEvent<GateSettings>) => {
-      this.gate.threshold = event.data.threshold;
+      if ("threshold" in event.data) {
+        this.gate.threshold = event.data.threshold;
+      } else {
+        this.gate.setMuted(event.data.muted);
+      }
     };
   }
 

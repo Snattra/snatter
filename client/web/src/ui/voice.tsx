@@ -222,13 +222,22 @@ function InputSensitivity({ connection, muted }: { connection: ServerConnection;
   const id = useId();
   const [threshold, setThreshold] = useState(() => connection.inputThreshold);
   const input = useMicInput(connection);
+  // Read on demand, not announced: it changes 20 times a second.
+  const level = Math.round(Math.max(THRESHOLD_MIN, Math.min(THRESHOLD_MAX, input?.level ?? THRESHOLD_MIN)));
+  const sent = input !== null && input.open && !muted;
   return (
-    <div className="sn-field sn-sensitivity">
+    <div className="sn-field">
       <label htmlFor={id}>Input sensitivity</label>
       <div className="sn-sensitivity-meter">
         <span
-          className={classes("sn-sensitivity-level", input?.open && !muted && "sn-sensitivity-level-sent")}
-          style={{ width: `${meterPosition(input?.level ?? THRESHOLD_MIN)}%` }}
+          className={classes("sn-sensitivity-level", sent && "sn-sensitivity-level-sent")}
+          style={{ width: `${meterPosition(level)}%` }}
+          role="meter"
+          aria-label="Microphone level"
+          aria-valuemin={THRESHOLD_MIN}
+          aria-valuemax={THRESHOLD_MAX}
+          aria-valuenow={level}
+          aria-valuetext={`${level} dB, ${sent ? "sent" : "not sent"}`}
         />
         <input
           id={id}

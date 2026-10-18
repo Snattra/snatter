@@ -82,6 +82,20 @@ describe("VoiceGate", () => {
     expect(output.subarray(output.length - ms(300)).every((s) => s === 0)).toBe(true);
   });
 
+  it("sends nothing while muted, nor what it heard meanwhile once unmuted", () => {
+    const { gate, output: muted } = run(tone(300, 0.1));
+    expect(muted.some((s) => s !== 0)).toBe(true);
+    gate.setMuted(true);
+    expect(run(tone(300, 0.1), undefined, gate).output.every((s) => s === 0)).toBe(true);
+    gate.setMuted(false);
+    const input = tone(300, 0.1);
+    const { output } = run(input, undefined, gate);
+    expect(output.subarray(0, DELAY).every((s) => s === 0)).toBe(true);
+    for (let i = DELAY; i < input.length; i++) {
+      expect(output[i]).toBeCloseTo(input[i - DELAY] ?? NaN, 6);
+    }
+  });
+
   it("reports the loudest level about 20 times a second", () => {
     const { reports } = run(tone(1000, 0.1));
     const steady = reports.slice(1, -1);
