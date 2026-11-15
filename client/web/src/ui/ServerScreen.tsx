@@ -38,7 +38,15 @@ import { ProfileModal } from "./profile";
 import { ServerSettingsModal } from "./serverSettings";
 import { Banner, Skeleton } from "./surfaces";
 import { aheadTime } from "./time";
-import { VoiceHeaderButton, VoiceMembers, VoicePanel, VoiceRoom, useVoiceSounds } from "./voice";
+import {
+  VoiceHeaderButton,
+  VoiceMembers,
+  VoicePanel,
+  VoiceRoom,
+  canJoinVoice,
+  join,
+  useVoiceSounds,
+} from "./voice";
 
 /** How often the member's typing is announced again while they keep typing, as the contract asks. */
 const TYPING_REPEAT_MS = 8_000;
@@ -155,6 +163,11 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
                     selected={channel.id === selected?.id}
                     unread={channel.id !== selected?.id && hasUnread(view, channel.id)}
                     onClick={() => setSelectedId(channel.id)}
+                    onDoubleClick={
+                      channel.type !== "text" && entry.voice.channelId !== channel.id && canJoinVoice(view, channel)
+                        ? () => join(connection, channel.id)
+                        : undefined
+                    }
                   />
                   {channel.type !== "text" && (
                     <VoiceMembers connection={connection} view={view} channel={channel} onOpen={openProfile} />
