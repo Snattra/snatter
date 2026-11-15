@@ -8,7 +8,9 @@
 # contract in protocol/openapi.
 
 # --- Build stage --------------------------------------------------------------
-FROM docker.io/library/node:24-alpine AS build
+# Runs on the builder's own architecture whatever the image is for: the app
+# is the same everywhere, so only the runtime stage is built per architecture.
+FROM --platform=$BUILDPLATFORM docker.io/library/node:24-alpine AS build
 WORKDIR /build/client
 
 # Install dependencies first so they are cached independently of source changes.

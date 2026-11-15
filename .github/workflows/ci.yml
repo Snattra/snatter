@@ -243,8 +243,8 @@ jobs:
 
   # Once everything passed on main: ghcr.io/snattra/snatter-server and
   # snatter-web, tagged `main` and `sha-<commit>`. Built again from the cache
-  # the images job left, so nothing is compiled twice. Releases will add
-  # version tags in the metadata steps, and `latest`.
+  # the images job left, so nothing is compiled twice. These are development
+  # builds; releases, with version tags and `latest`, are release.yml's.
   publish:
     name: Publish images
     needs: [changes, result]
