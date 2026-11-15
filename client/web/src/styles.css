@@ -1125,6 +1125,61 @@ textarea.sn-input {
   box-shadow: var(--shadow-accent);
 }
 
+/* Adding a server: a quiet circle with a plus, the accent coming in only on hover. */
+.sn-rail-add {
+  color: var(--online);
+}
+
+.sn-rail-item:hover .sn-rail-add {
+  color: var(--on-accent);
+}
+
+/* ---------- A screen beside the rail ---------- */
+
+/* Signing in and the like, while the app keeps its servers on the rail. */
+.sn-railed {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.sn-railed-main {
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* ---------- Adding a server ---------- */
+
+.sn-add-server-demo {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sn-add-server-found {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.sn-add-server-name {
+  display: block;
+  color: var(--text-strong);
+  font-size: 16px;
+}
+
+.sn-add-server-address,
+.sn-add-server-joining {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sn-add-server-description,
+.sn-add-server-joining {
+  margin: 0;
+}
+
 .sn-rail-server:active {
   transform: translateY(1px);
 }

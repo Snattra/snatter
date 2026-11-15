@@ -54,16 +54,76 @@ export function ServerRail({ children }: { children?: ReactNode }) {
   );
 }
 
+interface RailServerProps {
+  name: string;
+  selected?: boolean;
+  onClick?: () => void;
+  /** The server's own actions, from a right-click or the context menu key, such as removing it. */
+  onMenu?: () => void;
+}
+
 /** A server icon: a circle that settles into a rounded square, with the pill at the rail's edge. */
-export function RailServer({ name, selected = false, onClick }: { name: string; selected?: boolean; onClick?: () => void }) {
+export function RailServer({ name, selected = false, onClick, onMenu }: RailServerProps) {
   return (
     <div className={classes("sn-rail-item", selected && "sn-rail-item-selected")}>
       <span className="sn-rail-pill" aria-hidden="true" />
       <Tooltip label={name} side="right">
-        <button type="button" className="sn-rail-server" aria-label={name} aria-current={selected || undefined} onClick={onClick}>
+        <button
+          type="button"
+          className="sn-rail-server"
+          aria-label={name}
+          aria-current={selected || undefined}
+          onClick={onClick}
+          onContextMenu={
+            onMenu && ((event) => {
+              event.preventDefault();
+              onMenu();
+            })
+          }
+        >
           {initials(name)}
         </button>
       </Tooltip>
+    </div>
+  );
+}
+
+/** The rail's last item, which adds a server. */
+export function RailAdd({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="sn-rail-item">
+      <Tooltip label="Add a server" side="right">
+        <button type="button" className="sn-rail-server sn-rail-add" aria-label="Add a server" aria-haspopup="dialog" onClick={onClick}>
+          <Icon name="plus" />
+        </button>
+      </Tooltip>
+    </div>
+  );
+}
+
+const Rail = createContext<ReactNode>(null);
+
+/**
+ * The server rail of an app with many servers, for every screen of a server
+ * to show; without one, each screen shows a rail of its own server.
+ */
+export const RailProvider = Rail.Provider;
+
+/** The rail the app gives, or null when the screen makes its own. */
+export function useRail(): ReactNode {
+  return useContext(Rail);
+}
+
+/** A screen that is not the shell, such as signing in, beside the app's rail when it has one. */
+export function Railed({ children }: { children: ReactNode }) {
+  const rail = useRail();
+  if (rail === null) {
+    return children;
+  }
+  return (
+    <div className="sn-railed">
+      {rail}
+      <div className="sn-railed-main">{children}</div>
     </div>
   );
 }

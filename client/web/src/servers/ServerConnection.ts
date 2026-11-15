@@ -62,6 +62,9 @@ const CATCH_UP_LIMIT = 100;
 /** How long to wait for the gateway to bring a change into the view, as when the connection is down meanwhile. */
 const VIEW_WAIT_MS = 5_000;
 
+/** How long signing out may take when a server is taken off the list, as it may be unreachable. */
+const LEAVE_TIMEOUT_MS = 5_000;
+
 /**
  * Everything the app does with one server: its session, its REST API and its
  * gateway connection, feeding that server's entry in the store.
@@ -86,13 +89,20 @@ export class ServerConnection {
   /** Who in the member's voice channel is speaking, the member included. */
   private speaking: ReadonlySet<string> = new Set();
   private readonly speakingWatchers = new Set<() => void>();
+  /** The first look at the kept session, so the app does not take it twice. */
+  private resuming: Promise<void> | null = null;
 
   constructor(readonly origin: string) {
     this.api = createApi(origin, () => this.token);
   }
 
-  /** Picks up the session kept from last time, if any. */
-  async resume(): Promise<void> {
+  /** Picks up the session kept from last time, if any; once, however often it is asked. */
+  resume(): Promise<void> {
+    this.resuming ??= this.resumeSession();
+    return this.resuming;
+  }
+
+  private async resumeSession(): Promise<void> {
     const token = await platform.secrets.get(this.secretKey);
     if (token === null) {
       this.update({ status: "signed_out" });
@@ -127,6 +137,23 @@ export class ServerConnection {
     } finally {
       await this.signOut(null);
     }
+  }
+
+  /**
+   * Signs out for good, on the server too where it can still be reached,
+   * and stops: what the app does as the server is taken off its list.
+   */
+  async leave(): Promise<void> {
+    this.resuming ??= Promise.resolve();
+    this.token ??= await platform.secrets.get(this.secretKey);
+    if (this.token !== null) {
+      try {
+        unwrap(await this.api.POST("/api/v1/auth/logout", { signal: AbortSignal.timeout(LEAVE_TIMEOUT_MS) }));
+      } catch {
+        // Signed out here all the same; the session ends on the server by itself.
+      }
+    }
+    await this.signOut(null);
   }
 
   // --- Invites ----------------------------------------------------------------
@@ -835,4 +862,11 @@ export function connectionTo(origin: string): ServerConnection {
     connections.set(origin, connection);
   }
   return connection;
+}
+
+/** Takes the server out of the app: signs out of it and forgets all the app held for it. */
+export async function forgetServer(origin: string): Promise<void> {
+  await connectionTo(origin).leave();
+  connections.delete(origin);
+  useServers.getState().remove(origin);
 }

@@ -28,6 +28,7 @@ import {
   ChannelList,
   RailServer,
   ServerRail,
+  useRail,
   Sidebar,
 } from "./layout";
 import { ChannelIcon } from "./icons";
@@ -78,6 +79,7 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
   const someoneTyping = view !== null && selected !== null && Object.keys(view.typing[selected.id] ?? {}).length > 0;
   const now = useNow(someoneTyping ? 1000 : null);
   useVoiceSounds(view, entry.voice);
+  const appRail = useRail();
 
   const membersToggle = (
     <IconButton
@@ -116,9 +118,11 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
         collapsed={channelsCollapsed}
         membersOpen={membersOpen}
         rail={
-          <ServerRail>
-            <RailServer name={community} selected />
-          </ServerRail>
+          appRail ?? (
+            <ServerRail>
+              <RailServer name={community} selected />
+            </ServerRail>
+          )
         }
         sidebar={
           <Sidebar
@@ -413,11 +417,12 @@ function StatusBanner(props: {
 /** The shell in the shape it is about to take, while the first `ready` is on its way. */
 function Connecting(props: { collapsed: boolean; membersOpen: boolean; membersToggle: ReactNode }) {
   const { collapsed, membersOpen, membersToggle } = props;
+  const appRail = useRail();
   return (
     <AppShell
       collapsed={collapsed}
       membersOpen={membersOpen}
-      rail={<ServerRail />}
+      rail={appRail ?? <ServerRail />}
       sidebar={
         <Sidebar name={<Skeleton width="120px" />} collapsed={collapsed}>
           <div className="sn-shell-loading" aria-hidden="true">
