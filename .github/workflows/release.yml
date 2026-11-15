@@ -114,13 +114,8 @@ jobs:
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # This version and those published as releases, prereleases left
-          # out: a tag whose release failed or never came is no release.
-          released=$( (gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
-              --jq '.[] | select(.draft or .prerelease | not) | .tag_name'; echo "v$VERSION") \
-            | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$')
-          # Whether this is the newest of those whose versions start with
-          # the given prefix.
+          # Whether this is the newest of the given releases whose versions
+          # start with the given prefix.
           newest_of() {
             newest=$(printf '%s\n' "$released" | grep -E "^${1//./\\.}" | sort -V | tail -n 1)
             [ "$newest" = "$VERSION" ] && echo true || echo false
@@ -128,6 +123,12 @@ jobs:
           if [ "$PRERELEASE" = true ]; then
             latest=false minor=false major=false
           else
+            # This version and those published as releases, prereleases
+            # left out: a tag whose release failed or never came is no
+            # release.
+            released=$( (gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+                --jq '.[] | select(.draft or .prerelease | not) | .tag_name'; echo "v$VERSION") \
+              | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$')
             latest=$(newest_of "")
             minor=$(newest_of "${VERSION%.*}.")
             # Below 1.0 a minor version may break things, so 0 is no line.
