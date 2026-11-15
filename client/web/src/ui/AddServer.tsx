@@ -3,6 +3,7 @@ import { type ServerCheck, checkServer } from "../servers/serverCheck";
 import { DEMO_ORIGIN, serverOrigin } from "../state/serverAddress";
 import type { SavedServer } from "../state/serverList";
 import { Button, Field } from "./controls";
+import { describeError } from "./errors";
 import { Backdrop, Callout, Card, Modal } from "./surfaces";
 
 type Found = Extract<ServerCheck, { kind: "ok" }>;
@@ -214,11 +215,13 @@ export function AddServerModal(props: {
 /** Taking a server off the list, which signs out of it on this device. */
 export function RemoveServerModal(props: { server: SavedServer; onRemove: () => Promise<void>; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
     <Modal
       title={`Remove ${props.server.name}?`}
       description={new URL(props.server.origin).host}
       onClose={props.onClose}
+      error={error}
       footer={
         <>
           <Button onClick={props.onClose}>Cancel</Button>
@@ -228,7 +231,11 @@ export function RemoveServerModal(props: { server: SavedServer; onRemove: () => 
             data-autofocus
             onClick={() => {
               setBusy(true);
-              void props.onRemove();
+              setError(null);
+              props.onRemove().catch((e: unknown) => {
+                setBusy(false);
+                setError(`It could not be removed: ${describeError(e)}`);
+              });
             }}
           >
             Remove server

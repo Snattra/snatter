@@ -19,7 +19,15 @@ describe("parseServerList", () => {
 
   it("drops entries that are not servers, and servers listed twice", () => {
     const text = JSON.stringify({
-      servers: [demo, { origin: 1 }, null, demo, { name: "No origin" }],
+      servers: [
+        demo,
+        { origin: 1 },
+        null,
+        demo,
+        { name: "No origin" },
+        { origin: "not a URL", name: "Broken" },
+        { origin: "https://x.example.com/path", name: "Path" },
+      ],
       selected: demo.origin,
     });
     expect(parseServerList(text)).toEqual({ servers: [demo], selected: demo.origin });

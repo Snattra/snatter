@@ -73,6 +73,7 @@ function MultiServerApp() {
           selected={server.origin === open.origin}
           onClick={() => change((list) => selecting(list, server.origin))}
           onMenu={() => setRemoving(server)}
+          inVoice={names[server.origin]?.voice.channelId != null}
         />
       ))}
       <RailAdd onClick={() => setAdding(true)} />

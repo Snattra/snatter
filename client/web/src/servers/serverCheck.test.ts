@@ -68,6 +68,7 @@ describe("checkServer", () => {
       json(info, 404),
       json({ ...info, name: "Something else" }),
       json({ name: "Snatter" }),
+      json({ ...info, community: { name: "Odd", description: {} } }),
       async () => new Response("<html></html>", { status: 200 }),
     ];
     for (const answer of answers) {

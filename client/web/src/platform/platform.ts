@@ -33,15 +33,25 @@ const SETTINGS_PREFIX = "snatter:settings:";
  */
 export const webPlatform: Platform = {
   kind: "web",
+  // With storage off, nothing can have been kept, so there is nothing to read
+  // or delete; keeping a secret fails, so that signing in says so.
   secrets: {
     async get(key) {
-      return localStorage.getItem(PREFIX + key);
+      try {
+        return localStorage.getItem(PREFIX + key);
+      } catch {
+        return null;
+      }
     },
     async set(key, value) {
       localStorage.setItem(PREFIX + key, value);
     },
     async delete(key) {
-      localStorage.removeItem(PREFIX + key);
+      try {
+        localStorage.removeItem(PREFIX + key);
+      } catch {
+        // Nothing was kept.
+      }
     },
   },
   // Settings live in localStorage too. Storage can be off, as in some private

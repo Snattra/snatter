@@ -76,6 +76,9 @@ function isServerInfo(value: unknown): value is ServerInfo {
     typeof info.community === "object" &&
     info.community !== null &&
     typeof info.community.name === "string" &&
+    (info.community.description === undefined ||
+      info.community.description === null ||
+      typeof info.community.description === "string") &&
     typeof info.registration === "object" &&
     info.registration !== null
   );

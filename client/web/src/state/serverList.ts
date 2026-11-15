@@ -34,7 +34,7 @@ export function parseServerList(text: string | null): ServerList {
       continue;
     }
     const { origin, name } = item as Partial<SavedServer>;
-    if (typeof origin === "string" && typeof name === "string" && !seen.has(origin)) {
+    if (typeof origin === "string" && isOrigin(origin) && typeof name === "string" && !seen.has(origin)) {
       seen.add(origin);
       servers.push({ origin, name });
     }
@@ -46,6 +46,16 @@ export function parseServerList(text: string | null): ServerList {
       ? (selected as string)
       : (servers[0]?.origin ?? null),
   };
+}
+
+/** Whether the text is an http(s) origin as the app keeps them, and nothing more. */
+function isOrigin(text: string): boolean {
+  try {
+    const url = new URL(text);
+    return (url.protocol === "https:" || url.protocol === "http:") && url.origin === text;
+  } catch {
+    return false;
+  }
 }
 
 /** Adds the server, or renames it if it is there already, and opens it. */

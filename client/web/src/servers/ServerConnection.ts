@@ -91,6 +91,8 @@ export class ServerConnection {
   private readonly speakingWatchers = new Set<() => void>();
   /** The first look at the kept session, so the app does not take it twice. */
   private resuming: Promise<void> | null = null;
+  /** Whether the server is being taken out of the app, after which nothing here may come back to life. */
+  private gone = false;
 
   constructor(readonly origin: string) {
     this.api = createApi(origin, () => this.token);
@@ -104,6 +106,9 @@ export class ServerConnection {
 
   private async resumeSession(): Promise<void> {
     const token = await platform.secrets.get(this.secretKey);
+    if (this.gone) {
+      return;
+    }
     if (token === null) {
       this.update({ status: "signed_out" });
     } else {
@@ -144,16 +149,14 @@ export class ServerConnection {
    * and stops: what the app does as the server is taken off its list.
    */
   async leave(): Promise<void> {
+    // First, so that nothing still on its way, such as signing in, starts it again.
+    this.gone = true;
     this.resuming ??= Promise.resolve();
-    this.token ??= await platform.secrets.get(this.secretKey);
-    if (this.token !== null) {
-      try {
-        unwrap(await this.api.POST("/api/v1/auth/logout", { signal: AbortSignal.timeout(LEAVE_TIMEOUT_MS) }));
-      } catch {
-        // Signed out here all the same; the session ends on the server by itself.
-      }
-    }
+    const token = this.token ?? (await platform.secrets.get(this.secretKey));
     await this.signOut(null);
+    if (token !== null) {
+      await this.revoke(token);
+    }
   }
 
   // --- Invites ----------------------------------------------------------------
@@ -280,9 +283,15 @@ export class ServerConnection {
   /**
    * Joins a voice channel, or moves there from the one the member is in.
    * Joining asks for the microphone first, so the server's offer can be
-   * answered as soon as it comes.
+   * answered as soon as it comes. The app is in voice on one server at a
+   * time, so it leaves voice on any other.
    */
   joinVoice(channelId: string): void {
+    for (const other of connections.values()) {
+      if (other !== this && other.entry().voice.channelId !== null) {
+        other.leaveVoice();
+      }
+    }
     this.updateVoice((voice) => ({ ...voice, channelId, notice: null }));
     if (this.call !== null) {
       this.sendVoice();
@@ -476,7 +485,7 @@ export class ServerConnection {
   }
 
   private updateVoice(change: (voice: LocalVoice) => LocalVoice): void {
-    useServers.getState().update(this.origin, (entry) => ({ ...entry, voice: change(entry.voice) }));
+    this.store((entry) => ({ ...entry, voice: change(entry.voice) }));
   }
 
   // --- Messages ---------------------------------------------------------------
@@ -582,7 +591,7 @@ export class ServerConnection {
     if (reading !== undefined && !isAfter(messageId, reading.lastRead)) {
       return;
     }
-    useServers.getState().update(this.origin, (entry) => {
+    this.store((entry) => {
       const view = entry.view;
       const before = view?.reading[channelId];
       if (view === null || before === undefined) {
@@ -705,7 +714,7 @@ export class ServerConnection {
 
   /** Changes a channel's log, starting an empty one if there is none. */
   private updateLog(channelId: string, change: (log: ChannelLog) => ChannelLog): void {
-    useServers.getState().update(this.origin, (entry) => ({
+    this.store((entry) => ({
       ...entry,
       logs: { ...entry.logs, [channelId]: change(entry.logs[channelId] ?? emptyLog) },
     }));
@@ -719,7 +728,7 @@ export class ServerConnection {
   }
 
   private dropLog(channelId: string): void {
-    useServers.getState().update(this.origin, (entry) => {
+    this.store((entry) => {
       const logs = { ...entry.logs };
       delete logs[channelId];
       return { ...entry, logs };
@@ -733,11 +742,34 @@ export class ServerConnection {
   }
 
   private async signedIn(token: string): Promise<void> {
+    if (this.gone) {
+      // Signed in as the server was taken out of the app: the session goes unused.
+      await this.revoke(token);
+      return;
+    }
     await platform.secrets.set(this.secretKey, token);
+    if (this.gone) {
+      await platform.secrets.delete(this.secretKey);
+      await this.revoke(token);
+      return;
+    }
     this.start(token);
   }
 
+  /** Ends a session on the server, if it answers in time. */
+  private async revoke(token: string): Promise<void> {
+    try {
+      // Its own client, as this one sends whatever session the connection holds.
+      await createApi(this.origin, () => token).POST("/api/v1/auth/logout", { signal: AbortSignal.timeout(LEAVE_TIMEOUT_MS) });
+    } catch {
+      // It ends on the server by itself.
+    }
+  }
+
   private start(token: string): void {
+    if (this.gone) {
+      return;
+    }
     this.gateway?.stop();
     this.closeCall();
     this.token = token;
@@ -752,7 +784,7 @@ export class ServerConnection {
             return;
           }
         }
-        useServers.getState().update(this.origin, (entry) => {
+        this.store((entry) => {
           if (frame.type === "ready") {
             return { ...entry, status: "connected", view: fromReady(frame) };
           }
@@ -829,12 +861,19 @@ export class ServerConnection {
     });
   }
 
-  private entry(): ServerEntry {
+  entry(): ServerEntry {
     return useServers.getState().servers[this.origin] ?? blank(this.origin);
   }
 
   private update(patch: Partial<Omit<ServerEntry, "origin">>): void {
-    useServers.getState().update(this.origin, (entry) => ({ ...entry, ...patch }));
+    this.store((entry) => ({ ...entry, ...patch }));
+  }
+
+  /** Changes the server's entry in the store, unless the server has been taken out of the app. */
+  private store(change: (entry: ServerEntry) => ServerEntry): void {
+    if (!this.gone) {
+      useServers.getState().update(this.origin, change);
+    }
   }
 }
 

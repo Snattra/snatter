@@ -60,18 +60,20 @@ interface RailServerProps {
   onClick?: () => void;
   /** The server's own actions, from a right-click or the context menu key, such as removing it. */
   onMenu?: () => void;
+  /** The app is in voice there, which shows while another server is open. */
+  inVoice?: boolean;
 }
 
 /** A server icon: a circle that settles into a rounded square, with the pill at the rail's edge. */
-export function RailServer({ name, selected = false, onClick, onMenu }: RailServerProps) {
+export function RailServer({ name, selected = false, onClick, onMenu, inVoice = false }: RailServerProps) {
   return (
     <div className={classes("sn-rail-item", selected && "sn-rail-item-selected")}>
       <span className="sn-rail-pill" aria-hidden="true" />
-      <Tooltip label={name} side="right">
+      <Tooltip label={inVoice ? `${name}, in voice` : name} side="right" fixed>
         <button
           type="button"
           className="sn-rail-server"
-          aria-label={name}
+          aria-label={inVoice ? `${name}, in voice` : name}
           aria-current={selected || undefined}
           onClick={onClick}
           onContextMenu={
@@ -84,6 +86,11 @@ export function RailServer({ name, selected = false, onClick, onMenu }: RailServ
           {initials(name)}
         </button>
       </Tooltip>
+      {inVoice && (
+        <span className="sn-rail-voice" aria-hidden="true">
+          <Icon name="speaker" />
+        </span>
+      )}
     </div>
   );
 }
@@ -92,7 +99,7 @@ export function RailServer({ name, selected = false, onClick, onMenu }: RailServ
 export function RailAdd({ onClick }: { onClick: () => void }) {
   return (
     <div className="sn-rail-item">
-      <Tooltip label="Add a server" side="right">
+      <Tooltip label="Add a server" side="right" fixed>
         <button type="button" className="sn-rail-server sn-rail-add" aria-label="Add a server" aria-haspopup="dialog" onClick={onClick}>
           <Icon name="plus" />
         </button>
