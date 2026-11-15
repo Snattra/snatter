@@ -22,6 +22,7 @@ pom.xml.releaseBackup
 # Node / frontend
 node_modules/
 dist/
+dist-hosted/
 .env
 .env.*
 !.env.example

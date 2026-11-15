@@ -43,7 +43,9 @@ at `localhost:8080` can be added as it is.
 npm run check     # type check
 npm test          # unit tests
 npm run build     # production build into web/dist
+npm run build:hosted  # the hosted, multi-server build into web/dist-hosted
 npm run preview -w web   # serve that build under the production CSP
+npm run preview:hosted -w web  # serve the hosted build under its own CSP
 ```
 
 Every script first generates the API types from

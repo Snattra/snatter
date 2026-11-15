@@ -109,6 +109,8 @@ jobs:
       - run: npm test
       # Type checks, then builds.
       - run: npm run build
+      # And the hosted app, as releases build it.
+      - run: npm run build:hosted
 
   protocol:
     name: Protocol

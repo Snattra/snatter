@@ -12,6 +12,7 @@
     "dev": "npm run dev -w web",
     "dev:multi": "npm run dev:multi -w web",
     "build": "npm run build -w web",
+    "build:hosted": "npm run build:hosted -w web",
     "check": "npm run check -w web",
     "test": "npm run test -w web"
   }

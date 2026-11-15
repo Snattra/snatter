@@ -4,7 +4,7 @@ import type { InvitePreview, ServerInfo } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
 import { USERNAME_PATTERN, displayNameProblem, tidyDisplayName } from "../state/names";
 import { compatibility, isOutdated } from "../state/protocol";
-import { Button, Field, Tabs } from "./controls";
+import { Button, Field, Spinner, Tabs } from "./controls";
 import { describeError } from "./errors";
 import { OutdatedScreen } from "./OutdatedScreen";
 import { Backdrop, Callout, Card } from "./surfaces";
@@ -103,6 +103,19 @@ export function AuthScreen({ connection, notice, invite, onRemove }: AuthScreenP
     return <OutdatedScreen outdated={compatible} />;
   }
 
+  // Which form to show depends on the server, so none shows before it answers:
+  // one typed into early would turn into the other under the typing.
+  if (info === null && error === null) {
+    return (
+      <Backdrop>
+        <div className="sn-center" role="status">
+          <Spinner />
+          Asking the server…
+        </div>
+      </Backdrop>
+    );
+  }
+
   const setup = info?.registration.setupRequired === true;
 
   return (
@@ -128,7 +141,7 @@ export function AuthScreen({ connection, notice, invite, onRemove }: AuthScreenP
         )}
 
         {tab === "log_in" && !setup ? (
-          <form className="sn-form" onSubmit={logIn}>
+          <form key="log-in" className="sn-form" onSubmit={logIn}>
             <Field label="Username" name="username" autoComplete="username" required />
             <Field label="Password" name="password" type="password" autoComplete="current-password" required />
             <Button variant="primary" type="submit" block busy={busy !== null}>
@@ -136,7 +149,7 @@ export function AuthScreen({ connection, notice, invite, onRemove }: AuthScreenP
             </Button>
           </form>
         ) : (
-          <form className="sn-form" onSubmit={register}>
+          <form key="register" className="sn-form" onSubmit={register}>
             <Field
               label="Username"
               name="username"
