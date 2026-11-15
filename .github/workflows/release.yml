@@ -112,11 +112,17 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Whether this is the newest release of those whose versions start
-          # with the given prefix, prereleases left out.
+          # This version and those published as releases, prereleases left
+          # out: a tag whose release failed or never came is no release.
+          released=$( (gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+              --jq '.[] | select(.draft or .prerelease | not) | .tag_name'; echo "v$VERSION") \
+            | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$')
+          # Whether this is the newest of those whose versions start with
+          # the given prefix.
           newest_of() {
-            newest=$(git tag -l "v$1*" | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+            newest=$(printf '%s\n' "$released" | grep -E "^${1//./\\.}" | sort -V | tail -n 1)
             [ "$newest" = "$VERSION" ] && echo true || echo false
           }
           if [ "$PRERELEASE" = true ]; then

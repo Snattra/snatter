@@ -58,9 +58,11 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # After a release, only the newest one goes on the demo, not a fix
-          # for an older line released after it.
+          # for an older line released after it. Releases, not tags, count:
+          # a tag whose release failed is none.
           if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
-            newest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/tags" --jq '.[].name' \
+            newest=$( (gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+                --jq '.[] | select(.draft or .prerelease | not) | .tag_name'; echo "v$version") \
               | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
             if [ "$version" != "$newest" ]; then
               echo "::notice::$version is older than $newest, so the demo stays as it is"
