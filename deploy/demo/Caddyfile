@@ -1,0 +1,10 @@
+# HTTPS for SNATTER_DOMAIN, with a certificate from Let's Encrypt that Caddy
+# gets and renews by itself.
+
+{$SNATTER_DOMAIN} {
+	# The API and the gateway go straight to the server, so the client
+	# address in X-Forwarded-For is the browser's: through the web
+	# container, it would be Caddy's.
+	reverse_proxy /api/* server:8080
+	reverse_proxy web:8080
+}

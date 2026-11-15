@@ -43,24 +43,58 @@ that applies to the directory it lands in.
 
 Every commit to `main` is published as a development build: images tagged
 `main` and `sha-<commit>`. A release is a version tag on a commit of `main`
-that CI passed on, following [semantic versioning](https://semver.org):
+that CI passed on, following [semantic versioning](https://semver.org). A
+tag with a suffix, such as `v0.2.0-rc.1`, is a prerelease.
 
-```
-git tag -a v0.1.0 -m "Snatter 0.1.0"
-git push origin v0.1.0
-```
+### Cutting a release
 
-The Release workflow then builds the images for that commit, reporting the
-tag's version, publishes them tagged `0.1.0`, and makes a GitHub release with
-notes from the pull requests merged since the last one. The moving tags,
-`0.1` and `latest` (and `1` from 1.0 on), follow the newest release only, so
-a fix for an older line can be released without moving them back. A tag
-with a suffix, such as `v0.2.0-rc.1`, is a prerelease: its images get only
-that tag. Releases run one at a time; push one tag at a time.
+1. Pick the commit: the head of `main`, normally a merge, with a green
+   "CI result" on its push run. A commit inside a pull request has no such
+   run and is refused.
+2. Tag it and push the tag, one tag at a time:
 
-Once released, the newest release goes on the demo at demo.snatter.app
-(prereleases only by hand, see `deploy/demo/README.md`).
+   ```
+   git switch main && git pull
+   git tag -a v0.1.0 -m "Snatter 0.1.0"
+   git push origin v0.1.0
+   ```
 
-`server/pom.xml` names the version being worked towards (`revision`, such as
-`0.2.0-SNAPSHOT`); move it on after a release. The client's protocol version
-is separate, in `client/web/src/state/protocol.ts`.
+3. Follow the Release workflow (`gh run watch`, or Actions in GitHub). It
+   checks the tag, waits for CI if it is still running, builds the images
+   for linux/amd64 and linux/arm64 with the tag's version, tries them, and
+   publishes them, then makes the GitHub release with notes from the pull
+   requests merged since the last one.
+4. A stable release goes on the demo by itself (Deploy demo); a
+   prerelease, by hand. Check `https://demo.snatter.app/api/v1/server-info`
+   reports the version. The demo's runbook is `deploy/demo/README.md`.
+5. Move `revision` in `server/pom.xml` on to the next version being worked
+   towards, such as `0.2.0-SNAPSHOT`, in a pull request.
+
+### What a release publishes
+
+| What                     | Stable release, such as `v0.1.0`              | Prerelease, such as `v0.2.0-rc.1` |
+|--------------------------|-----------------------------------------------|-----------------------------------|
+| Image tags               | `0.1.0`; `0.1` and `latest` if it is the newest of them; `1` too from 1.0 on | `0.2.0-rc.1` only |
+| GitHub release           | Marked Latest if it is the newest             | Marked as a prerelease            |
+| demo.snatter.app         | Deployed, if it is the newest                 | By hand                           |
+
+The moving tags follow the newest release only, so a fix for an older line,
+`v0.1.1` after `v0.2.0`, gets its own tag and leaves `latest` and the demo
+alone.
+
+### When a release goes wrong
+
+- **"is not on main" or "CI never ran"**: the tag is on the wrong commit.
+  Delete it (`git push origin :v0.1.0` and `git tag -d v0.1.0`) and tag the
+  right one.
+- **"CI ... ended in failure"**: fix `main`, then tag the fixed commit with a
+  new version; versions are not reused once images are out.
+- **It failed after the images were pushed**: run the workflow again
+  (`gh run rerun <id> --failed`); every step may run twice.
+- **Two tags pushed at once**: releases run one at a time, and a run
+  waiting behind another is replaced by any that comes after it. Run the
+  replaced one again from its tag.
+
+The server reports the version it was built with in `server-info`;
+`revision` in `server/pom.xml` is only what development builds report. The
+protocol version is separate (`protocol/README.md`).
