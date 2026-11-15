@@ -2369,7 +2369,8 @@ components:
       description: |
         A web app's origin, as browsers name it: scheme, host and port, with
         no path or trailing slash. A port of `*` stands for every port, as in
-        `http://localhost:*`. Kept in lower case.
+        `http://localhost:*`. Kept as browsers send origins: in lower case,
+        and without the scheme's own port, 443 for https and 80 for http.
       example: https://web.snatter.app
 
     ChallengeMaxNumber:

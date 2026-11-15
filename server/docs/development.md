@@ -672,10 +672,13 @@ handler in front of `/api`, does the rest:
   the browser lets the page read the answer. Requests from other pages still
   run, unread: they cannot carry a session, which a page sends only as a
   bearer token it holds itself.
-- The gateway handshake is outside CORS, so the filter refuses it with 403
-  from a page that is not allowed.
-- Requests without `Origin`, from programs that are not web pages, are not
-  touched.
+- WebSocket handshakes are outside CORS, so the filter refuses them with 403
+  from a page that is not allowed: any upgrade to a WebSocket, and anything
+  for the gateway's path however it is written, since routing decodes it.
+- Every answer from `/api` varies by `Origin`, so that a browser does not
+  reuse an answer it kept from a plain request for a page that needs CORS.
+- Requests without `Origin`, from programs that are not web pages, get no
+  CORS headers and are never refused.
 
 Own pages are recognised by host and port alone, since behind a proxy that
 terminates TLS the server sees plain HTTP where the page has HTTPS. Behind

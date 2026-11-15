@@ -61,7 +61,11 @@ public final class GatewayTestClient implements AutoCloseable {
     }
 
     private static URI uri() {
-        return URI.create("ws://localhost:" + RestAssured.port + "/api/v1/gateway");
+        return uri("/api/v1/gateway");
+    }
+
+    private static URI uri(String path) {
+        return URI.create("ws://localhost:" + RestAssured.port + path);
     }
 
     private static WebSocket.Builder builder(String origin) {
@@ -79,18 +83,22 @@ public final class GatewayTestClient implements AutoCloseable {
         return new GatewayTestClient(origin);
     }
 
-    /** The HTTP status the handshake from a page of the given origin is refused with. */
-    public static int refusedHandshake(String origin) {
+    /**
+     * How the server answers a handshake at the path, from a page of the
+     * given origin or, with null, from a program: 101 when it opens the
+     * connection, which is then dropped, or the status it refuses with.
+     */
+    public static int handshakeStatus(String origin, String path) {
         try {
-            builder(origin).buildAsync(uri(), new WebSocket.Listener() {
+            builder(origin).buildAsync(uri(path), new WebSocket.Listener() {
             }).orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join().abort();
+            return 101;
         } catch (CompletionException e) {
             if (e.getCause() instanceof WebSocketHandshakeException refused) {
                 return refused.getResponse().statusCode();
             }
             throw e;
         }
-        throw new AssertionError("The handshake from " + origin + " was accepted");
     }
 
     /** Connects and identifies; the {@code ready} frame is then available from {@link #ready()}. */

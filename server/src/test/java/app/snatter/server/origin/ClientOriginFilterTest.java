@@ -24,6 +24,7 @@ class ClientOriginFilterTest {
 
     private static final String HOSTED = "https://web.snatter.app";
     private static final String OTHER = "https://evil.example.com";
+    private static final String GATEWAY = "/api/v1/gateway";
 
     private final TestDataService data = new TestDataService();
 
@@ -93,9 +94,38 @@ class ClientOriginFilterTest {
 
     @Test
     void theGatewayTurnsAwayOtherPages() {
-        assertEquals(403, GatewayTestClient.refusedHandshake(OTHER));
-        GatewayTestClient.connectFrom(HOSTED).close();
-        GatewayTestClient.connect().close();
+        assertEquals(403, GatewayTestClient.handshakeStatus(OTHER, GATEWAY));
+        assertEquals(101, GatewayTestClient.handshakeStatus(HOSTED, GATEWAY));
+        assertEquals(101, GatewayTestClient.handshakeStatus(null, GATEWAY));
+    }
+
+    @Test
+    void theGatewayIsTheGatewayHoweverItsPathIsWritten() {
+        String encoded = "/api/v1/%67ateway";
+        // Routing decodes the path, so this does reach the gateway.
+        assertEquals(101, GatewayTestClient.handshakeStatus(null, encoded));
+        assertEquals(403, GatewayTestClient.handshakeStatus(OTHER, encoded));
+        // And no other handshake goes past the check either.
+        assertEquals(403, GatewayTestClient.handshakeStatus(OTHER, "/api/v1/server-info"));
+    }
+
+    @Test
+    void everyAnswerVariesByOrigin() {
+        // So that a browser does not reuse an answer to a plain request, such as
+        // an image, for a page that needs the CORS headers.
+        given().when().get("/api/v1/server-info")
+            .then().header("Vary", containsString("Origin"))
+            .header("Access-Control-Allow-Origin", nullValue());
+    }
+
+    @Test
+    void anAppsDefaultPortIsLeftOut() {
+        List<String> origins = data.updateSettings(new ServerSettingsUpdateDto()
+            .clientOrigins(List.of("https://chat.example.com:443", "http://lan.example.com:80", "https://alt.example.com:80"))).getClientOrigins();
+        assertEquals(List.of("http://lan.example.com", "https://alt.example.com:80", "https://chat.example.com"), origins);
+        given().header("Origin", "https://chat.example.com")
+            .when().get("/api/v1/server-info")
+            .then().header("Access-Control-Allow-Origin", "https://chat.example.com");
     }
 
     @Test
@@ -110,7 +140,7 @@ class ClientOriginFilterTest {
         given().header("Origin", HOSTED)
             .when().get("/api/v1/server-info")
             .then().header("Access-Control-Allow-Origin", nullValue());
-        assertEquals(403, GatewayTestClient.refusedHandshake(HOSTED));
+        assertEquals(403, GatewayTestClient.handshakeStatus(HOSTED, GATEWAY));
     }
 
     @Test

@@ -45,16 +45,18 @@ public class ClientOriginFilter {
 
     void handle(RoutingContext context) {
         HttpServerRequest request = context.request();
+        HttpServerResponse response = context.response();
+        // Also on answers without CORS headers, so that a browser does not
+        // hand an answer it kept from a plain request to a page that needs them.
+        response.headers().add(HttpHeaders.VARY, "Origin");
         String origin = request.getHeader(HttpHeaders.ORIGIN);
         if (origin == null) {
             context.next();
             return;
         }
-        HttpServerResponse response = context.response();
-        response.headers().add(HttpHeaders.VARY, "Origin");
         boolean allowed = allows(origin, request);
 
-        if (request.path().equals(GATEWAY_PATH)) {
+        if (isHandshake(context)) {
             if (allowed) {
                 context.next();
             } else {
@@ -82,6 +84,16 @@ public class ClientOriginFilter {
                 .putHeader(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, EXPOSED);
         }
         context.next();
+    }
+
+    /**
+     * Whether the request opens a WebSocket, which CORS does not cover: any
+     * upgrade to one, and anything for the gateway's path as routing sees it,
+     * decoded, so that {@code /api/v1/%67ateway} counts too.
+     */
+    private static boolean isHandshake(RoutingContext context) {
+        return "websocket".equalsIgnoreCase(context.request().getHeader(HttpHeaders.UPGRADE))
+            || GATEWAY_PATH.equals(context.normalizedPath());
     }
 
     private boolean allows(String origin, HttpServerRequest request) {
@@ -113,10 +125,10 @@ public class ClientOriginFilter {
         return false;
     }
 
-    /** The host and port of an origin or URL, lower case, or null if it has none. */
+    /** The host and port of an origin or URL, lower case and without the scheme's own port, or null if it has none. */
     private static String authorityOf(String url) {
         try {
-            String authority = URI.create(url).getRawAuthority();
+            String authority = URI.create(ClientOrigin.withoutDefaultPort(url)).getRawAuthority();
             return authority == null ? null : authority.toLowerCase(Locale.ROOT);
         } catch (IllegalArgumentException e) {
             return null;

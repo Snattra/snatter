@@ -126,6 +126,10 @@ describe("settingsChanges", () => {
       clientOrigins: ["https://chat.example.com"],
     });
     expect(settingsChanges(settings, edited({ clientOrigins: "" }))).toEqual({ clientOrigins: [] });
+    expect(settingsChanges(settings, edited({ clientOrigins: "https://web.snatter.app:443\nhttp://localhost:*" }))).toEqual({});
+    expect(settingsChanges(settings, edited({ clientOrigins: "http://lan.example.com:80\nhttps://lan.example.com:80" }))).toEqual({
+      clientOrigins: ["http://lan.example.com", "https://lan.example.com:80"],
+    });
   });
 
   it("sends the rate limits whole when any of them changed", () => {

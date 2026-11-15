@@ -178,11 +178,17 @@ export function settingsChanges(settings: ServerSettings, form: SettingsForm): S
   return update;
 }
 
-/** The apps listed, one per line, as the server keeps them: lower case, each once. */
+/** The apps listed, one per line, as the server keeps them: lower case, without the scheme's own port, each once. */
 function clientOriginsIn(text: string): string[] {
   const origins = text
     .split("\n")
-    .map((line) => line.trim().toLowerCase())
+    .map((line) =>
+      line
+        .trim()
+        .toLowerCase()
+        .replace(/^(http:\/\/[^/]+):80$/, "$1")
+        .replace(/^(https:\/\/[^/]+):443$/, "$1"),
+    )
     .filter((line) => line !== "");
   return [...new Set(origins)];
 }

@@ -15,6 +15,16 @@ class ClientOriginTest {
     }
 
     @Test
+    void theSchemesOwnPortIsLeftOut() {
+        assertEquals("https://chat.example.com", new ClientOrigin("https://chat.example.com:443").value());
+        assertEquals("http://chat.example.com", new ClientOrigin("http://chat.example.com:80").value());
+        assertEquals("https://chat.example.com:80", new ClientOrigin("https://chat.example.com:80").value());
+        assertEquals("http://localhost:8080", new ClientOrigin("http://localhost:8080").value());
+        assertEquals("http://[::1]", new ClientOrigin("http://[::1]:80").value());
+        assertTrue(new ClientOrigin("https://chat.example.com:443").allows("https://chat.example.com"));
+    }
+
+    @Test
     void onlyOriginsAreAccepted() {
         for (String notAnOrigin : new String[] {"null", "chat.example.com", "https://chat.example.com/",
             "https://chat.example.com/app", "https://*.example.com", "https://chat.example.com:", "file://"}) {
@@ -58,6 +68,8 @@ class ClientOriginTest {
 
         String internal = "server:8080";
         assertTrue(ClientOriginFilter.isOwnAddress("https://chat.example.com", internal, "https://chat.example.com"));
+        assertTrue(ClientOriginFilter.isOwnAddress("https://chat.example.com", internal, "https://chat.example.com:443/"));
+        assertFalse(ClientOriginFilter.isOwnAddress("https://chat.example.com", internal, "https://chat.example.com:8443"));
         assertFalse(ClientOriginFilter.isOwnAddress("https://chat.example.com", internal, null));
         assertFalse(ClientOriginFilter.isOwnAddress("null", requested, "https://chat.example.com"));
     }
