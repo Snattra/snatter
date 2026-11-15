@@ -16,11 +16,13 @@ import io.restassured.RestAssured;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.net.http.WebSocketHandshakeException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -51,16 +53,52 @@ public final class GatewayTestClient implements AutoCloseable {
     private long lastSeq;
     private GatewayReadyDto ready;
 
-    private GatewayTestClient() {
-        URI uri = URI.create("ws://localhost:" + RestAssured.port + "/api/v1/gateway");
-        this.socket = HttpClient.newHttpClient().newWebSocketBuilder()
-            .buildAsync(uri, new Listener())
+    private GatewayTestClient(String origin) {
+        this.socket = builder(origin)
+            .buildAsync(uri(), new Listener())
             .orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
             .join();
     }
 
+    private static URI uri() {
+        return uri("/api/v1/gateway");
+    }
+
+    private static URI uri(String path) {
+        return URI.create("ws://localhost:" + RestAssured.port + path);
+    }
+
+    private static WebSocket.Builder builder(String origin) {
+        WebSocket.Builder builder = HttpClient.newHttpClient().newWebSocketBuilder();
+        return origin == null ? builder : builder.header("Origin", origin);
+    }
+
+    /** Connects as a program that is not a web page would, without an origin. */
     public static GatewayTestClient connect() {
-        return new GatewayTestClient();
+        return new GatewayTestClient(null);
+    }
+
+    /** Connects as a web page of the given origin would. */
+    public static GatewayTestClient connectFrom(String origin) {
+        return new GatewayTestClient(origin);
+    }
+
+    /**
+     * How the server answers a handshake at the path, from a page of the
+     * given origin or, with null, from a program: 101 when it opens the
+     * connection, which is then dropped, or the status it refuses with.
+     */
+    public static int handshakeStatus(String origin, String path) {
+        try {
+            builder(origin).buildAsync(uri(path), new WebSocket.Listener() {
+            }).orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join().abort();
+            return 101;
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof WebSocketHandshakeException refused) {
+                return refused.getResponse().statusCode();
+            }
+            throw e;
+        }
     }
 
     /** Connects and identifies; the {@code ready} frame is then available from {@link #ready()}. */

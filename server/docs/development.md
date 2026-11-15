@@ -23,6 +23,7 @@ splitting by technical layer:
 | `gateway`     | WebSocket gateway: identify, ready, events, voice    |
 | `media`       | Voice transport: SDP, ICE, DTLS-SRTP on one UDP port |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
+| `origin`      | Which web apps may use the API from a browser        |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
 | `persistence` | JDBI producer and small JDBC helpers                 |
@@ -656,6 +657,35 @@ Messages are counted per account so that people sharing an address (a
 household, a LAN party) do not slow each other down, and one account gains
 nothing from switching addresses. Only sending counts; editing does not.
 
+## Client origins
+
+Web pages may use the server from a browser if they are its own, at the
+address the request was sent to or at `publicUrl`, or if their origin is in
+`ServerSettings.clientOrigins` (table `client_origin`). By default that is
+the hosted app, `https://web.snatter.app`, and `http://localhost:*`, where a
+port of `*` stands for every port. `origin.ClientOriginFilter`, a Vert.x
+handler in front of `/api`, does the rest:
+
+- A CORS preflight from an allowed page is answered 204 with the methods
+  and headers the API takes; from any other page, 403.
+- Other requests from an allowed page get `Access-Control-Allow-Origin`, so
+  the browser lets the page read the answer. Requests from other pages still
+  run, unread: they cannot carry a session, which a page sends only as a
+  bearer token it holds itself.
+- WebSocket handshakes are outside CORS, so the filter refuses them with 403
+  from a page that is not allowed: any upgrade to a WebSocket, and anything
+  for the gateway's path however it is written, since routing decodes it.
+- Every answer from `/api` varies by `Origin`, so that a browser does not
+  reuse an answer it kept from a plain request for a page that needs CORS.
+- Requests without `Origin`, from programs that are not web pages, get no
+  CORS headers and are never refused.
+
+Own pages are recognised by host and port alone, since behind a proxy that
+terminates TLS the server sees plain HTTP where the page has HTTPS. Behind
+the web container, the address is the page's own, port and all, which nginx
+forwards as `X-Forwarded-Host` and the server trusts
+(`quarkus.http.proxy.enable-forwarded-host`).
+
 ## HTTP API
 
 The API is specification-first. `protocol/openapi/openapi.yaml` is
@@ -678,6 +708,10 @@ Conventions that follow from this:
   Typed ids (`AccountId`, `BlobId`) are the exception: the contract's
   `AccountId` and `BlobId` schemas are mapped straight onto the hand-written
   records, so DTOs and interface parameters use them directly.
+  Other value records stay out of DTOs: a string the contract constrains
+  arrives as a `String`, which Bean Validation checks against the contract,
+  and the resource turns it into the record, as `ServerSettingsResource` does
+  with `ClientOrigin`.
 - **Methods return `RestResponse<Dto>`**, Quarkus REST's typed response, so
   the body type is checked by the compiler while status and headers stay
   under the resource's control. Binary bodies are `InputStream` in both
@@ -702,10 +736,11 @@ Errors have one shape, the `ApiError` schema:
 {"error": "<stable_code>", "message": "human readable", "fields": {"username": "..."}}
 ```
 
-`fields` appears only for validation failures. Throw `api.ApiException` for
-domain errors; it carries the status and code, and `ApiExceptionMappers`
-renders it. When adding a code, document it in the contract on the operation
-that produces it.
+`fields` appears only for validation failures. Each field is named as the
+request names it, `username`; an entry of a list after its list,
+`clientOrigins[0]`. Throw `api.ApiException` for domain errors; it carries
+the status and code, and `ApiExceptionMappers` renders it. When adding a
+code, document it in the contract on the operation that produces it.
 
 | Method | Path                | Auth | Purpose                                   |
 |--------|---------------------|------|-------------------------------------------|

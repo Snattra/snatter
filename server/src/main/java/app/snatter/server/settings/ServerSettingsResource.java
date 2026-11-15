@@ -11,6 +11,7 @@ import app.snatter.api.model.VoiceInfoDto;
 import app.snatter.server.account.AccountId;
 import app.snatter.server.auth.AccountPrincipal;
 import app.snatter.server.channel.ChannelId;
+import app.snatter.server.origin.ClientOrigin;
 import app.snatter.server.role.RoleId;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.PermissionsAllowed;
@@ -82,6 +83,9 @@ public class ServerSettingsResource implements ServerApi {
         if (update.getNewMemberRoleId() != null) {
             s = s.withNewMemberRoleId(update.getNewMemberRoleId().isEmpty() ? null : RoleId.fromString(update.getNewMemberRoleId()));
         }
+        if (update.getClientOrigins() != null) {
+            s = s.withClientOrigins(update.getClientOrigins().stream().map(ClientOrigin::new).toList());
+        }
         return RestResponse.ok(toDto(settings.update(actor(), s)));
     }
 
@@ -103,7 +107,8 @@ public class ServerSettingsResource implements ServerApi {
             .sessionLifetimeDays((int) s.sessionLifetime().toDays())
             .voice(new VoiceInfoDto().defaultBitrate(s.voiceDefaultBitrate()))
             .systemChannelId(s.systemChannelId())
-            .newMemberRoleId(s.newMemberRoleId());
+            .newMemberRoleId(s.newMemberRoleId())
+            .clientOrigins(s.clientOrigins().stream().map(ClientOrigin::value).toList());
     }
 
     private static RateLimitPolicyDto toDto(RateLimitPolicy p) {

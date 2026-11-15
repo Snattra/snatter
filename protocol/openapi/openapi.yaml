@@ -39,7 +39,10 @@ info:
     Live updates arrive over a WebSocket at `/api/v1/gateway`. Frames are
     JSON text messages, described by the `Gateway*` schemas below:
     `GatewayClientFrame` from client to server, `GatewayServerFrame` from
-    server to client, each told apart by `type`.
+    server to client, each told apart by `type`. A web page may connect
+    from the server's own address or from one of its
+    `ServerSettings.clientOrigins`; the handshake from any other page is
+    answered 403.
 
     1. Connect and send `identify` with a session token within 10 seconds.
     2. The server answers with `ready`: the caller's account, permissions,
@@ -2251,7 +2254,7 @@ components:
 
     ServerSettings:
       type: object
-      required: [name, registrationMode, challengeRequired, challengeMaxNumber, rateLimits, sessionLifetimeDays, voice]
+      required: [name, registrationMode, challengeRequired, challengeMaxNumber, rateLimits, sessionLifetimeDays, voice, clientOrigins]
       properties:
         name:
           type: string
@@ -2295,6 +2298,18 @@ components:
             Role given to accounts when they register; null for none, so new
             members can only browse until someone gives them a role. The
             role cannot be deleted while it is set here.
+        clientOrigins:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/ClientOrigin"
+          description: |
+            Web apps that may use the API and the gateway from a browser,
+            besides pages of this server's own address. By default the hosted
+            app, `https://web.snatter.app`, and apps on `http://localhost`.
+            Browsers keep other web pages from reading this server's answers,
+            and the gateway turns them away. Programs that are not web pages,
+            such as bots, send no origin and are not affected.
 
     ServerSettingsUpdate:
       type: object
@@ -2340,6 +2355,23 @@ components:
             Id of the role new members get; an empty string gives them none.
             An unknown role is rejected (`role_not_found`). Existing members
             keep their roles.
+        clientOrigins:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/ClientOrigin"
+          description: Replaces the whole list; an empty list lets in no web apps but this server's own pages
+
+    ClientOrigin:
+      type: string
+      maxLength: 255
+      pattern: '^[A-Za-z][A-Za-z0-9+.-]*://([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:([0-9]{1,5}|\*))?$'
+      description: |
+        A web app's origin, as browsers name it: scheme, host and port, with
+        no path or trailing slash. A port of `*` stands for every port, as in
+        `http://localhost:*`. Kept as browsers send origins: in lower case,
+        and without the scheme's own port, 443 for https and 80 for http.
+      example: https://web.snatter.app
 
     ChallengeMaxNumber:
       type: integer

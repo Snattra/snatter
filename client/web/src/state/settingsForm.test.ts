@@ -16,6 +16,7 @@ const settings: ServerSettings = {
   voice: { defaultBitrate: 64_000 },
   systemChannelId: "general",
   newMemberRoleId: null,
+  clientOrigins: ["http://localhost:*", "https://web.snatter.app"],
 };
 
 function edited(changes: Partial<SettingsForm>): SettingsForm {
@@ -46,6 +47,16 @@ describe("settingsErrors", () => {
     expect(settingsErrors(edited({ publicUrl: "chat.example.com" })).publicUrl).toBeDefined();
     expect(settingsErrors(edited({ publicUrl: "https://chat.example.com/snatter" }))).toEqual({});
     expect(settingsErrors(edited({ publicUrl: "" }))).toEqual({});
+  });
+
+  it("wants each web app as an origin, and no more than 20", () => {
+    expect(settingsErrors(edited({ clientOrigins: "https://web.snatter.app\n\n  HTTP://LocalHost:*  \nsnatter://app" }))).toEqual({});
+    expect(settingsErrors(edited({ clientOrigins: "" }))).toEqual({});
+    for (const notAnOrigin of ["web.snatter.app", "https://web.snatter.app/", "https://chat.example.com/app", "null"]) {
+      expect(settingsErrors(edited({ clientOrigins: notAnOrigin })).clientOrigins, notAnOrigin).toBeDefined();
+    }
+    const many = Array.from({ length: 21 }, (_, i) => `https://app${i}.example.com`).join("\n");
+    expect(settingsErrors(edited({ clientOrigins: many })).clientOrigins).toBe("List up to 20 apps.");
   });
 
   it("checks each rate limit on its own", () => {
@@ -106,6 +117,18 @@ describe("settingsChanges", () => {
       registrationMode: "open",
       challengeRequired: false,
       newMemberRoleId: "user",
+    });
+  });
+
+  it("sends the web apps as the server keeps them, when the list differs", () => {
+    expect(settingsChanges(settings, edited({ clientOrigins: "https://web.snatter.app\nhttp://localhost:*\n" }))).toEqual({});
+    expect(settingsChanges(settings, edited({ clientOrigins: " HTTPS://Chat.Example.com \nhttps://chat.example.com" }))).toEqual({
+      clientOrigins: ["https://chat.example.com"],
+    });
+    expect(settingsChanges(settings, edited({ clientOrigins: "" }))).toEqual({ clientOrigins: [] });
+    expect(settingsChanges(settings, edited({ clientOrigins: "https://web.snatter.app:443\nhttp://localhost:*" }))).toEqual({});
+    expect(settingsChanges(settings, edited({ clientOrigins: "http://lan.example.com:80\nhttps://lan.example.com:80" }))).toEqual({
+      clientOrigins: ["http://lan.example.com", "https://lan.example.com:80"],
     });
   });
 

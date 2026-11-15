@@ -17,6 +17,9 @@ services:
       # only because nothing but the web container can reach the server.
       QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING: "true"
       QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED: "true"
+      # And the address the page is at from its X-Forwarded-Host, so that the
+      # server knows its own pages.
+      QUARKUS_HTTP_PROXY_ENABLE_FORWARDED_HOST: "true"
       SNATTER_MEDIA_ADDRESS: ${SNATTER_MEDIA_ADDRESS:?set the address browsers reach this host at}
     ports:
       - "8080:8080/udp"

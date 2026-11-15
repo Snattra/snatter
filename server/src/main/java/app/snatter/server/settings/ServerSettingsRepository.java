@@ -5,10 +5,12 @@ import static app.snatter.server.persistence.Rows.instant;
 
 import app.snatter.server.account.AccountId;
 import app.snatter.server.channel.ChannelId;
+import app.snatter.server.origin.ClientOrigin;
 import app.snatter.server.role.RoleId;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -37,6 +39,7 @@ public class ServerSettingsRepository {
         rs.getInt("voice_default_bitrate"),
         id(rs, "system_channel_id", ChannelId::new),
         id(rs, "new_member_role_id", RoleId::new),
+        List.of(),
         instant(rs, "created_at"),
         instant(rs, "updated_at"));
 
@@ -70,7 +73,10 @@ public class ServerSettingsRepository {
             .map(MAPPER)
             .findOne()
             .orElseThrow(() -> new IllegalStateException(
-                "server_settings row is missing; database migrations did not run")));
+                "server_settings row is missing; database migrations did not run"))
+            .withClientOrigins(h.createQuery("SELECT origin FROM client_origin ORDER BY origin")
+                .map((rs, ctx) -> new ClientOrigin(rs.getString("origin")))
+                .list()));
     }
 
     /** Writes every owner-editable field. The owner itself is set only through {@link #claimOwner}. */
@@ -129,6 +135,14 @@ public class ServerSettingsRepository {
         if (rows != 1) {
             throw new IllegalStateException("expected to update 1 server_settings row, updated " + rows);
         }
+        jdbi.useHandle(h -> {
+            h.createUpdate("DELETE FROM client_origin").execute();
+            var insert = h.prepareBatch("INSERT INTO client_origin (origin) VALUES (:origin)");
+            s.clientOrigins().stream().distinct().forEach(origin -> insert.bind("origin", origin).add());
+            if (insert.size() > 0) {
+                insert.execute();
+            }
+        });
     }
 
     /** Makes the account the owner if no owner exists yet. Returns whether it did. */
