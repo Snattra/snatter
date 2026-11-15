@@ -1,7 +1,7 @@
-# Puts the newest release on demo.snatter.app once Release (release.yml) has
-# published it; a fix for an older line, released after it, does not go
-# there. Prereleases go there only by hand: Run workflow, naming the
-# version, which also rolls the demo back to an earlier one.
+# Puts the newest release on demo.snatter.app whenever Release (release.yml)
+# has published one, whichever it was. Prereleases go there only by hand:
+# Run workflow, naming the version, which also rolls the demo back to an
+# earlier one.
 #
 # The deploy key may run nothing on the host but deploy/demo/deploy.sh,
 # which it hands the version (see "The demo" in CONTRIBUTING.md). What
@@ -56,23 +56,23 @@ jobs:
             echo "::error::$REQUESTED is not a version such as 0.1.0"
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          # After a release, only the newest one goes on the demo, not a fix
-          # for an older line released after it. Releases, not tags, count:
-          # a tag whose release failed is none.
+          # After a release, the newest release goes on the demo, whichever release
+          # this run follows: a fix for an older line released after a newer
+          # one leaves the newer one there, and a run that took the place of
+          # another waiting behind a deploy still brings the newest. Releases,
+          # not tags, count: a tag whose release failed is none.
           if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
-            newest=$( (gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
-                --jq '.[] | select(.draft or .prerelease | not) | .tag_name'; echo "v$version") \
+            released=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+              --jq '.[] | select(.draft or .prerelease | not) | .tag_name')
+            newest=$(printf '%s\nv%s\n' "$released" "$version" \
               | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
-            if [ "$version" != "$newest" ]; then
-              echo "::notice::$version is older than $newest, so the demo stays as it is"
-              echo "deploy=false" >> "$GITHUB_OUTPUT"
-              exit 0
+            if [ "$newest" != "$version" ]; then
+              echo "::notice::$version is not the newest release; the demo gets $newest"
             fi
+            version=$newest
           fi
-          echo "deploy=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Deploy
-        if: steps.version.outputs.deploy == 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
           SSH_KEY: ${{ secrets.DEMO_SSH_KEY }}
@@ -87,7 +87,6 @@ jobs:
           ssh -i ~/.ssh/demo -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "$DEMO_USER@$DEMO_HOST" "$VERSION"
       - name: Check the demo runs it
-        if: steps.version.outputs.deploy == 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { unwrap } from "../api/client";
+import { ApiRequestError, unwrap } from "../api/client";
 import type { InvitePreview, ServerInfo } from "../api/types";
 import type { ServerConnection } from "../servers/ServerConnection";
 import { USERNAME_PATTERN, displayNameProblem, tidyDisplayName } from "../state/names";
@@ -8,6 +8,9 @@ import { Button, Field, Spinner, Tabs } from "./controls";
 import { describeError } from "./errors";
 import { OutdatedScreen } from "./OutdatedScreen";
 import { Backdrop, Callout, Card } from "./surfaces";
+
+/** How long the server gets to say what it is before it counts as unreachable. */
+const SERVER_INFO_TIMEOUT_MS = 10_000;
 
 type Tab = "log_in" | "register";
 
@@ -31,17 +34,20 @@ export function AuthScreen({ connection, notice, invite, onRemove }: AuthScreenP
   const [tab, setTab] = useState<Tab>(invite === null ? "log_in" : "register");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Whether the server has said what it is, or failed to: on its own, as an
-  // invite that does not work is an error too, and comes apart from it.
-  const [answered, setAnswered] = useState(false);
+  // Why the server could not be asked what it is, if it could not: apart from
+  // the form's errors, as an invite that does not work is one of those.
+  const [unreachable, setUnreachable] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    setUnreachable(null);
     connection.api
-      .GET("/api/v1/server-info")
+      .GET("/api/v1/server-info", { signal: AbortSignal.timeout(SERVER_INFO_TIMEOUT_MS) })
       .then(unwrap)
-      .then(setInfo, (e: unknown) => setError(describeError(e)))
-      .finally(() => setAnswered(true));
-  }, [connection]);
+      .then(setInfo, (e: unknown) =>
+        setUnreachable(e instanceof ApiRequestError ? describeError(e) : "It didn't answer: it may be down, or not let this app connect."),
+      );
+  }, [connection, attempt]);
 
   // Who sent the invite, and whether it still works, before anyone fills in the form.
   useEffect(() => {
@@ -109,13 +115,29 @@ export function AuthScreen({ connection, notice, invite, onRemove }: AuthScreenP
 
   // Which form to show depends on the server, so none shows before it answers:
   // one typed into early would turn into the other under the typing.
-  if (!answered) {
+  if (info === null) {
+    if (unreachable === null) {
+      return (
+        <Backdrop>
+          <div className="sn-center" role="status">
+            <Spinner />
+            Asking the server…
+          </div>
+        </Backdrop>
+      );
+    }
     return (
       <Backdrop>
-        <div className="sn-center" role="status">
-          <Spinner />
-          Asking the server…
-        </div>
+        <Card title={new URL(connection.origin).host} description={`Couldn't reach this server. ${unreachable}`}>
+          <Button variant="primary" block onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </Button>
+          {onRemove && (
+            <Button variant="link" onClick={onRemove}>
+              Remove this server
+            </Button>
+          )}
+        </Card>
       </Backdrop>
     );
   }

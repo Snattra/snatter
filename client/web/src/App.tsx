@@ -70,6 +70,10 @@ function MultiServerApp() {
   const add = (server: SavedServer) => {
     change((list) => withServer(list, server));
     setAdding(false);
+    // Another server than the one invited to: the invite is let be.
+    if (invite !== null && server.origin !== invite.origin) {
+      dropInvite();
+    }
   };
   // Off the list at once; signing out of it may take a moment more.
   const remove = async (server: SavedServer) => {

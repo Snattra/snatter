@@ -158,10 +158,12 @@ its dashboard as well.
 How the project is set up, should it need doing again:
 
 1. In the Cloudflare dashboard, Workers & Pages → Create → **Pages** →
-   Upload assets, named `snatter-web`, with `main` as its production
-   branch. It must be a Pages project: a Worker's address ends in
-   `.workers.dev` rather than `.pages.dev`, and a Worker's custom domain
-   needs the whole domain on Cloudflare.
+   Upload assets, named `snatter-web`. It must be a Pages project: a
+   Worker's address ends in `.workers.dev` rather than `.pages.dev`, and a
+   Worker's custom domain needs the whole domain on Cloudflare. Its
+   production branch, the one its domains serve, is set as it is made and
+   shown nowhere in the dashboard; the workflow asks Cloudflare for it and
+   deploys there, as a deploy to any other branch is only a preview.
 2. In the project, Custom domains → Set up a custom domain →
    `web.snatter.app`, and only then the CNAME record at the DNS provider:
    `web` → `snatter-web.pages.dev`. A record pointing at a project that
