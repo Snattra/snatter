@@ -2,9 +2,13 @@
 # gets and renews by itself.
 
 {$SNATTER_DOMAIN} {
-	# The API and the gateway go straight to the server, so the client
-	# address in X-Forwarded-For is the browser's: through the web
-	# container, it would be Caddy's.
-	reverse_proxy /api/* server:8080
-	reverse_proxy web:8080
+	# The API and the gateway, for the app at web.snatter.app and others.
+	handle /api/* {
+		reverse_proxy server:8080
+	}
+
+	# The app itself is at web.snatter.app, which can add this server.
+	handle {
+		redir https://web.snatter.app 302
+	}
 }

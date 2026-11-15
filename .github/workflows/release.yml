@@ -10,7 +10,9 @@
 # newest of all. So a fix released for an older line moves nothing of a newer
 # one. A prerelease gets only its own version tag. Then comes the GitHub
 # release, with notes generated from the pull requests merged since the one
-# before. Deploy demo (deploy-demo.yml) follows a successful run.
+# before, and the hosted web app attached as snatter-web-<version>.zip.
+# Deploy demo (deploy-demo.yml) and Deploy web (deploy-web.yml) follow a
+# successful run.
 
 name: Release
 
@@ -251,14 +253,53 @@ jobs:
             type=gha,scope=release-web
           cache-to: type=gha,scope=release-web,mode=max
 
+  web:
+    name: Hosted web app
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: client
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      # The multi-server app as files for any static host, reporting the
+      # tag's version: what web.snatter.app serves (deploy-web.yml).
+      - name: Build the hosted app
+        env:
+          SNATTER_VERSION: ${{ env.VERSION }}
+        run: npm run build:hosted
+      - name: Pack it
+        working-directory: client/web/dist-hosted
+        run: zip -qr "$GITHUB_WORKSPACE/snatter-web-$VERSION.zip" .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hosted-web
+          path: snatter-web-${{ env.VERSION }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: GitHub release
-    needs: [check, images]
+    needs: [check, images, web]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hosted-web
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -267,15 +308,19 @@ jobs:
           PRERELEASE: ${{ needs.check.outputs.prerelease }}
           LATEST: ${{ needs.check.outputs.latest }}
         run: |
-          # Run again after the release was made, there is nothing left to do.
+          app="snatter-web-$VERSION.zip"
+          # Run again after the release was made, only the app may be missing.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             echo "$TAG is released already"
+            gh release upload "$TAG" "$app" --repo "$GITHUB_REPOSITORY" --clobber
             exit 0
           fi
           notes="Images, for linux/amd64 and linux/arm64:
 
           - \`ghcr.io/snattra/snatter-server:$VERSION\`
-          - \`ghcr.io/snattra/snatter-web:$VERSION\`"
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+          - \`ghcr.io/snattra/snatter-web:$VERSION\`
+
+          The web app for any static host, as served at https://web.snatter.app: \`$app\`."
+          gh release create "$TAG" "$app" --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "Snatter $VERSION" --notes "$notes" --generate-notes \
             --prerelease="$PRERELEASE" --latest="$LATEST"
