@@ -1,14 +1,14 @@
 /** The demo server, offered to anyone adding their first server. */
 export const DEMO_ORIGIN = "https://demo.snatter.app";
 
-/** Hosts on this very machine, which browsers reach over plain HTTP even from HTTPS pages. */
+/**
+ * Hosts on this machine that the app reaches over plain HTTP, even from an
+ * HTTPS page: browsers allow it, and so does the hosted app's policy, which
+ * names exactly these (hosted/_headers). Other loopback addresses, such as
+ * [::1], are taken like any other host.
+ */
 function isLocal(hostname: string): boolean {
-  return (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    /^127(\.\d+){3}$/.test(hostname) ||
-    hostname === "[::1]"
-  );
+  return hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "127.0.0.1";
 }
 
 /**

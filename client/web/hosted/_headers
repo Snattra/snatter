@@ -5,10 +5,11 @@
 #
 # The policy is the server installation's (nginx/default.conf.template), but
 # this app talks to servers of anyone's choosing: any HTTPS server and its
-# gateway, and servers on this machine, for development.
+# gateway, and servers on this machine, for development: those the app
+# takes as local (isLocal in src/state/serverAddress.ts), and no others.
 
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https: http://localhost:* http://127.0.0.1:*; font-src 'self'; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types snatter
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https: http://localhost:* http://*.localhost:* http://127.0.0.1:*; font-src 'self'; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://*.localhost:* ws://*.localhost:* http://127.0.0.1:* ws://127.0.0.1:*; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types snatter
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Cross-Origin-Opener-Policy: same-origin

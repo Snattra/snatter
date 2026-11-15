@@ -56,6 +56,17 @@ server, from its context menu on the rail or its sign-in screen, signs out
 of it, on the server too where it answers, and forgets all the app held for
 it (`forgetServer`).
 
+Invite links work differently in the two modes. A server installation's app
+is opened from `/invite/{code}` on the server's own address. The hosted app
+is opened from `/invite#{server}/{code}` (`hostedInviteIn`): the server, as
+people type it, and the code, both after the `#`, so the app's host never
+learns them. A server not yet added is looked up to be added, as if its
+address had been typed, and one already added opens; either way its sign-up
+takes the code. The demo's Caddy turns the server's own links into these.
+
+The sign-in screen shows no form until the server has said what it is, as
+the form depends on it: signing in, or setting up a server with no accounts.
+
 ## State
 
 The server sends state, then differences, and the client mirrors that. A

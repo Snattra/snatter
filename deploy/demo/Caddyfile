@@ -7,6 +7,13 @@
 		reverse_proxy server:8080
 	}
 
+	# Invite links as the server makes them, /invite/{code}, go on to the
+	# app with this server named, /invite#{server}/{code}, so that it adds
+	# the server and signs up with the invite.
+	handle /invite/* {
+		redir "https://web.snatter.app/invite#{host}/{http.request.uri.path.1}" 302
+	}
+
 	# The app itself is at web.snatter.app, which can add this server.
 	handle {
 		redir https://web.snatter.app 302

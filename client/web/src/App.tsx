@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { resolveMode } from "./config";
 import { loadSavedServers, useSavedServers } from "./servers/savedServers";
 import { connectionTo, forgetServer } from "./servers/ServerConnection";
-import { inviteCodeIn } from "./state/invites";
+import { hostedInviteIn, inviteCodeIn } from "./state/invites";
 import { type SavedServer, renamed, selecting, withServer, withoutServer } from "./state/serverList";
 import { useServer, useServers } from "./state/store";
 import { AddServerModal, RemoveServerModal, WelcomeScreen } from "./ui/AddServer";
@@ -21,7 +21,7 @@ export function App() {
   }
   return (
     <>
-      <ServerApp origin={mode.origin} invites />
+      <ServerApp origin={mode.origin} invite={inviteCodeIn(window.location.pathname)} />
       <VoiceSounds origin={mode.origin} />
     </>
   );
@@ -37,10 +37,25 @@ function MultiServerApp() {
   const [removing, setRemoving] = useState<SavedServer | null>(null);
   // The names the servers go by now, for the rail.
   const names = useServers((state) => state.servers);
+  // The page may have been opened from an invite link, /invite#{server}/{code}:
+  // taken up until someone is signed in there, or adding the server is let be.
+  const [invite, setInvite] = useState(() => hostedInviteIn(window.location.pathname, window.location.hash));
+  const invitedServerAdded = invite !== null && servers.some((server) => server.origin === invite.origin);
+  const dropInvite = () => {
+    setInvite(null);
+    window.history.replaceState(null, "", "/");
+  };
 
   useEffect(() => {
     void loadSavedServers();
   }, []);
+
+  // An invite to a server added already opens it.
+  useEffect(() => {
+    if (loaded && invite !== null && invitedServerAdded) {
+      change((list) => selecting(list, invite.origin));
+    }
+  }, [loaded, invite, invitedServerAdded, change]);
 
   // A server renamed since it was added is kept under its new name.
   useEffect(() => {
@@ -69,8 +84,11 @@ function MultiServerApp() {
   }
   const open = servers.find((server) => server.origin === selected) ?? servers[0];
   if (open === undefined) {
-    return <WelcomeScreen onAdd={add} />;
+    return <WelcomeScreen onAdd={add} address={invite?.origin} />;
   }
+
+  // An invite to a server not added yet starts adding it.
+  const inviteToAdd = invite !== null && !invitedServerAdded ? invite.origin : undefined;
 
   const rail = (
     <ServerRail>
@@ -90,12 +108,30 @@ function MultiServerApp() {
 
   return (
     <RailProvider value={rail}>
-      <ServerApp key={open.origin} origin={open.origin} onRemove={() => setRemoving(open)} />
+      <ServerApp
+        key={open.origin}
+        origin={open.origin}
+        invite={invite?.origin === open.origin ? invite.code : null}
+        onInviteUsed={dropInvite}
+        onRemove={() => setRemoving(open)}
+      />
       {/* Outside the open server's screen, so a call elsewhere is still heard. */}
       {servers.map((server) => (
         <VoiceSounds key={server.origin} origin={server.origin} />
       ))}
-      {adding && <AddServerModal known={servers} onAdd={add} onClose={() => setAdding(false)} />}
+      {(adding || inviteToAdd !== undefined) && (
+        <AddServerModal
+          known={servers}
+          address={inviteToAdd}
+          onAdd={add}
+          onClose={() => {
+            setAdding(false);
+            if (inviteToAdd !== undefined) {
+              dropInvite();
+            }
+          }}
+        />
+      )}
       {removing && (
         <RemoveServerModal server={removing} onRemove={() => remove(removing)} onClose={() => setRemoving(null)} />
       )}
@@ -105,17 +141,18 @@ function MultiServerApp() {
 
 interface ServerAppProps {
   origin: string;
-  /** Whether the page may have been opened from one of this server's invite links. */
-  invites?: boolean;
+  /** The code of an invite to this server the page was opened from, for signing up with. */
+  invite?: string | null;
+  /** Called once the invite has done its job, someone being signed in. */
+  onInviteUsed?: () => void;
   /** Takes the server off the app's list, for the screens before signing in. */
   onRemove?: () => void;
 }
 
-function ServerApp({ origin, invites = false, onRemove }: ServerAppProps) {
+function ServerApp({ origin, invite: invited = null, onInviteUsed, onRemove }: ServerAppProps) {
   const connection = connectionTo(origin);
   const entry = useServer(origin);
-  // The page may have been opened from an invite link, /invite/{code}.
-  const [invite, setInvite] = useState(() => (invites ? inviteCodeIn(window.location.pathname) : null));
+  const [invite, setInvite] = useState(invited);
   const signedIn = entry.status !== "unknown" && entry.status !== "signed_out";
 
   useEffect(() => {
@@ -127,8 +164,9 @@ function ServerApp({ origin, invites = false, onRemove }: ServerAppProps) {
     if (signedIn && invite !== null) {
       setInvite(null);
       window.history.replaceState(null, "", "/");
+      onInviteUsed?.();
     }
-  }, [signedIn, invite]);
+  }, [signedIn, invite, onInviteUsed]);
 
   switch (entry.status) {
     case "unknown":

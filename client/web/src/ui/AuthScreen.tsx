@@ -31,12 +31,16 @@ export function AuthScreen({ connection, notice, invite, onRemove }: AuthScreenP
   const [tab, setTab] = useState<Tab>(invite === null ? "log_in" : "register");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Whether the server has said what it is, or failed to: on its own, as an
+  // invite that does not work is an error too, and comes apart from it.
+  const [answered, setAnswered] = useState(false);
 
   useEffect(() => {
     connection.api
       .GET("/api/v1/server-info")
       .then(unwrap)
-      .then(setInfo, (e: unknown) => setError(describeError(e)));
+      .then(setInfo, (e: unknown) => setError(describeError(e)))
+      .finally(() => setAnswered(true));
   }, [connection]);
 
   // Who sent the invite, and whether it still works, before anyone fills in the form.
@@ -105,7 +109,7 @@ export function AuthScreen({ connection, notice, invite, onRemove }: AuthScreenP
 
   // Which form to show depends on the server, so none shows before it answers:
   // one typed into early would turn into the other under the typing.
-  if (info === null && error === null) {
+  if (!answered) {
     return (
       <Backdrop>
         <div className="sn-center" role="status">

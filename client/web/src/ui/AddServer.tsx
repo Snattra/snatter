@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { type ServerCheck, checkServer } from "../servers/serverCheck";
 import { DEMO_ORIGIN, serverOrigin } from "../state/serverAddress";
 import type { SavedServer } from "../state/serverList";
@@ -26,8 +26,8 @@ interface AddServerParts {
  * what it is, then what was found there, to add it. The demo server is a
  * click away until it has been added.
  */
-function useAddServer(known: SavedServer[], onAdd: (server: SavedServer) => void): AddServerParts {
-  const [address, setAddress] = useState("");
+function useAddServer(known: SavedServer[], onAdd: (server: SavedServer) => void, initial?: string): AddServerParts {
+  const [address, setAddress] = useState(initial ?? "");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [found, setFound] = useState<Found | null>(null);
@@ -48,6 +48,16 @@ function useAddServer(known: SavedServer[], onAdd: (server: SavedServer) => void
       setProblem(problemWith(check));
     }
   }
+
+  // An address to start from, as from an invite link, is looked up at once.
+  const lookedUp = useRef(false);
+  useEffect(() => {
+    if (initial !== undefined && !lookedUp.current) {
+      lookedUp.current = true;
+      void look(initial);
+    }
+    // Once, for the address the screen opened with.
+  }, []);
 
   const add = () => found !== null && onAdd({ origin: found.origin, name: found.info.community.name });
 
@@ -150,8 +160,8 @@ function FoundServer({ found, added }: { found: Found; added: boolean }) {
 }
 
 /** What the app shows before any server is added. */
-export function WelcomeScreen({ onAdd }: { onAdd: (server: SavedServer) => void }) {
-  const parts = useAddServer([], onAdd);
+export function WelcomeScreen({ onAdd, address }: { onAdd: (server: SavedServer) => void; address?: string }) {
+  const parts = useAddServer([], onAdd, address);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     parts.submit();
@@ -183,8 +193,10 @@ export function AddServerModal(props: {
   known: SavedServer[];
   onAdd: (server: SavedServer) => void;
   onClose: () => void;
+  /** An address to look up at once, as from an invite link. */
+  address?: string;
 }) {
-  const parts = useAddServer(props.known, props.onAdd);
+  const parts = useAddServer(props.known, props.onAdd, props.address);
   return (
     <Modal
       title="Add a server"

@@ -108,8 +108,9 @@ protocol version is separate (`protocol/README.md`).
 
 demo.snatter.app runs a release of the server, with Caddy in front for
 HTTPS; its address redirects to web.snatter.app, the app people use with
-it. `deploy/demo` holds its compose file, Caddyfile and system settings,
-and `deploy.sh`, the one way to change what runs there.
+it, and so do its invite links, naming the server
+(`/invite#{server}/{code}`). `deploy/demo` holds its compose file, Caddyfile
+and system settings, and `deploy.sh`, the one way to change what runs there.
 
 Once a release succeeds, the Deploy demo workflow
 (`.github/workflows/deploy-demo.yml`) puts it there by itself, if it is not a
