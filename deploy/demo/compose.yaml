@@ -1,7 +1,8 @@
-# demo.snatter.app: a released Snatter, with Caddy in front for HTTPS. It
-# lives in /opt/snatter on the demo host, and deploy.sh, beside it, is the
-# one way to change what runs; the host's README.md beside them is its
-# runbook, and "The demo" in CONTRIBUTING.md says how releases get there.
+# demo.snatter.app: a released Snatter server, with Caddy in front for HTTPS;
+# the app for it is the one at web.snatter.app. It lives in /opt/snatter on
+# the demo host, and deploy.sh, beside it, is the one way to change what
+# runs; the host's README.md beside them is its runbook, and "The demo" in
+# CONTRIBUTING.md says how releases get there.
 #
 # Settings are in .env next to this file:
 #
@@ -29,8 +30,7 @@ services:
     security_opt: [no-new-privileges:true]
     environment:
       # Take the client address from X-Forwarded-For, so rate limits apply
-      # per client. Safe only because nothing but Caddy and the web container
-      # can reach the server.
+      # per client. Safe only because nothing but Caddy can reach the server.
       QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING: "true"
       QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED: "true"
       # And the address the page is at from X-Forwarded-Host, so that the
@@ -44,20 +44,6 @@ services:
     volumes:
       - server-data:/var/lib/snatter
 
-  web:
-    image: ghcr.io/snattra/snatter-web:${SNATTER_VERSION:?deploy a version with deploy.sh}
-    restart: unless-stopped
-    logging: *logging
-    # Runs as a user of its own, with no privileges and no way to gain any.
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    depends_on:
-      - server
-    environment:
-      SNATTER_SERVER_URL: http://server:8080
-    ports:
-      # On this machine only, for reaching the app through an SSH tunnel.
-      - "127.0.0.1:8080:8080"
 
   caddy:
     image: docker.io/library/caddy:2
@@ -70,7 +56,6 @@ services:
     security_opt: [no-new-privileges:true]
     depends_on:
       - server
-      - web
     environment:
       SNATTER_DOMAIN: ${SNATTER_DOMAIN:?set it in .env}
     ports:

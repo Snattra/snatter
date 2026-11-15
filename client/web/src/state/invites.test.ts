@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Invite } from "../api/types";
-import { inviteCodeIn, reusableInvite } from "./invites";
+import { hostedInviteIn, inviteCodeIn, reusableInvite } from "./invites";
 
 const now = Date.parse("2026-09-27T12:00:00Z");
 const hour = 60 * 60 * 1000;
@@ -52,5 +52,36 @@ describe("reusableInvite", () => {
       invite("deleted0", { createdBy: null }),
     ];
     expect(reusableInvite(invites, "me", now)).toBeNull();
+  });
+});
+
+describe("hostedInviteIn", () => {
+  it("reads the server and the code after the #", () => {
+    expect(hostedInviteIn("/invite", "#demo.snatter.app/k3Jd8QzP")).toEqual({
+      origin: "https://demo.snatter.app",
+      code: "k3Jd8QzP",
+    });
+    expect(hostedInviteIn("/invite/", "#localhost:8080/k3Jd8QzP/")).toEqual({
+      origin: "http://localhost:8080",
+      code: "k3Jd8QzP",
+    });
+    expect(hostedInviteIn("/invite", "#chat.example.com%3A8443/k3Jd8QzP")?.origin).toBe(
+      "https://chat.example.com:8443",
+    );
+  });
+
+  it("is no invite for any other address", () => {
+    for (const [path, hash] of [
+      ["/", "#demo.snatter.app/k3Jd8QzP"],
+      ["/invite/k3Jd8QzP", ""],
+      ["/invite", ""],
+      ["/invite", "#demo.snatter.app"],
+      ["/invite", "#demo.snatter.app/short"],
+      ["/invite", "#/k3Jd8QzP"],
+      ["/invite", "#%E0%A4%A/k3Jd8QzP"],
+      ["/invite", "#user@demo.snatter.app/k3Jd8QzP"],
+    ]) {
+      expect(hostedInviteIn(path ?? "", hash ?? ""), `${path}${hash}`).toBeNull();
+    }
   });
 });

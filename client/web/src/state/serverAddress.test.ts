@@ -10,7 +10,10 @@ describe("serverOrigin", () => {
   it("takes a host on this machine as plain HTTP", () => {
     expect(serverOrigin("localhost:8080")).toBe("http://localhost:8080");
     expect(serverOrigin("127.0.0.1:8080")).toBe("http://127.0.0.1:8080");
-    expect(serverOrigin("[::1]:8080")).toBe("http://[::1]:8080");
+    expect(serverOrigin("chat.localhost:8080")).toBe("http://chat.localhost:8080");
+    // Only those the hosted app's policy lets it reach.
+    expect(serverOrigin("[::1]:8080")).toBe("https://[::1]:8080");
+    expect(serverOrigin("127.0.0.2:8080")).toBe("https://127.0.0.2:8080");
   });
 
   it("keeps the scheme it is given, and leaves out the path and the scheme's own port", () => {
@@ -37,6 +40,8 @@ describe("blockedAsInsecure", () => {
   it("blocks plain HTTP from an HTTPS page, unless it is on this machine", () => {
     expect(blockedAsInsecure("http://192.168.1.10:8080", "https:")).toBe(true);
     expect(blockedAsInsecure("http://localhost:8080", "https:")).toBe(false);
+    expect(blockedAsInsecure("http://chat.localhost:8080", "https:")).toBe(false);
+    expect(blockedAsInsecure("http://[::1]:8080", "https:")).toBe(true);
     expect(blockedAsInsecure("https://demo.snatter.app", "https:")).toBe(false);
     expect(blockedAsInsecure("http://192.168.1.10:8080", "http:")).toBe(false);
   });

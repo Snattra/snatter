@@ -1,0 +1,123 @@
+# Puts the newest release's web app on web.snatter.app whenever Release
+# (release.yml) has published one, whichever it was. Prereleases go there
+# only by hand: Run workflow, naming the version, which also rolls the app
+# back to an earlier one.
+#
+# The app is the release's snatter-web-<version>.zip, uploaded as it is to
+# the Cloudflare Pages project snatter-web (see "The web app" in
+# CONTRIBUTING.md). What reaches Cloudflare lives in the `web` environment:
+# the CLOUDFLARE_API_TOKEN secret, allowed to edit Pages and nothing else,
+# and the CLOUDFLARE_ACCOUNT_ID variable.
+
+name: Deploy web
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released version to serve, such as 0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One deployment at a time, each to the end.
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    # A release run's head_branch is its tag.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && !contains(github.event.workflow_run.head_branch, '-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: web
+      url: https://web.snatter.app
+    env:
+      WEB_URL: https://web.snatter.app
+      PAGES_PROJECT: snatter-web
+      WRANGLER: wrangler@4.160.1
+    steps:
+      - name: Pick the version
+        id: version
+        env:
+          REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.event.workflow_run.head_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${REQUESTED#v}
+          if ! [[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::$REQUESTED is not a version such as 0.1.0"
+            exit 1
+          fi
+          # After a release, the newest release goes on web.snatter.app,
+          # whichever release this run follows: a fix for an older line
+          # released after a newer one leaves the newer one there, and a run
+          # that took the place of another waiting behind a deploy still brings
+          # the newest. Releases, not tags, count: a tag whose release failed
+          # is none.
+          if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
+            released=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+              --jq '.[] | select(.draft or .prerelease | not) | .tag_name')
+            newest=$(printf '%s\nv%s\n' "$released" "$version" \
+              | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+            if [ "$newest" != "$version" ]; then
+              echo "::notice::$version is not the newest release; web.snatter.app gets $newest"
+            fi
+            version=$newest
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Fetch the app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "snatter-web-$VERSION.zip"
+          mkdir app
+          unzip -q "snatter-web-$VERSION.zip" -d app
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      # To the project's production branch, which web.snatter.app serves, as
+      # the project has it: a Direct Upload project's is set when it is made,
+      # and its dashboard does not show it. Any other branch is a preview.
+      - name: Deploy
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          branch=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_PROJECT" \
+            | jq -r '.result.production_branch // empty')
+          if [ -z "$branch" ]; then
+            echo "::error::$PAGES_PROJECT has no production branch that Cloudflare would say"
+            exit 1
+          fi
+          echo "Deploying to $PAGES_PROJECT's production branch, $branch"
+          npx --yes "$WRANGLER" pages deploy app --project-name "$PAGES_PROJECT" --branch "$branch" \
+            --commit-message "Snatter $VERSION" --commit-dirty=true
+      - name: Check web.snatter.app serves it
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for _ in $(seq 1 24); do
+            served=$(curl -fsS --max-time 10 "$WEB_URL/" \
+              | sed -n 's/.*<meta name="snatter-version" content="\([^"]*\)".*/\1/p') || served=unreachable
+            if [ "$served" = "$VERSION" ]; then
+              echo "$WEB_URL serves $VERSION"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$WEB_URL serves ${served:-no version}, not $VERSION"
+          exit 1

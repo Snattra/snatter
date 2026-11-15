@@ -1,1 +1,0 @@
-(function(){self.onmessage=async t=>{let{challenge:n,salt:r,maxnumber:i}=t.data,a=new TextEncoder;for(let t=0;t<=i;t++)if(e(await crypto.subtle.digest(`SHA-256`,a.encode(r+t)))===n){self.postMessage(t);return}self.postMessage(null)};function e(e){return Array.from(new Uint8Array(e),e=>e.toString(16).padStart(2,`0`)).join(``)}})();
