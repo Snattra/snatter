@@ -70,22 +70,52 @@ export function Tag(props: { color?: string | null; accent?: boolean; children: 
 interface TooltipProps {
   label: string;
   side?: "top" | "right" | "bottom" | "left";
+  /**
+   * Placed against the window as it shows, rather than beside the control in
+   * its pane: for a control in a pane that scrolls, which would clip it.
+   */
+  fixed?: boolean;
   /** One focusable element, which the tooltip describes. */
   children: ReactElement<{ "aria-describedby"?: string }>;
 }
 
 /** A short label for an icon-only control, shown on hover and focus. */
-export function Tooltip({ label, side = "top", children }: TooltipProps) {
+export function Tooltip({ label, side = "top", fixed = false, children }: TooltipProps) {
   const id = useId();
+  const tip = useRef<HTMLSpanElement>(null);
+  const place = (event: { currentTarget: HTMLElement }) => {
+    if (fixed && tip.current !== null) {
+      placeTooltip(tip.current, event.currentTarget.getBoundingClientRect(), side);
+    }
+  };
   return (
-    <span className="sn-tooltip-anchor">
+    <span className="sn-tooltip-anchor" onPointerEnter={place} onFocus={place}>
       {cloneElement(children, { "aria-describedby": id })}
       {/* Hidden from names, so a tooltip inside a button is not read as part of it; aria-describedby still reads it. */}
-      <span id={id} role="tooltip" aria-hidden="true" className={`sn-tooltip sn-tooltip-${side}`}>
+      <span
+        ref={tip}
+        id={id}
+        role="tooltip"
+        aria-hidden="true"
+        className={classes("sn-tooltip", `sn-tooltip-${side}`, fixed && "sn-tooltip-fixed")}
+      >
         {label}
       </span>
     </span>
   );
+}
+
+/** Puts a fixed tooltip where it would sit beside its control: `space-12` to the right, as the stylesheet has it, `space-8` elsewhere. */
+function placeTooltip(tip: HTMLElement, control: DOMRect, side: NonNullable<TooltipProps["side"]>) {
+  const middle = { x: control.left + control.width / 2, y: control.top + control.height / 2 };
+  const [left, top] = {
+    right: [control.right + 12, middle.y],
+    left: [control.left - 8, middle.y],
+    top: [middle.x, control.top - 8],
+    bottom: [middle.x, control.bottom + 8],
+  }[side];
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
 }
 
 /** Between a popover and its control, and from the window's edge: `space-8`. */

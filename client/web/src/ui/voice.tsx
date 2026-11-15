@@ -3,6 +3,7 @@ import type { Account, Channel, VoiceState } from "../api/types";
 import type { MicInput } from "../media/gate";
 import type { ServerConnection } from "../servers/ServerConnection";
 import { isMuted } from "../state/moderation";
+import { useServer } from "../state/store";
 import { type ServerView, can, voiceIn } from "../state/serverView";
 import {
   type LocalVoice,
@@ -403,6 +404,17 @@ export function VoiceRoom({ connection, view, channel, local, onOpenProfile }: V
       )}
     </div>
   );
+}
+
+/**
+ * The voice sounds of one server, wherever the app is looking: mounted for as
+ * long as the app knows the server, so a call goes on being heard, and keeps
+ * its scene, while another server is open.
+ */
+export function VoiceSounds({ origin }: { origin: string }) {
+  const entry = useServer(origin);
+  useVoiceSounds(entry.view, entry.voice);
+  return null;
 }
 
 /**

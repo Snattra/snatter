@@ -33,13 +33,28 @@ work the same way (`gateway/closeCodes.ts`).
 
 ## Modes and servers
 
-A server installation will serve the app for itself alone: single-server
-mode, where the server is the page's origin. The hosted app at snatter.app/web
-and the desktop app will manage many servers: multi-server mode, not built
-yet (`config.ts`). So that multi-server needs no rework, **everything is kept
-per server from the start**: the store holds entries by origin, and each
-server has one `ServerConnection` (`connectionTo(origin)`) owning its token,
-REST client and gateway.
+A server installation serves the app for itself alone: single-server mode,
+where the server is the page's origin. The hosted app at web.snatter.app and
+the desktop app manage many servers: multi-server mode, which Vite's
+`--mode multi` builds (`config.ts`). **Everything is kept per server**: the
+store holds entries by origin, and each server has one `ServerConnection`
+(`connectionTo(origin)`) owning its token, REST client and gateway.
+
+In multi-server mode the servers added, and the one open, are a list kept
+through `platform.settings` (`servers/savedServers.ts`, with the list's rules
+in `state/serverList.ts`). With none added, the app opens on the welcome
+screen. Adding a server takes an address as people type it
+(`state/serverAddress.ts`: `demo.snatter.app` is HTTPS, `localhost:8080`
+plain HTTP, a path is dropped), then asks the server for its `server-info`
+before it is added (`servers/serverCheck.ts`): it must answer, be Snatter, and
+be close enough in version, and a plain HTTP server is not tried from an
+HTTPS page, which the browser would block. A server that does not list the
+app among its client origins looks unreachable, since the browser hides its
+answer. The rail is the app's, given to every screen of the open server
+(`RailProvider`, and `Railed` for screens without the shell). Removing a
+server, from its context menu on the rail or its sign-in screen, signs out
+of it, on the server too where it answers, and forgets all the app held for
+it (`forgetServer`).
 
 ## State
 
@@ -308,6 +323,8 @@ asynchronous because the desktop side will answer over IPC. The browser
 implementation does what a browser can and nothing more. `openLink` opens
 an address outside the app: a new tab without opener or referrer in the
 browser, the system browser on the desktop.
+`secrets` keeps session tokens and `settings` small values that need no
+protection, such as the servers added; in the browser both are localStorage.
 
 ## UI
 

@@ -27,6 +27,16 @@ Vite's proxy, by default at http://localhost:8080. Point it elsewhere with
 `SNATTER_SERVER=http://localhost:8081 npm run dev`. The first account
 registered on a fresh server becomes its owner.
 
+To run the app as the hosted and desktop apps do, adding servers by their
+address rather than talking to the one behind the proxy:
+
+```
+npm run dev:multi
+```
+
+Servers let apps on `http://localhost` connect by default, so a local server
+at `localhost:8080` can be added as it is.
+
 ## Checking and testing
 
 ```

@@ -35,12 +35,16 @@ export interface ServerEntry {
   notice: string | null;
   /** Voice as this app asked for it; kept across reconnects, which join again. */
   voice: LocalVoice;
+  /** The channel open on this server, or null for the first; kept while another server is open. */
+  selectedChannelId: string | null;
 }
 
 interface ServersState {
-  /** Every server the app knows, by origin; one for now, many in the multi-server apps. */
+  /** Every server the app knows, by origin. */
   servers: Record<string, ServerEntry>;
   update(origin: string, change: (entry: ServerEntry) => ServerEntry): void;
+  /** Forgets the server, as when it is taken off the list. */
+  remove(origin: string): void;
 }
 
 export const useServers = create<ServersState>()((set) => ({
@@ -49,6 +53,12 @@ export const useServers = create<ServersState>()((set) => ({
     set((state) => ({
       servers: { ...state.servers, [origin]: change(state.servers[origin] ?? blank(origin)) },
     })),
+  remove: (origin) =>
+    set((state) => {
+      const servers = { ...state.servers };
+      delete servers[origin];
+      return { servers };
+    }),
 }));
 
 export function useServer(origin: string): ServerEntry {
@@ -56,5 +66,5 @@ export function useServer(origin: string): ServerEntry {
 }
 
 export function blank(origin: string): ServerEntry {
-  return { origin, status: "unknown", view: null, logs: {}, notice: null, voice: noVoice };
+  return { origin, status: "unknown", view: null, logs: {}, notice: null, voice: noVoice, selectedChannelId: null };
 }

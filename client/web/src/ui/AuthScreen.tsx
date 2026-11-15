@@ -21,9 +21,11 @@ interface AuthScreenProps {
   notice: string | null;
   /** The code of the invite link the page was opened from. */
   invite: string | null;
+  /** Takes the server off the app's list, where the app has one. */
+  onRemove?: () => void;
 }
 
-export function AuthScreen({ connection, notice, invite }: AuthScreenProps) {
+export function AuthScreen({ connection, notice, invite, onRemove }: AuthScreenProps) {
   const [info, setInfo] = useState<ServerInfo | null>(null);
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [tab, setTab] = useState<Tab>(invite === null ? "log_in" : "register");
@@ -183,6 +185,11 @@ export function AuthScreen({ connection, notice, invite }: AuthScreenProps) {
           <p className="sn-form-error" role="alert">
             {error}
           </p>
+        )}
+        {onRemove && (
+          <Button variant="link" onClick={onRemove}>
+            Remove this server
+          </Button>
         )}
       </Card>
     </Backdrop>

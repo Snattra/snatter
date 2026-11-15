@@ -748,6 +748,24 @@ textarea.sn-input {
   translate: 0 -50%;
 }
 
+/* Against the window, its place set from script as it shows; the translate
+   still centres it on the control, or puts it before the control's left or
+   top edge. */
+.sn-tooltip-fixed {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  z-index: 100;
+}
+
+.sn-tooltip-fixed.sn-tooltip-left {
+  translate: -100% -50%;
+}
+
+.sn-tooltip-fixed.sn-tooltip-top {
+  translate: -50% -100%;
+}
+
 /* ---------- Popover ---------- */
 
 /* In the top layer, so no pane clips it. Its control's position is set from
@@ -1038,8 +1056,11 @@ textarea.sn-input {
   width: var(--rail-width);
   height: 100%;
   padding: var(--space-12) 0;
-  /* visible, so a server's tooltip can reach over the sidebar */
-  overflow: visible;
+  /* Scrolls when the servers outgrow the window; their tooltips are placed
+     against the window, so it does not clip them. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
   background: var(--bg);
 }
 
@@ -1123,6 +1144,78 @@ textarea.sn-input {
 
 .sn-rail-item-selected .sn-rail-server {
   box-shadow: var(--shadow-accent);
+}
+
+/* Adding a server: a quiet circle with a plus, the accent coming in only on hover. */
+.sn-rail-add {
+  color: var(--online);
+}
+
+.sn-rail-item:hover .sn-rail-add {
+  color: var(--on-accent);
+}
+
+/* In voice on this server, while another one is open: a small speaker at the icon's corner. */
+.sn-rail-voice {
+  --icon-size: 12px;
+  position: absolute;
+  right: calc(50% - var(--server-icon) / 2 - 4px);
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--bg);
+  border-radius: var(--radius-round);
+  background: var(--online);
+  color: var(--on-accent);
+  pointer-events: none;
+}
+
+/* ---------- A screen beside the rail ---------- */
+
+/* Signing in and the like, while the app keeps its servers on the rail. */
+.sn-railed {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.sn-railed-main {
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* ---------- Adding a server ---------- */
+
+.sn-add-server-demo {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sn-add-server-found {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.sn-add-server-name {
+  display: block;
+  color: var(--text-strong);
+  font-size: 16px;
+}
+
+.sn-add-server-address,
+.sn-add-server-joining {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sn-add-server-description,
+.sn-add-server-joining {
+  margin: 0;
 }
 
 .sn-rail-server:active {

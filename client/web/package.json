@@ -6,6 +6,7 @@
   "scripts": {
     "api": "openapi-typescript ../../protocol/openapi/openapi.yaml -o src/api/schema.d.ts",
     "dev": "npm run api && vite",
+    "dev:multi": "npm run api && vite --mode multi",
     "build": "npm run api && tsc --noEmit && vite build",
     "check": "npm run api && tsc --noEmit",
     "preview": "vite preview",
