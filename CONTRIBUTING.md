@@ -64,9 +64,9 @@ tag with a suffix, such as `v0.2.0-rc.1`, is a prerelease.
    for linux/amd64 and linux/arm64 with the tag's version, tries them, and
    publishes them, then makes the GitHub release with notes from the pull
    requests merged since the last one.
-4. A stable release goes on the demo by itself (Deploy demo); a
-   prerelease, by hand. Check `https://demo.snatter.app/api/v1/server-info`
-   reports the version. The demo's runbook is `deploy/demo/README.md`.
+4. A stable release goes on the demo by itself; a prerelease, by hand (see
+   "The demo" below). Check `https://demo.snatter.app/api/v1/server-info`
+   reports the version.
 5. Move `revision` in `server/pom.xml` on to the next version being worked
    towards, such as `0.2.0-SNAPSHOT`, in a pull request.
 
@@ -89,8 +89,10 @@ alone.
   right one.
 - **"CI ... ended in failure"**: fix `main`, then tag the fixed commit with a
   new version; versions are not reused once images are out.
-- **It failed after the images were pushed**: run the workflow again
-  (`gh run rerun <id> --failed`); every step may run twice.
+- **It failed after the images were pushed**: run the whole workflow again
+  (`gh run rerun <id>`), not only the failed jobs: the moving tags are then
+  chosen again, against the releases there are by then. Every step may run
+  twice.
 - **Two tags pushed at once**: releases run one at a time, and a run
   waiting behind another is replaced by any that comes after it. Run the
   replaced one again from its tag.
@@ -98,3 +100,28 @@ alone.
 The server reports the version it was built with in `server-info`;
 `revision` in `server/pom.xml` is only what development builds report. The
 protocol version is separate (`protocol/README.md`).
+
+### The demo
+
+demo.snatter.app runs a release, the server with the web app and Caddy in
+front for HTTPS. `deploy/demo` holds its compose file, Caddyfile and system
+settings, and `deploy.sh`, the one way to change what runs there.
+
+Once a release succeeds, the Deploy demo workflow
+(`.github/workflows/deploy-demo.yml`) puts it there by itself, if it is not a
+prerelease and is the newest release; otherwise its run says why not. It
+logs in to the host over SSH as `snatter-deploy`, whose key may run nothing
+but `deploy.sh`, and hands it the version. `deploy.sh` pulls that version's
+images, records the version and restarts what changed, then reloads Caddy;
+the workflow checks that `server-info` reports the version.
+
+To deploy a prerelease, roll back to an earlier release, or deploy again:
+
+```
+gh workflow run deploy-demo.yml -f version=0.1.0-rc.1
+```
+
+The key and the host's address live in the `demo` environment of the
+repository settings, deployable only from `main`. Everything about the
+host itself, from reading its logs to changing its setup or building a new
+one, is in its runbook, `/opt/snatter/README.md` on the host.

@@ -1,6 +1,7 @@
 # demo.snatter.app: a released Snatter, with Caddy in front for HTTPS. It
 # lives in /opt/snatter on the demo host, and deploy.sh, beside it, is the
-# one way to change what runs; see README.md.
+# one way to change what runs; the host's README.md beside them is its
+# runbook, and "The demo" in CONTRIBUTING.md says how releases get there.
 #
 # Settings are in .env next to this file:
 #
