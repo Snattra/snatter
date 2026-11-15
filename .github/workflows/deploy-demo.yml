@@ -1,0 +1,103 @@
+# Puts the newest release on demo.snatter.app once Release (release.yml) has
+# published it; a fix for an older line, released after it, does not go
+# there. Prereleases go there only by hand: Run workflow, naming the
+# version, which also rolls the demo back to an earlier one.
+#
+# The deploy key may run nothing on the host but deploy/demo/deploy.sh,
+# which it hands the version; deploy/demo/README.md sets the host up. What
+# reaches the host lives in the `demo` environment: the DEMO_SSH_KEY secret,
+# and the DEMO_SSH_HOST, DEMO_SSH_USER and DEMO_SSH_KNOWN_HOSTS variables.
+
+name: Deploy demo
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released version to run, such as 0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One deployment at a time, each to the end.
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    # A release run's head_branch is its tag.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && !contains(github.event.workflow_run.head_branch, '-'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: demo
+      url: https://demo.snatter.app
+    env:
+      DEMO_URL: https://demo.snatter.app
+    steps:
+      - name: Pick the version
+        id: version
+        env:
+          REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.event.workflow_run.head_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${REQUESTED#v}
+          if ! [[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::$REQUESTED is not a version such as 0.1.0"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # After a release, only the newest one goes on the demo, not a fix
+          # for an older line released after it. Releases, not tags, count:
+          # a tag whose release failed is none.
+          if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
+            newest=$( (gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+                --jq '.[] | select(.draft or .prerelease | not) | .tag_name'; echo "v$version") \
+              | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+            if [ "$version" != "$newest" ]; then
+              echo "::notice::$version is older than $newest, so the demo stays as it is"
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+      - name: Deploy
+        if: steps.version.outputs.deploy == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SSH_KEY: ${{ secrets.DEMO_SSH_KEY }}
+          DEMO_HOST: ${{ vars.DEMO_SSH_HOST }}
+          DEMO_USER: ${{ vars.DEMO_SSH_USER }}
+          KNOWN_HOSTS: ${{ vars.DEMO_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/demo
+          chmod 600 ~/.ssh/demo
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/demo -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEMO_USER@$DEMO_HOST" "$VERSION"
+      - name: Check the demo runs it
+        if: steps.version.outputs.deploy == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for _ in $(seq 1 24); do
+            reported=$(curl -fsS --max-time 10 "$DEMO_URL/api/v1/server-info" | jq -r .version) || reported=unreachable
+            if [ "$reported" = "$VERSION" ]; then
+              echo "$DEMO_URL runs $VERSION"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$DEMO_URL reports $reported, not $VERSION"
+          exit 1

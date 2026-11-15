@@ -10,7 +10,9 @@
 # a local JDK or Maven to run the server.
 
 # --- Build stage --------------------------------------------------------------
-FROM docker.io/library/maven:3.9-eclipse-temurin-25 AS build
+# Runs on the builder's own architecture whatever the image is for: the jar is
+# the same everywhere, so only the runtime stage is built per architecture.
+FROM --platform=$BUILDPLATFORM docker.io/library/maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /build/server
 
 # Resolve dependencies first so they are cached independently of source changes.
@@ -19,7 +21,10 @@ RUN mvn -B -q dependency:go-offline
 
 COPY protocol/openapi ../protocol/openapi
 COPY server/src ./src
-RUN mvn -B -q package -DskipTests
+# The version the server reports, as a release names it; unset, the one in
+# pom.xml.
+ARG SNATTER_VERSION
+RUN mvn -B -q package -DskipTests ${SNATTER_VERSION:+-Drevision=$SNATTER_VERSION}
 
 # --- Runtime stage ------------------------------------------------------------
 FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24

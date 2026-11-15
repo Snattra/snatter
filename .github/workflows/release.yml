@@ -1,0 +1,281 @@
+# Publishes a release when a version tag is pushed: v0.1.0, or v0.2.0-rc.1
+# for a prerelease (see "Releases" in CONTRIBUTING.md).
+#
+# The tag must be on a commit of main that CI passed on. The images are built
+# again from that commit, so that they report the tag's version, for
+# linux/amd64 and linux/arm64: ghcr.io/snattra/snatter-server and
+# snatter-web, tagged with the version (0.1.0). The moving tags follow the
+# newest release only: its minor line (0.1) when it is the newest of that
+# line, its major line (1, from 1.0 on) likewise, and `latest` when it is the
+# newest of all. So a fix released for an older line moves nothing of a newer
+# one. A prerelease gets only its own version tag. Then comes the GitHub
+# release, with notes generated from the pull requests merged since the one
+# before. Deploy demo (deploy-demo.yml) follows a successful run.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# One release at a time, across versions, so that the moving tags are chosen
+# and pushed by one run before the next looks at them. A run that waits is
+# replaced by any that comes after it, so push one tag at a time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      latest: ${{ steps.moving.outputs.latest }}
+      minor-line: ${{ steps.moving.outputs.minor-line }}
+      major-line: ${{ steps.moving.outputs.major-line }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Read the version from the tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Semantic versioning without build metadata, which image tags
+          # cannot carry.
+          if ! echo "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
+            echo "::error::$TAG is not a version tag such as v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+          version=${TAG#v}
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case $version in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: Check the commit is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME points to $GITHUB_SHA, which is not on main"
+            exit 1
+          fi
+      # "CI result" of the CI run for the push to main, not of a pull request
+      # that had the same commit. Waits while it runs, so the tag can be
+      # pushed straight after merging.
+      - name: Wait for CI to pass on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 80); do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&event=push&branch=main&per_page=1" \
+              --jq '.workflow_runs[0].id // empty')
+            if [ -z "$run" ]; then
+              state=missing
+            else
+              # Of the latest attempt, should the run have been run again.
+              state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?filter=latest" \
+                --jq '[.jobs[] | select(.name == "CI result")][0]
+                      | if . == null or .status != "completed" then "running" else .conclusion end')
+            fi
+            case $state in
+              success)
+                echo "CI passed on $GITHUB_SHA"
+                exit 0 ;;
+              running)
+                ;;
+              missing)
+                if [ "$attempt" -gt 10 ]; then
+                  echo "::error::CI never ran on $GITHUB_SHA"
+                  exit 1
+                fi ;;
+              *)
+                echo "::error::CI on $GITHUB_SHA ended in $state; fix main and tag a new commit"
+                exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::CI on $GITHUB_SHA did not finish in time; run this workflow again once it has"
+          exit 1
+      - name: Choose the moving tags
+        id: moving
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Whether this is the newest of the given releases whose versions
+          # start with the given prefix.
+          newest_of() {
+            newest=$(printf '%s\n' "$released" | grep -E "^${1//./\\.}" | sort -V | tail -n 1)
+            [ "$newest" = "$VERSION" ] && echo true || echo false
+          }
+          if [ "$PRERELEASE" = true ]; then
+            latest=false minor=false major=false
+          else
+            # This version and those published as releases, prereleases
+            # left out: a tag whose release failed or never came is no
+            # release.
+            released=$( (gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+                --jq '.[] | select(.draft or .prerelease | not) | .tag_name'; echo "v$VERSION") \
+              | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$')
+            latest=$(newest_of "")
+            minor=$(newest_of "${VERSION%.*}.")
+            # Below 1.0 a minor version may break things, so 0 is no line.
+            major=$(newest_of "${VERSION%%.*}.")
+            case $VERSION in 0.*) major=false ;; esac
+          fi
+          echo "Moving tags: latest $latest, minor line $minor, major line $major"
+          {
+            echo "latest=$latest"
+            echo "minor-line=$minor"
+            echo "major-line=$major"
+          } >> "$GITHUB_OUTPUT"
+
+  images:
+    name: Images
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The arm64 runtime stages run a command or two; everything that is
+      # compiled is compiled once, natively.
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # First for this machine only, under the names compose.yaml gives them,
+      # to try them before anything is published.
+      - name: Build the server image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: server/Dockerfile
+          build-args: SNATTER_VERSION=${{ env.VERSION }}
+          tags: snatter-server:local
+          load: true
+          cache-from: |
+            type=gha,scope=server
+            type=gha,scope=release-server
+      - name: Build the web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: client/web/Dockerfile
+          tags: snatter-web:local
+          load: true
+          cache-from: |
+            type=gha,scope=web
+            type=gha,scope=release-web
+      - name: Smoke test
+        run: |
+          docker compose up -d --no-build
+          reported=$(curl -fsS --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8080/api/v1/server-info | jq -r .version)
+          echo "The server reports version $reported"
+          [ "$reported" = "$VERSION" ]
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+      - name: Show the logs
+        if: failure()
+        run: docker compose logs
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: server
+        with:
+          images: ghcr.io/snattra/snatter-server
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.check.outputs.minor-line }}
+            type=semver,pattern={{major}},enable=${{ needs.check.outputs.major-line }}
+          flavor: latest=${{ needs.check.outputs.latest }}
+      - name: Push the server image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: SNATTER_VERSION=${{ env.VERSION }}
+          push: true
+          tags: ${{ steps.server.outputs.tags }}
+          labels: ${{ steps.server.outputs.labels }}
+          # What went into the image and how it was built, for those who
+          # run it to check.
+          provenance: mode=max
+          sbom: true
+          cache-from: |
+            type=gha,scope=server
+            type=gha,scope=release-server
+          cache-to: type=gha,scope=release-server,mode=max
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: web
+        with:
+          images: ghcr.io/snattra/snatter-web
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ needs.check.outputs.minor-line }}
+            type=semver,pattern={{major}},enable=${{ needs.check.outputs.major-line }}
+          flavor: latest=${{ needs.check.outputs.latest }}
+      - name: Push the web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: client/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.web.outputs.tags }}
+          labels: ${{ steps.web.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: |
+            type=gha,scope=web
+            type=gha,scope=release-web
+          cache-to: type=gha,scope=release-web,mode=max
+
+  release:
+    name: GitHub release
+    needs: [check, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.check.outputs.version }}
+          PRERELEASE: ${{ needs.check.outputs.prerelease }}
+          LATEST: ${{ needs.check.outputs.latest }}
+        run: |
+          # Run again after the release was made, there is nothing left to do.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$TAG is released already"
+            exit 0
+          fi
+          notes="Images, for linux/amd64 and linux/arm64:
+
+          - \`ghcr.io/snattra/snatter-server:$VERSION\`
+          - \`ghcr.io/snattra/snatter-web:$VERSION\`"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Snatter $VERSION" --notes "$notes" --generate-notes \
+            --prerelease="$PRERELEASE" --latest="$LATEST"

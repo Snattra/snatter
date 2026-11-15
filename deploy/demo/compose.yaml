@@ -1,0 +1,37 @@
+# demo.snatter.app: a released Snatter, the server and the web app in front of
+# it, as the repository's compose.yaml runs them but from the published
+# images. deploy.sh sets SNATTER_VERSION in .env; the rest of .env is the
+# host's own (see .env.example in the repository root).
+#
+# TLS is terminated in front of the web container, which is published on
+# SNATTER_HTTP_PORT for that.
+
+name: snatter
+
+services:
+  server:
+    image: ghcr.io/snattra/snatter-server:${SNATTER_VERSION:?run deploy.sh with a version}
+    restart: unless-stopped
+    environment:
+      # The client address from the web container's X-Forwarded-For; safe
+      # only because nothing but the web container can reach the server.
+      QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING: "true"
+      QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED: "true"
+      SNATTER_MEDIA_ADDRESS: ${SNATTER_MEDIA_ADDRESS:?set the address browsers reach this host at}
+    ports:
+      - "8080:8080/udp"
+    volumes:
+      - server-data:/var/lib/snatter
+
+  web:
+    image: ghcr.io/snattra/snatter-web:${SNATTER_VERSION:?run deploy.sh with a version}
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      SNATTER_SERVER_URL: http://server:8080
+    ports:
+      - "${SNATTER_HTTP_PORT:-8080}:8080"
+
+volumes:
+  server-data:

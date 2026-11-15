@@ -38,3 +38,29 @@ that applies to the directory it lands in.
 - Server: JDK 25 or newer and Maven. [SDKMAN](https://sdkman.io) is the easiest way to
   get both.
 - Client: Node.js 24 or newer.
+
+## Releases
+
+Every commit to `main` is published as a development build: images tagged
+`main` and `sha-<commit>`. A release is a version tag on a commit of `main`
+that CI passed on, following [semantic versioning](https://semver.org):
+
+```
+git tag -a v0.1.0 -m "Snatter 0.1.0"
+git push origin v0.1.0
+```
+
+The Release workflow then builds the images for that commit, reporting the
+tag's version, publishes them tagged `0.1.0`, and makes a GitHub release with
+notes from the pull requests merged since the last one. The moving tags,
+`0.1` and `latest` (and `1` from 1.0 on), follow the newest release only, so
+a fix for an older line can be released without moving them back. A tag
+with a suffix, such as `v0.2.0-rc.1`, is a prerelease: its images get only
+that tag. Releases run one at a time; push one tag at a time.
+
+Once released, the newest release goes on the demo at demo.snatter.app
+(prereleases only by hand, see `deploy/demo/README.md`).
+
+`server/pom.xml` names the version being worked towards (`revision`, such as
+`0.2.0-SNAPSHOT`); move it on after a release. The client's protocol version
+is separate, in `client/web/src/state/protocol.ts`.
