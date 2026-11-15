@@ -65,21 +65,36 @@ export async function checkServer(origin: string, environment: CheckEnvironment 
   return { kind: "ok", origin, info, compatibility: compatible };
 }
 
-/** Enough of `ServerInfo` to tell a Snatter server and show it; the rest is taken on trust. */
+/**
+ * Whether the answer is a Snatter server's `ServerInfo`, as far as adding it
+ * relies on: what it is called and how joining works, shown before it is
+ * added, and its protocol version, checked against the app's. The rest is
+ * taken on trust.
+ */
 function isServerInfo(value: unknown): value is ServerInfo {
-  if (typeof value !== "object" || value === null) {
+  if (!isObject(value)) {
     return false;
   }
-  const info = value as Partial<ServerInfo>;
+  const { name, community, registration, protocol } = value;
   return (
-    info.name === "Snatter" &&
-    typeof info.community === "object" &&
-    info.community !== null &&
-    typeof info.community.name === "string" &&
-    (info.community.description === undefined ||
-      info.community.description === null ||
-      typeof info.community.description === "string") &&
-    typeof info.registration === "object" &&
-    info.registration !== null
+    name === "Snatter" &&
+    isObject(community) &&
+    typeof community.name === "string" &&
+    isOptionalText(community.description) &&
+    isObject(registration) &&
+    (registration.mode === "open" || registration.mode === "invite_only") &&
+    typeof registration.challengeRequired === "boolean" &&
+    typeof registration.setupRequired === "boolean" &&
+    // A server that states no protocol predates versions, and is too old rather than not Snatter.
+    (protocol === undefined ||
+      (isObject(protocol) && typeof protocol.version === "string" && isOptionalText(protocol.minClient)))
   );
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isOptionalText(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
 }

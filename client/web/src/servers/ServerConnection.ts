@@ -368,7 +368,8 @@ export class ServerConnection {
     } finally {
       this.callStarting = false;
     }
-    if (this.entry().voice.channelId === null) {
+    // Left voice, or the server was taken out of the app, while the microphone was asked for.
+    if (this.gone || this.entry().voice.channelId === null) {
       call.close();
       return;
     }
@@ -903,9 +904,17 @@ export function connectionTo(origin: string): ServerConnection {
   return connection;
 }
 
-/** Takes the server out of the app: signs out of it and forgets all the app held for it. */
+/**
+ * Takes the server out of the app: signs out of it and forgets all the app
+ * held for it. The app lets go of it at once, so the server can be added
+ * again straight away with a connection of its own, which the signing out
+ * still under way does not touch.
+ */
 export async function forgetServer(origin: string): Promise<void> {
-  await connectionTo(origin).leave();
+  // A connection of its own if the server was never opened, for the session kept for it.
+  const connection = connections.get(origin) ?? new ServerConnection(origin);
+  const leaving = connection.leave();
   connections.delete(origin);
   useServers.getState().remove(origin);
+  await leaving;
 }

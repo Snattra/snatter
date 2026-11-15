@@ -50,10 +50,12 @@ function MultiServerApp() {
     change((list) => withServer(list, server));
     setAdding(false);
   };
+  // Off the list at once; signing out of it may take a moment more.
   const remove = async (server: SavedServer) => {
-    await forgetServer(server.origin);
+    const leaving = forgetServer(server.origin);
     change((list) => withoutServer(list, server.origin));
     setRemoving(null);
+    await leaving;
   };
 
   if (!loaded) {

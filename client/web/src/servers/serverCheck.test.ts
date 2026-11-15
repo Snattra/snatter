@@ -55,6 +55,14 @@ describe("checkServer", () => {
     });
   });
 
+  it("takes a server that states no protocol as too old, since it predates versions", async () => {
+    const { protocol: _, ...unversioned } = info;
+    expect(await checkServer("https://ancient.example.com", answering(json(unversioned)))).toMatchObject({
+      kind: "outdated",
+      outdated: "server_outdated",
+    });
+  });
+
   it("takes no answer as unreachable, as the browser reports a server that does not let the app in", async () => {
     const refused = answering(() => Promise.reject(new TypeError("Failed to fetch")));
     expect(await checkServer("https://closed.example.com", refused)).toEqual({
@@ -69,6 +77,9 @@ describe("checkServer", () => {
       json({ ...info, name: "Something else" }),
       json({ name: "Snatter" }),
       json({ ...info, community: { name: "Odd", description: {} } }),
+      json({ ...info, protocol: { version: { toString: null }, minClient: "1.0" } }),
+      json({ ...info, registration: { ...info.registration, setupRequired: "false" } }),
+      json({ ...info, registration: { ...info.registration, mode: "maybe" } }),
       async () => new Response("<html></html>", { status: 200 }),
     ];
     for (const answer of answers) {
