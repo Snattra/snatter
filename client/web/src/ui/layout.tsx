@@ -125,9 +125,11 @@ interface ChannelItemProps {
   /** Has messages the member has not read: bold, with a small pill at the pane's edge. */
   unread: boolean;
   onClick: () => void;
+  /** A shortcut on top of the click, such as joining a voice channel's voice. */
+  onDoubleClick?: () => void;
 }
 
-export function ChannelItem({ channel, selected, unread, onClick }: ChannelItemProps) {
+export function ChannelItem({ channel, selected, unread, onClick, onDoubleClick }: ChannelItemProps) {
   const collapsed = useContext(Collapsed);
   return (
     <button
@@ -136,6 +138,7 @@ export function ChannelItem({ channel, selected, unread, onClick }: ChannelItemP
       aria-current={selected ? "page" : undefined}
       title={collapsed ? channel.name : undefined}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
     >
       <ChannelIcon channel={channel} />
       <span className="sn-channel-name sn-truncate sn-collapse-fade">{channel.name}</span>

@@ -23,9 +23,21 @@ import { playVoiceSound, unlockSounds } from "./sounds";
 import { Popover, Tooltip } from "./surfaces";
 
 /** Joins voice from a click, which is also what lets the join and leave sounds play. */
-function join(connection: ServerConnection, channelId: string): void {
+export function join(connection: ServerConnection, channelId: string): void {
   unlockSounds();
   connection.joinVoice(channelId);
+}
+
+/** Whether the member may join a channel's voice: they have permission, and it is not full for them. */
+export function canJoinVoice(view: ServerView, channel: Channel): boolean {
+  return can(view, "CONNECT") && !isFull(view, channel);
+}
+
+/** Full of others, unless the member can move members, who may join anyway. */
+function isFull(view: ServerView, channel: Channel): boolean {
+  const limit = channel.userLimit ?? 0;
+  const others = voiceIn(view, channel.id).filter((state) => state.accountId !== view.account.id).length;
+  return limit > 0 && others >= limit && !can(view, "MOVE_MEMBERS");
 }
 
 /** After a member in voice: muted by a moderator (in `danger`) or by themselves, and deafened. */
@@ -346,8 +358,7 @@ export function VoiceRoom({ connection, view, channel, local, onOpenProfile }: V
   const here = local.channelId === channel.id;
   const joining = here && voiceStatus(local, view.voice[view.account.id]) === "joining";
   const limit = channel.userLimit ?? 0;
-  const others = inVoice.filter(({ member }) => member.id !== view.account.id).length;
-  const full = limit > 0 && others >= limit && !can(view, "MOVE_MEMBERS");
+  const full = isFull(view, channel);
   const allowed = can(view, "CONNECT");
   return (
     <div className="sn-voice-room">
