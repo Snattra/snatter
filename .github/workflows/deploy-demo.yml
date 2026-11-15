@@ -4,7 +4,7 @@
 # version, which also rolls the demo back to an earlier one.
 #
 # The deploy key may run nothing on the host but deploy/demo/deploy.sh,
-# which it hands the version; deploy/demo/README.md sets the host up. What
+# which it hands the version (see "The demo" in CONTRIBUTING.md). What
 # reaches the host lives in the `demo` environment: the DEMO_SSH_KEY secret,
 # and the DEMO_SSH_HOST, DEMO_SSH_USER and DEMO_SSH_KNOWN_HOSTS variables.
 

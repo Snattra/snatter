@@ -4,10 +4,12 @@
 # logs in with a key that may run only this script, and names the version as
 # its command; by hand, on the host:
 #
-#   ./deploy.sh 0.1.0
+#   sudo -u snatter-deploy /opt/snatter/deploy.sh 0.1.0
 #
-# The version goes into the .env beside this script, where compose reads it,
-# so that compose commands run here later keep to it.
+# Once its images are pulled, the version goes into the .env beside this
+# script, where compose reads it, so that compose commands run here later
+# keep to it. Its runbook is README.md beside it on the host; how releases
+# get here is in CONTRIBUTING.md.
 
 set -euo pipefail
 
@@ -19,6 +21,11 @@ fi
 
 cd "$(dirname "$(readlink -f "$0")")"
 
+# The images first, so a version without them leaves .env, and what runs, as
+# they were.
+export SNATTER_VERSION="$version"
+docker compose pull --quiet
+
 touch .env
 others=$(grep -v '^SNATTER_VERSION=' .env || true)
 {
@@ -28,7 +35,9 @@ others=$(grep -v '^SNATTER_VERSION=' .env || true)
 cat .env.next > .env
 rm .env.next
 
-docker compose pull --quiet
 docker compose up -d --remove-orphans --wait
+# Caddy reads its Caddyfile only as it starts, or when told to, so a copied
+# Caddyfile takes effect with the next deploy.
+docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 docker image prune -f > /dev/null
 echo "Snatter $version is running"

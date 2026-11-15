@@ -1,40 +1,90 @@
-# demo.snatter.app: a released Snatter, the server and the web app in front of
-# it, as the repository's compose.yaml runs them but from the published
-# images. deploy.sh sets SNATTER_VERSION in .env; the rest of .env is the
-# host's own (see .env.example in the repository root).
+# demo.snatter.app: a released Snatter, with Caddy in front for HTTPS. It
+# lives in /opt/snatter on the demo host, and deploy.sh, beside it, is the
+# one way to change what runs; the host's README.md beside them is its
+# runbook, and "The demo" in CONTRIBUTING.md says how releases get there.
 #
-# TLS is terminated in front of the web container, which is published on
-# SNATTER_HTTP_PORT for that.
+# Settings are in .env next to this file:
+#
+#   SNATTER_DOMAIN         the host name, demo.snatter.app
+#   SNATTER_MEDIA_ADDRESS  the machine's public IP address, for voice
+#   SNATTER_VERSION        the release that runs, written by deploy.sh
 
 name: snatter
 
+# Logs go to the system journal, which keeps them 30 days
+# (journald-snatter.conf), also across deploys that replace a container.
+# Read them with docker compose logs, or journalctl -t snatter-server-1.
+x-logging: &logging
+  driver: journald
+  options:
+    tag: "{{.Name}}"
+
 services:
   server:
-    image: ghcr.io/snattra/snatter-server:${SNATTER_VERSION:?run deploy.sh with a version}
+    image: ghcr.io/snattra/snatter-server:${SNATTER_VERSION:?deploy a version with deploy.sh}
     restart: unless-stopped
+    logging: *logging
+    # Runs as a user of its own, with no privileges and no way to gain any.
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     environment:
-      # The client address from the web container's X-Forwarded-For; safe
-      # only because nothing but the web container can reach the server.
+      # Take the client address from X-Forwarded-For, so rate limits apply
+      # per client. Safe only because nothing but Caddy and the web container
+      # can reach the server.
       QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING: "true"
       QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED: "true"
-      # And the address the page is at from its X-Forwarded-Host, so that the
+      # And the address the page is at from X-Forwarded-Host, so that the
       # server knows its own pages.
       QUARKUS_HTTP_PROXY_ENABLE_FORWARDED_HOST: "true"
-      SNATTER_MEDIA_ADDRESS: ${SNATTER_MEDIA_ADDRESS:?set the address browsers reach this host at}
+      SNATTER_MEDIA_ADDRESS: ${SNATTER_MEDIA_ADDRESS:?set it in .env}
     ports:
+      # Voice, on the same number outside as inside, since the server offers
+      # its own port number.
       - "8080:8080/udp"
     volumes:
       - server-data:/var/lib/snatter
 
   web:
-    image: ghcr.io/snattra/snatter-web:${SNATTER_VERSION:?run deploy.sh with a version}
+    image: ghcr.io/snattra/snatter-web:${SNATTER_VERSION:?deploy a version with deploy.sh}
     restart: unless-stopped
+    logging: *logging
+    # Runs as a user of its own, with no privileges and no way to gain any.
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     depends_on:
       - server
     environment:
       SNATTER_SERVER_URL: http://server:8080
     ports:
-      - "${SNATTER_HTTP_PORT:-8080}:8080"
+      # On this machine only, for reaching the app through an SSH tunnel.
+      - "127.0.0.1:8080:8080"
+
+  caddy:
+    image: docker.io/library/caddy:2
+    restart: unless-stopped
+    logging: *logging
+    # Root in its container, but with no privilege beyond binding ports 80
+    # and 443, which its binary is marked as needing to start at all.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      - server
+      - web
+    environment:
+      SNATTER_DOMAIN: ${SNATTER_DOMAIN:?set it in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      # HTTP/3.
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificates; kept, or every start asks Let's Encrypt again.
+      - caddy-data:/data
+      - caddy-config:/config
 
 volumes:
   server-data:
+  caddy-data:
+  caddy-config:
