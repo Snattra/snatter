@@ -1,6 +1,6 @@
 package app.snatter.server.origin;
 
-import static app.snatter.server.testing.ApiAssertions.assertApiStatus;
+import static app.snatter.server.testing.ApiAssertions.assertApiError;
 import static app.snatter.server.testing.ApiClientFactory.serverApi;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
@@ -8,12 +8,14 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import app.snatter.client.model.ApiErrorDto;
 import app.snatter.client.model.ServerSettingsUpdateDto;
 import app.snatter.server.testing.GatewayTestClient;
 import app.snatter.server.testing.TestDataService;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.RestAssured;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -114,7 +116,9 @@ class ClientOriginFilterTest {
     @Test
     void anAppMustBeAnOrigin() {
         for (String notAnOrigin : new String[] {"https://chat.example.com/app", "null", "chat.example.com"}) {
-            assertApiStatus(400, () -> data.updateSettings(new ServerSettingsUpdateDto().clientOrigins(List.of(notAnOrigin))));
+            ApiErrorDto error = assertApiError(400, "validation_failed",
+                () -> data.updateSettings(new ServerSettingsUpdateDto().clientOrigins(List.of(notAnOrigin))));
+            assertEquals(Set.of("clientOrigins[0]"), error.getFields().keySet());
         }
         given().header("Origin", HOSTED).when().get("/api/v1/server-info")
             .then().header("Access-Control-Allow-Origin", equalTo(HOSTED));

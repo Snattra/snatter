@@ -4,6 +4,7 @@ import app.snatter.api.model.ApiErrorDto;
 import io.quarkus.security.ForbiddenException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Path;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.Map;
@@ -34,7 +35,7 @@ public class ApiExceptionMappers {
     public Response validationFailed(ConstraintViolationException e) {
         Map<String, String> fields = new TreeMap<>();
         for (ConstraintViolation<?> v : e.getConstraintViolations()) {
-            fields.put(lastPathSegment(v), v.getMessage());
+            fields.put(fieldOf(v), v.getMessage());
         }
         return Response.status(400)
             .type(MediaType.APPLICATION_JSON)
@@ -42,10 +43,21 @@ public class ApiExceptionMappers {
             .build();
     }
 
-    /** Turns {@code register.registerRequestDto.username} into {@code username}. */
-    private static String lastPathSegment(ConstraintViolation<?> v) {
-        String path = v.getPropertyPath().toString();
-        int dot = path.lastIndexOf('.');
-        return dot < 0 ? path : path.substring(dot + 1);
+    /**
+     * The field a violation is about, by its own name: {@code username} for
+     * {@code register.registerRequestDto.username}. An entry of a list is
+     * named after the list, {@code clientOrigins[0]}.
+     */
+    private static String fieldOf(ConstraintViolation<?> v) {
+        String field = v.getPropertyPath().toString();
+        for (Path.Node node : v.getPropertyPath()) {
+            switch (node.getKind()) {
+                case PROPERTY, PARAMETER -> field = node.getName();
+                case CONTAINER_ELEMENT -> field = field + "[" + node.getIndex() + "]";
+                default -> {
+                }
+            }
+        }
+        return field;
     }
 }

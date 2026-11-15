@@ -705,6 +705,10 @@ Conventions that follow from this:
   Typed ids (`AccountId`, `BlobId`) are the exception: the contract's
   `AccountId` and `BlobId` schemas are mapped straight onto the hand-written
   records, so DTOs and interface parameters use them directly.
+  Other value records stay out of DTOs: a string the contract constrains
+  arrives as a `String`, which Bean Validation checks against the contract,
+  and the resource turns it into the record, as `ServerSettingsResource` does
+  with `ClientOrigin`.
 - **Methods return `RestResponse<Dto>`**, Quarkus REST's typed response, so
   the body type is checked by the compiler while status and headers stay
   under the resource's control. Binary bodies are `InputStream` in both
@@ -729,10 +733,11 @@ Errors have one shape, the `ApiError` schema:
 {"error": "<stable_code>", "message": "human readable", "fields": {"username": "..."}}
 ```
 
-`fields` appears only for validation failures. Throw `api.ApiException` for
-domain errors; it carries the status and code, and `ApiExceptionMappers`
-renders it. When adding a code, document it in the contract on the operation
-that produces it.
+`fields` appears only for validation failures. Each field is named as the
+request names it, `username`; an entry of a list after its list,
+`clientOrigins[0]`. Throw `api.ApiException` for domain errors; it carries
+the status and code, and `ApiExceptionMappers` renders it. When adding a
+code, document it in the contract on the operation that produces it.
 
 | Method | Path                | Auth | Purpose                                   |
 |--------|---------------------|------|-------------------------------------------|
