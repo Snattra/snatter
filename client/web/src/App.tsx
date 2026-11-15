@@ -11,6 +11,7 @@ import { Spinner } from "./ui/controls";
 import { RailAdd, RailProvider, RailServer, Railed, ServerRail } from "./ui/layout";
 import { OutdatedScreen } from "./ui/OutdatedScreen";
 import { ServerScreen } from "./ui/ServerScreen";
+import { VoiceSounds } from "./ui/voice";
 
 const mode = resolveMode();
 
@@ -18,7 +19,12 @@ export function App() {
   if (mode.kind === "multi") {
     return <MultiServerApp />;
   }
-  return <ServerApp origin={mode.origin} invites />;
+  return (
+    <>
+      <ServerApp origin={mode.origin} invites />
+      <VoiceSounds origin={mode.origin} />
+    </>
+  );
 }
 
 /**
@@ -85,6 +91,10 @@ function MultiServerApp() {
   return (
     <RailProvider value={rail}>
       <ServerApp key={open.origin} origin={open.origin} onRemove={() => setRemoving(open)} />
+      {/* Outside the open server's screen, so a call elsewhere is still heard. */}
+      {servers.map((server) => (
+        <VoiceSounds key={server.origin} origin={server.origin} />
+      ))}
       {adding && <AddServerModal known={servers} onAdd={add} onClose={() => setAdding(false)} />}
       {removing && (
         <RemoveServerModal server={removing} onRemove={() => remove(removing)} onClose={() => setRemoving(null)} />

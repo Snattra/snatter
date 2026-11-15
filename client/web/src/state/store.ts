@@ -35,6 +35,8 @@ export interface ServerEntry {
   notice: string | null;
   /** Voice as this app asked for it; kept across reconnects, which join again. */
   voice: LocalVoice;
+  /** The channel open on this server, or null for the first; kept while another server is open. */
+  selectedChannelId: string | null;
 }
 
 interface ServersState {
@@ -64,5 +66,5 @@ export function useServer(origin: string): ServerEntry {
 }
 
 export function blank(origin: string): ServerEntry {
-  return { origin, status: "unknown", view: null, logs: {}, notice: null, voice: noVoice };
+  return { origin, status: "unknown", view: null, logs: {}, notice: null, voice: noVoice, selectedChannelId: null };
 }

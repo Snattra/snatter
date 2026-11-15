@@ -46,7 +46,6 @@ import {
   VoiceRoom,
   canJoinVoice,
   join,
-  useVoiceSounds,
 } from "./voice";
 
 /** How often the member's typing is announced again while they keep typing, as the contract asks. */
@@ -66,7 +65,8 @@ type Dialog =
  * member list (which can be closed).
  */
 export function ServerScreen({ connection, entry }: { connection: ServerConnection; entry: ServerEntry }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedId = entry.selectedChannelId;
+  const setSelectedId = (channelId: string) => connection.selectChannel(channelId);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   // The member's own message being edited, in the channel it is in.
   const [editingMessage, setEditingMessage] = useState<{ channelId: string; messageId: string } | null>(null);
@@ -78,7 +78,6 @@ export function ServerScreen({ connection, entry }: { connection: ServerConnecti
   const selected = channels.find((c) => c.id === selectedId) ?? channels[0] ?? null;
   const someoneTyping = view !== null && selected !== null && Object.keys(view.typing[selected.id] ?? {}).length > 0;
   const now = useNow(someoneTyping ? 1000 : null);
-  useVoiceSounds(view, entry.voice);
   const appRail = useRail();
 
   const membersToggle = (

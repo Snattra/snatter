@@ -11,6 +11,13 @@ interface SavedServersState extends ServerList {
   change(next: (list: ServerList) => ServerList): void;
 }
 
+/**
+ * Keeping the list, one save after the other in the order of the changes,
+ * so that where storage answers later, as on the desktop, an older list
+ * never lands last.
+ */
+let saving: Promise<void> = Promise.resolve();
+
 /** The servers added to the app, as the multi-server apps keep them. */
 export const useSavedServers = create<SavedServersState>()((set, get) => ({
   ...emptyList,
@@ -19,12 +26,22 @@ export const useSavedServers = create<SavedServersState>()((set, get) => ({
     const { servers, selected } = get();
     const list = next({ servers, selected });
     set(list);
-    void platform.settings.set(KEY, JSON.stringify(list));
+    const text = JSON.stringify(list);
+    saving = saving
+      .then(() => platform.settings.set(KEY, text))
+      .catch(() => {
+        // Not kept this time; the next change keeps the whole list again.
+      });
   },
 }));
 
+/** The one look at what was kept, however often it is asked for, so a late answer cannot undo changes since. */
+let loading: Promise<void> | null = null;
+
 /** Reads the list kept from last time. */
-export async function loadSavedServers(): Promise<void> {
-  const list = parseServerList(await platform.settings.get(KEY));
-  useSavedServers.setState({ ...list, loaded: true });
+export function loadSavedServers(): Promise<void> {
+  loading ??= platform.settings.get(KEY).then((text) => {
+    useSavedServers.setState({ ...parseServerList(text), loaded: true });
+  });
+  return loading;
 }

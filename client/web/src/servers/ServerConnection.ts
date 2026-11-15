@@ -159,6 +159,11 @@ export class ServerConnection {
     }
   }
 
+  /** Opens a channel here, which stays open while the member looks at other servers. */
+  selectChannel(channelId: string): void {
+    this.update({ selectedChannelId: channelId });
+  }
+
   // --- Invites ----------------------------------------------------------------
 
   /**
