@@ -23,6 +23,7 @@ splitting by technical layer:
 | `gateway`     | WebSocket gateway: identify, ready, events, voice    |
 | `media`       | Voice transport: SDP, ICE, DTLS-SRTP on one UDP port |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
+| `origin`      | Which web apps may use the API from a browser        |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
 | `persistence` | JDBI producer and small JDBC helpers                 |
@@ -655,6 +656,32 @@ turns them all on or off.
 Messages are counted per account so that people sharing an address (a
 household, a LAN party) do not slow each other down, and one account gains
 nothing from switching addresses. Only sending counts; editing does not.
+
+## Client origins
+
+Web pages may use the server from a browser if they are its own, at the
+address the request was sent to or at `publicUrl`, or if their origin is in
+`ServerSettings.clientOrigins` (table `client_origin`). By default that is
+the hosted app, `https://web.snatter.app`, and `http://localhost:*`, where a
+port of `*` stands for every port. `origin.ClientOriginFilter`, a Vert.x
+handler in front of `/api`, does the rest:
+
+- A CORS preflight from an allowed page is answered 204 with the methods
+  and headers the API takes; from any other page, 403.
+- Other requests from an allowed page get `Access-Control-Allow-Origin`, so
+  the browser lets the page read the answer. Requests from other pages still
+  run, unread: they cannot carry a session, which a page sends only as a
+  bearer token it holds itself.
+- The gateway handshake is outside CORS, so the filter refuses it with 403
+  from a page that is not allowed.
+- Requests without `Origin`, from programs that are not web pages, are not
+  touched.
+
+Own pages are recognised by host and port alone, since behind a proxy that
+terminates TLS the server sees plain HTTP where the page has HTTPS. Behind
+the web container, the address is the page's own, port and all, which nginx
+forwards as `X-Forwarded-Host` and the server trusts
+(`quarkus.http.proxy.enable-forwarded-host`).
 
 ## HTTP API
 

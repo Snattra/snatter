@@ -26,6 +26,9 @@ services:
       # container can reach the server.
       QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING: "true"
       QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED: "true"
+      # And the address the page is at from its X-Forwarded-Host, so that the
+      # server knows its own pages.
+      QUARKUS_HTTP_PROXY_ENABLE_FORWARDED_HOST: "true"
       # The address browsers reach this machine at, such as its LAN or public
       # address. Unset, the server offers only its container's addresses,
       # which browsers on other machines cannot reach, nor can browsers on

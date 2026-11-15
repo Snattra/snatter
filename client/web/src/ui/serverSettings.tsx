@@ -33,6 +33,7 @@ const sections: { id: Section; label: string }[] = [
 const sectionOf: Record<SettingsField, Section> = {
   name: "overview",
   publicUrl: "joining",
+  clientOrigins: "joining",
   sessionLifetimeDays: "joining",
   voiceDefaultBitrate: "voice",
   message: "limits",
@@ -292,6 +293,17 @@ function Joining({ view, form, errors, edit }: SectionProps) {
         value={form.publicUrl}
         error={errors.publicUrl}
         onChange={(event) => edit({ publicUrl: event.target.value }, "publicUrl")}
+      />
+      <TextArea
+        label="Web apps that can connect"
+        hint="One address on each line. Pages of this server's own address can always connect; an app on another address needs to be listed here first. A port of * allows every port."
+        placeholder="https://web.snatter.app"
+        autoComplete="off"
+        spellCheck={false}
+        rows={3}
+        value={form.clientOrigins}
+        error={errors.clientOrigins}
+        onChange={(event) => edit({ clientOrigins: event.target.value }, "clientOrigins")}
       />
       <Field
         label="Stay signed in for (days)"

@@ -180,6 +180,7 @@
                                 <schemaMapping>RoleId=RoleId</schemaMapping>
                                 <schemaMapping>ChannelId=ChannelId</schemaMapping>
                                 <schemaMapping>MessageId=MessageId</schemaMapping>
+                                <schemaMapping>ClientOrigin=ClientOrigin</schemaMapping>
                             </schemaMappings>
                             <typeMappings>
                                 <typeMapping>DateTime=Instant</typeMapping>
@@ -196,6 +197,7 @@
                                 <importMapping>RoleId=app.snatter.server.role.RoleId</importMapping>
                                 <importMapping>ChannelId=app.snatter.server.channel.ChannelId</importMapping>
                                 <importMapping>MessageId=app.snatter.server.message.MessageId</importMapping>
+                                <importMapping>ClientOrigin=app.snatter.server.origin.ClientOrigin</importMapping>
                             </importMappings>
                             <configOptions>
                                 <library>quarkus</library>

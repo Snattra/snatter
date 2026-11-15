@@ -23,6 +23,12 @@ export const CHALLENGE_DIFFICULTIES = [
 /** An http(s) address, as the contract has it for `publicUrl`. */
 const PUBLIC_URL = /^https?:\/\/[^/\s]+(\/\S*)?$/;
 
+/** A web app's origin, as the contract has it for `clientOrigins`: no path, a port of `*` for every port. */
+const CLIENT_ORIGIN = /^[a-z][a-z0-9+.-]*:\/\/([a-z0-9.-]+|\[[0-9a-f:.]+\])(:([0-9]{1,5}|\*))?$/;
+
+/** The contract's limit on how many apps may be listed. */
+const MAX_CLIENT_ORIGINS = 20;
+
 /** A policy as typed: how many tries every how many seconds. */
 export interface PolicyForm {
   limit: string;
@@ -40,6 +46,8 @@ export interface SettingsForm {
   challengeMaxNumber: string;
   newMemberRoleId: string;
   publicUrl: string;
+  /** The web apps that may connect, one per line. */
+  clientOrigins: string;
   sessionLifetimeDays: string;
   /** In kilobits per second. */
   voiceDefaultBitrate: string;
@@ -50,6 +58,7 @@ export interface SettingsForm {
 export type SettingsField =
   | "name"
   | "publicUrl"
+  | "clientOrigins"
   | "sessionLifetimeDays"
   | "voiceDefaultBitrate"
   | RateLimitPolicyName;
@@ -69,6 +78,7 @@ export function settingsForm(settings: ServerSettings): SettingsForm {
     challengeMaxNumber: String(settings.challengeMaxNumber),
     newMemberRoleId: settings.newMemberRoleId ?? "",
     publicUrl: settings.publicUrl ?? "",
+    clientOrigins: settings.clientOrigins.join("\n"),
     sessionLifetimeDays: String(settings.sessionLifetimeDays),
     voiceDefaultBitrate: String(kbps(settings.voice.defaultBitrate)),
     rateLimitsEnabled: settings.rateLimits.enabled,
@@ -91,6 +101,12 @@ export function settingsErrors(form: SettingsForm): SettingsErrors {
   const publicUrl = form.publicUrl.trim();
   if (publicUrl !== "" && !PUBLIC_URL.test(publicUrl)) {
     errors.publicUrl = "Use a whole address, such as https://chat.example.com.";
+  }
+  const origins = clientOriginsIn(form.clientOrigins);
+  if (origins.some((origin) => !CLIENT_ORIGIN.test(origin))) {
+    errors.clientOrigins = "Put one app address on each line, such as https://web.snatter.app, with nothing after its host and port.";
+  } else if (origins.length > MAX_CLIENT_ORIGINS) {
+    errors.clientOrigins = `List up to ${MAX_CLIENT_ORIGINS} apps.`;
   }
   const days = wholeNumber(form.sessionLifetimeDays);
   if (days === null || days < 1 || days > MAX_SESSION_LIFETIME_DAYS) {
@@ -127,6 +143,10 @@ export function settingsChanges(settings: ServerSettings, form: SettingsForm): S
   if (publicUrl !== (settings.publicUrl ?? "")) {
     update.publicUrl = publicUrl;
   }
+  const clientOrigins = clientOriginsIn(form.clientOrigins);
+  if (!sameData([...clientOrigins].sort(), [...settings.clientOrigins].sort())) {
+    update.clientOrigins = clientOrigins;
+  }
   if (form.registrationMode !== settings.registrationMode) {
     update.registrationMode = form.registrationMode;
   }
@@ -156,6 +176,15 @@ export function settingsChanges(settings: ServerSettings, form: SettingsForm): S
     update.rateLimits = rateLimits;
   }
   return update;
+}
+
+/** The apps listed, one per line, as the server keeps them: lower case, each once. */
+function clientOriginsIn(text: string): string[] {
+  const origins = text
+    .split("\n")
+    .map((line) => line.trim().toLowerCase())
+    .filter((line) => line !== "");
+  return [...new Set(origins)];
 }
 
 function rateLimitsIn(form: SettingsForm): RateLimits | null {
