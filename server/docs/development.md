@@ -533,8 +533,12 @@ warning, and none at all fails the start. Every connection shares the port:
 ice4j's `SinglePortUdpHarvester` tells them apart by the ICE username in
 their first packet. `snatter.media.address` names the address people reach
 the port at behind NAT or in a container, offered as a server-reflexive
-candidate in front of each socket of its family, IPv4 or IPv6; with no
-socket of its family, the start fails.
+candidate in front of each socket of its family, IPv4 or IPv6, and for a
+name each of its addresses. An address it cannot use, a name that does not
+resolve or a family the port has no socket of, is an error in the log, not a
+failed start: chat works without voice, and the bundle offers voice at
+`SNATTER_ADDRESS` unless told otherwise, which may be IPv6 on a network
+without it.
 
 **The peer leads ICE.** `IceConnection` is the server's side for one
 connection: its credentials and candidates go into the offer, and it leaves

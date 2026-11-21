@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import org.ice4j.Transport;
@@ -33,27 +34,43 @@ public class MediaPort {
     /** The sockets, and the configured address in front of them. */
     private final List<CandidateHarvester> harvesters = new ArrayList<>();
 
-    public MediaPort(MediaConfig config) throws UnknownHostException {
+    public MediaPort(MediaConfig config) {
         configureIce4j();
-        // Looked up first, so a name that does not resolve leaves no sockets open.
-        InetAddress reached = config.address().isPresent() ? InetAddress.getByName(config.address().get()) : null;
         sockets = open(config.port());
         harvesters.addAll(sockets);
-        if (reached != null && !standInFront(reached)) {
-            close();
-            String family = reached instanceof Inet6Address ? "IPv6" : "IPv4";
-            throw new IllegalStateException(config.address().get() + " is an " + family
-                + " address, but the voice port has no " + family + " socket for it to stand in front of");
-        }
+        config.address().ifPresent(this::standInFront);
         LOG.infof("Voice on UDP %s%s", sockets.stream().map(SinglePortUdpHarvester::getLocalAddress).toList(),
             config.address().map(address -> ", reached at " + address).orElse(""));
     }
 
     /**
-     * Offers the configured address in front of each socket of its family,
-     * IPv4 or IPv6, and says whether there was one. A socket on the address
-     * itself needs no stand-in.
+     * Offers the address people reach the port at in front of each socket of
+     * its family, IPv4 or IPv6, each of its addresses if it is a name. One it
+     * cannot use is an error in the log rather than a server that does not
+     * start, as chat works without voice: a name that does not resolve, or an
+     * address of a family the port has no socket of, as on a container network
+     * without IPv6. Voice then offers only the machine's own addresses.
      */
+    private void standInFront(String address) {
+        InetAddress[] reached;
+        try {
+            reached = InetAddress.getAllByName(address);
+        } catch (UnknownHostException e) {
+            LOG.errorf("Voice cannot be offered at %s: it does not resolve", address);
+            return;
+        }
+        boolean any = false;
+        for (InetAddress one : reached) {
+            any |= standInFront(one);
+        }
+        if (!any) {
+            LOG.errorf("Voice cannot be offered at %s: the voice port has no socket of its address family (%s);"
+                + " set SNATTER_MEDIA_ADDRESS to an address of a family it has", address,
+                Arrays.stream(reached).map(one -> one instanceof Inet6Address ? "IPv6" : "IPv4").distinct().toList());
+        }
+    }
+
+    /** Offers the address in front of each socket of its family, and says whether there was one. A socket on the address itself needs no stand-in. */
     private boolean standInFront(InetAddress reached) {
         boolean sameFamily = false;
         for (SinglePortUdpHarvester socket : sockets) {
