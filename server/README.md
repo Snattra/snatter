@@ -79,7 +79,12 @@ there is no configuration file to mount.
 
 Behind a reverse proxy, set `SNATTER_TRUSTED_PROXIES` to its address, so that
 rate limits see each client's own address rather than the proxy's. Name only
-the proxy: any client named there can claim to be anyone.
+the proxy: any client named there can claim to be anyone. The proxy must
+replace the `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`
+headers a client sends, not add to them, as the server takes the first
+address in `X-Forwarded-For`. Caddy's `reverse_proxy` does so by itself; in
+nginx, set them outright (`proxy_set_header X-Forwarded-For $remote_addr;`),
+rather than with `$proxy_add_x_forwarded_for`.
 
 The database is a single SQLite file. The server creates it, and its
 directory, on first start, and upgrades the schema automatically. Keep it on a

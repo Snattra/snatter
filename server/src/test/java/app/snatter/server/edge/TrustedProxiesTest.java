@@ -28,7 +28,7 @@ class TrustedProxiesTest {
     void theWebAppIsAnAddressWithNothingAfterHostAndPort() {
         assertEquals("https://web.snatter.app", AppPages.checked("https://web.snatter.app/"));
         assertEquals("http://localhost:5173", AppPages.checked(" http://localhost:5173 "));
-        for (String notOne : new String[] {"web.snatter.app", "ftp://web.snatter.app", "https://web.snatter.app/app", "https://web.snatter.app?x=1"}) {
+        for (String notOne : new String[] {"web.snatter.app", "ftp://web.snatter.app", "https://web.snatter.app/app", "https://web.snatter.app?x=1", "https://web.snatter.app#section"}) {
             assertThrows(IllegalArgumentException.class, () -> AppPages.checked(notOne), notOne);
         }
     }

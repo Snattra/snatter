@@ -19,6 +19,11 @@ class ForwardedHeadersTrustedTest {
 
     @Test
     void aNamedProxyIsBelieved() {
-        ForwardedHeaders.assertBelieved(true);
+        ForwardedHeaders.assertHostBelieved(true);
+    }
+
+    @Test
+    void aNamedProxySaysWhichClientItIs() {
+        ForwardedHeaders.assertClientAddressBelieved(true);
     }
 }

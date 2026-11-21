@@ -19,6 +19,11 @@ class ForwardedHeadersOtherProxyTest {
 
     @Test
     void aClientThatIsNotANamedProxyIsNotBelieved() {
-        ForwardedHeaders.assertBelieved(false);
+        ForwardedHeaders.assertHostBelieved(false);
+    }
+
+    @Test
+    void aClientThatIsNotANamedProxyCannotChooseItsAddress() {
+        ForwardedHeaders.assertClientAddressBelieved(false);
     }
 }

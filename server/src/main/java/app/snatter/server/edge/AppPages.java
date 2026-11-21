@@ -8,6 +8,8 @@ import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -16,9 +18,10 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * and its invite links, {@code /invite/{code}} (as {@code InviteResource}
  * makes them), both sent on to the web app, {@code snatter.web-app}
  * (SNATTER_WEB_APP), web.snatter.app unless set. An invite goes on as
- * {@code /invite#{this server}/{code}}, for the app to add this server and
- * sign up with the invite. Where an app is served in front of the server at
- * its address, the app answers these paths itself and they never come here.
+ * {@code /invite#{this server}/{code}}, the server as its origin, encoded,
+ * for the app to add this server and sign up with the invite. Where an app is
+ * served in front of the server at its address, the app answers these paths
+ * itself and they never come here.
  */
 @ApplicationScoped
 public class AppPages {
@@ -32,13 +35,14 @@ public class AppPages {
         this.settings = settings;
     }
 
-    /** An http(s) address with nothing after its host and port, trailing slash ignored. */
+    /** An http(s) address with nothing after its host and port, not even a fragment; trailing slash ignored. */
     static String checked(String webApp) {
         String trimmed = webApp.strip().replaceAll("/+$", "");
         URI uri = URI.create(trimmed);
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
         if (!(scheme.equals("https") || scheme.equals("http")) || uri.getRawAuthority() == null
-            || !(uri.getRawPath() == null || uri.getRawPath().isEmpty()) || uri.getRawQuery() != null) {
+            || !(uri.getRawPath() == null || uri.getRawPath().isEmpty()) || uri.getRawQuery() != null
+            || uri.getRawFragment() != null) {
             throw new IllegalArgumentException("snatter.web-app is not the address of a web app: " + webApp);
         }
         return trimmed;
@@ -57,23 +61,24 @@ public class AppPages {
             context.response().setStatusCode(404).end();
             return;
         }
-        redirect(context, webApp + "/invite#" + ownAddress(context) + "/" + code);
+        String server = URLEncoder.encode(ownOrigin(context), StandardCharsets.UTF_8);
+        redirect(context, webApp + "/invite#" + server + "/" + code);
     }
 
     /**
-     * This server as members reach it, as the web app takes addresses: the
-     * host and port of its public URL, or else of the address the request was
-     * sent to.
+     * This server as members reach it, scheme and all, so that the web app
+     * need not guess it: the origin of its public URL, or else of the address
+     * the request was sent to, as a proxy it believes says it was.
      */
-    private String ownAddress(RoutingContext context) {
+    private String ownOrigin(RoutingContext context) {
         String publicUrl = settings.current().publicUrl();
         if (publicUrl != null) {
-            String authority = URI.create(publicUrl).getRawAuthority();
-            if (authority != null) {
-                return authority;
+            URI uri = URI.create(publicUrl);
+            if (uri.getScheme() != null && uri.getRawAuthority() != null) {
+                return uri.getScheme().toLowerCase(Locale.ROOT) + "://" + uri.getRawAuthority();
             }
         }
-        return context.request().getHeader(HttpHeaders.HOST);
+        return context.request().scheme() + "://" + context.request().getHeader(HttpHeaders.HOST);
     }
 
     private static void redirect(RoutingContext context, String location) {

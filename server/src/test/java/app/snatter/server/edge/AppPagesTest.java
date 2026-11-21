@@ -26,7 +26,7 @@ class AppPagesTest {
         given().redirects().follow(false)
             .when().get("/invite/k3Jd8QzP")
             .then().statusCode(302)
-            .header("Location", "https://web.snatter.app/invite#localhost:" + RestAssured.port + "/k3Jd8QzP");
+            .header("Location", "https://web.snatter.app/invite#http%3A%2F%2Flocalhost%3A" + RestAssured.port + "/k3Jd8QzP");
     }
 
     @Test
@@ -36,7 +36,7 @@ class AppPagesTest {
         given().redirects().follow(false)
             .when().get("/invite/k3Jd8QzP")
             .then().statusCode(302)
-            .header("Location", "https://web.snatter.app/invite#chat.example.com/k3Jd8QzP");
+            .header("Location", "https://web.snatter.app/invite#https%3A%2F%2Fchat.example.com/k3Jd8QzP");
     }
 
     @Test

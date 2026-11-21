@@ -8,6 +8,11 @@ class ForwardedHeadersUntrustedTest {
 
     @Test
     void withNoProxiesNamedNoClientIsBelieved() {
-        ForwardedHeaders.assertBelieved(false);
+        ForwardedHeaders.assertHostBelieved(false);
+    }
+
+    @Test
+    void withNoProxiesNamedNoClientChoosesItsAddress() {
+        ForwardedHeaders.assertClientAddressBelieved(false);
     }
 }

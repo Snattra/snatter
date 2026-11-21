@@ -703,10 +703,10 @@ in front of it, still answers the two addresses people open in a browser
 (`edge.AppPages`): its own address, which goes on to the web app, and its
 invite links, `/invite/{code}`, which go on to
 `{web app}/invite#{this server}/{code}` for the app to add the server and
-sign up with the invite. The server is named by the host and port of
-`publicUrl`, or else of the request. The web app is `SNATTER_WEB_APP`,
-web.snatter.app unless set. Where an app is served in front of the server,
-it answers these paths itself.
+sign up with the invite. The server is named by its origin, encoded so the
+app need not guess its scheme: that of `publicUrl`, or else of the request.
+The web app is `SNATTER_WEB_APP`, web.snatter.app unless set. Where an app
+is served in front of the server, it answers these paths itself.
 
 ## HTTP API
 
