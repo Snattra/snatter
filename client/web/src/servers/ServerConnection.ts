@@ -521,7 +521,7 @@ export class ServerConnection {
 
   /** Shows the message as pending at once and sends it; a failure stays in the list to retry. */
   async send(channelId: string, content: string): Promise<void> {
-    const nonce = crypto.randomUUID();
+    const nonce = messageNonce();
     this.updateLog(channelId, (log) =>
       withPending(log, { nonce, content, createdAt: new Date().toISOString(), error: null }),
     );
@@ -895,6 +895,14 @@ function endedNotice(reason: GatewayCloseReason | null): string {
     default:
       return `The connection was closed (${reason}). Please sign in again.`;
   }
+}
+
+/**
+ * A random id for a message on its way, made from what every page has:
+ * crypto.randomUUID is only on pages over HTTPS.
+ */
+function messageNonce(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 const connections = new Map<string, ServerConnection>();

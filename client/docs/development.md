@@ -134,13 +134,14 @@ are kept through `platform.secrets`: localStorage in the browser, the OS
 keychain through Electron's `safeStorage` in the desktop app. localStorage is
 only as safe as the page is free of injected script, so user content is never
 rendered as HTML, and the page is served with a strict Content-Security-Policy
-(in `web/nginx/default.conf.template`): only the app's own files run, nothing
+(in `web/caddy/Caddyfile`; the hosted app's, in `web/hosted/_headers`): only the app's own files run, nothing
 inline, and Trusted Types are required, so the browser refuses any string
 that would become HTML or script. The one exception is `trustedTypes.ts`,
 whose `snatter` policy vouches for script URLs from the app's own origin;
 creating a worker goes through `trustedScriptUrl`. `npm run preview` serves
-the production build under the same policy, read from the nginx template, so
-anything it blocks shows up before a container is built.
+the production build under the same policy, read from the Caddyfile, and
+`npm run preview:hosted` the hosted build under its own, so anything they
+block shows up before a container is built.
 
 A fresh server reports `registration.setupRequired`; the sign-in screen then
 only offers creating the first account, which becomes the owner and needs no
@@ -325,6 +326,19 @@ two together for the voice lists, which ring the avatars of those speaking
 When the gateway reconnects, the server has closed the audio connection
 along with it; the app keeps the microphone, joins again on `ready`, and
 answers the new offer.
+
+## Plain HTTP
+
+A server's own app may be opened over plain HTTP, as at a home server's LAN
+address. Browsers keep some features to secure pages, those over HTTPS or
+at localhost, so the app does without them: a message's nonce comes from
+`crypto.getRandomValues`, not `crypto.randomUUID`; the registration
+challenge hashes with `sha256Hex` (`auth/sha256.ts`) where `crypto.subtle` is
+missing; copying an invite link falls back to selecting it. Voice cannot do
+without: the microphone is for secure pages only, so on a plain HTTP page
+the voice controls say voice needs HTTPS (`voicePossible`) instead of
+offering to join. A feature for secure pages only needs such a way round,
+or to say why it is not there.
 
 ## Platform
 

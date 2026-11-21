@@ -121,7 +121,7 @@ function useAddServer(known: SavedServer[], onAdd: (server: SavedServer) => void
 function problemWith(check: Exclude<ServerCheck, { kind: "ok" }>): string {
   switch (check.kind) {
     case "insecure":
-      return "This page is secure and that server isn't, so the browser won't connect to it. Use its https:// address.";
+      return "That server only speaks plain HTTP, and the browser won't let this secure page reach it. Open the server's own address in the browser instead, or ask its owner to set up HTTPS.";
     case "unreachable":
       return "No Snatter server answered there. Check the address, or ask the server's owner whether it lets this app connect.";
     case "not_snatter":

@@ -1,6 +1,9 @@
 /// <reference lib="webworker" />
 // Finds the number whose SHA-256 of salt + number is the challenge; off the
-// main thread, since it can take a few seconds.
+// main thread, since it can take a few seconds. Pages over plain HTTP have no
+// crypto.subtle, so there the hash is worked out by sha256Hex.
+
+import { sha256Hex } from "./sha256";
 
 interface Task {
   challenge: string;
@@ -11,9 +14,11 @@ interface Task {
 self.onmessage = async (event: MessageEvent<Task>) => {
   const { challenge, salt, maxnumber } = event.data;
   const encoder = new TextEncoder();
+  const subtle = self.crypto?.subtle;
   for (let number = 0; number <= maxnumber; number++) {
-    const digest = await crypto.subtle.digest("SHA-256", encoder.encode(salt + number));
-    if (toHex(digest) === challenge) {
+    const input = encoder.encode(salt + number);
+    const hash = subtle ? toHex(await subtle.digest("SHA-256", input)) : sha256Hex(input);
+    if (hash === challenge) {
       self.postMessage(number);
       return;
     }
