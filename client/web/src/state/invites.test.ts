@@ -70,6 +70,17 @@ describe("hostedInviteIn", () => {
     );
   });
 
+  it("takes the server's origin as servers name themselves, scheme and all, encoded", () => {
+    expect(hostedInviteIn("/invite", "#https%3A%2F%2Fdemo.snatter.app/k3Jd8QzP")?.origin).toBe(
+      "https://demo.snatter.app",
+    );
+    // Schemes the app would not have guessed from the host alone.
+    expect(hostedInviteIn("/invite", "#https%3A%2F%2Flocalhost%3A8443/k3Jd8QzP")?.origin).toBe("https://localhost:8443");
+    expect(hostedInviteIn("/invite", "#http%3A%2F%2F192.168.1.10%3A8080/k3Jd8QzP")?.origin).toBe(
+      "http://192.168.1.10:8080",
+    );
+  });
+
   it("is no invite for any other address", () => {
     for (const [path, hash] of [
       ["/", "#demo.snatter.app/k3Jd8QzP"],
