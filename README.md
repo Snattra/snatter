@@ -45,19 +45,27 @@ docker compose up --build
 
 This builds the server and the web app from source and starts them in the
 production profile. Open http://localhost:8080 and create the first account,
-which becomes the owner. The web container serves the app and forwards `/api`
-to the server, so the API is on the same port (try `/api/v1/server-info`).
-Voice goes to the server directly, over UDP on port 8080: set
-`SNATTER_MEDIA_ADDRESS` to the address browsers reach this machine at, such
-as its LAN address; without it the server offers only its container's
-addresses, which browsers usually cannot reach. Browsers give pages the
-microphone only over HTTPS, or at `localhost`, so for voice from other
-machines put a reverse proxy that terminates TLS in front of the web
-container. The server keeps everything, its
-SQLite database and uploaded content, in the `server-data` volume, so
-`docker compose down` keeps your data and `docker compose down -v` wipes it.
-To publish on another port, set `SNATTER_HTTP_PORT` in a `.env` file (see
-`.env.example`).
+which becomes the owner. The web container, Caddy, serves the app and passes
+`/api` on to the server, so the API is on the same port (try
+`/api/v1/server-info`).
+
+Settings go in a `.env` file beside `compose.yaml` (see `.env.example`):
+
+- `SNATTER_ADDRESS`: the address members reach this machine at, a host name
+  pointing here or its public IP address. With it, the app is served over
+  HTTPS, with a certificate from Let's Encrypt, for which ports 80 and 443 of
+  that address must reach this machine's `SNATTER_HTTP_PORT` (8080) and
+  `SNATTER_HTTPS_PORT` (8443), as by forwarding them on the router. Without
+  it, plain HTTP: everything works but voice in a browser, since browsers
+  give the microphone only to HTTPS pages, or at `localhost`.
+- `SNATTER_MEDIA_ADDRESS`: voice goes to the server directly, over UDP on
+  port 8080, at `SNATTER_ADDRESS` unless this names another address, such as
+  the machine's LAN address. Without either, the server offers only its
+  container's addresses, which browsers usually cannot reach.
+
+The server keeps everything, its SQLite database and uploaded content, in the
+`server-data` volume, and Caddy its certificates in `web-data`, so `docker
+compose down` keeps them and `docker compose down -v` wipes them.
 
 ## Developing locally
 

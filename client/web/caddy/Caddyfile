@@ -1,0 +1,72 @@
+# The web app of a server installation, in front of its server: the app for
+# every path, and /api, the API and the gateway, passed on to the server, so
+# that the app talks to it from the same address. start.sh picks the site and
+# its HTTPS from SNATTER_ADDRESS; SNATTER_SERVER_URL is the server.
+#
+# Caddy sets X-Forwarded-For, -Proto and -Host for the server itself,
+# replacing any a client sent, so the server can believe it about the client
+# (SNATTER_TRUSTED_PROXIES).
+
+{
+	# Nothing here needs Caddy's admin API.
+	admin off
+}
+
+# No address: plain HTTP only.
+(https-none) {
+}
+
+# A host name: a certificate from Let's Encrypt, as Caddy does by default.
+(https-name) {
+}
+
+# An IP address: Let's Encrypt certifies one only for six days at a time,
+# which Caddy renews in good time.
+(https-ip) {
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
+}
+
+{$SNATTER_SITE} {
+	import https-{$SNATTER_HTTPS}
+
+	handle /api/* {
+		# Avatars are at most 1 MiB.
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy {$SNATTER_SERVER_URL}
+	}
+
+	# Named by content hash, so they never change; one that is not there is
+	# not there.
+	handle /assets/* {
+		root * /srv
+		header Cache-Control "public, max-age=31536000, immutable"
+		header X-Content-Type-Options "nosniff"
+		file_server
+	}
+
+	handle {
+		root * /srv
+		# Only the app's own files run, nothing inline, and no string is ever
+		# turned into HTML or script (Trusted Types): session tokens live in
+		# localStorage, so injected script must be impossible.
+		header {
+			X-Content-Type-Options "nosniff"
+			Cache-Control "no-cache"
+			Referrer-Policy "no-referrer"
+			Cross-Origin-Opener-Policy "same-origin"
+			Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=()"
+			Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types snatter"
+		}
+
+		# The app answers every path it does not have a file for, such as
+		# invite links, /invite/{code}.
+		try_files {path} /index.html
+		file_server
+	}
+}

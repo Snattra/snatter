@@ -1,8 +1,10 @@
-# Builds the Snatter web app and serves it with nginx, which also forwards the
-# API and the gateway to a Snatter server so the app runs same-origin.
+# Builds the Snatter web app and serves it with Caddy, which also passes the
+# API and the gateway on to a Snatter server, so the app runs same-origin, and
+# serves it over HTTPS when given an address (SNATTER_ADDRESS, see
+# caddy/start.sh).
 #
 #   docker build -f client/web/Dockerfile -t snatter-web .
-#   docker run -p 8080:8080 -e SNATTER_SERVER_URL=http://my-server:8080 snatter-web
+#   docker run -p 8080:80 -e SNATTER_SERVER_URL=http://my-server:8080 snatter-web
 #
 # The build context is the repository root, since the app is typed from the
 # contract in protocol/openapi.
@@ -23,16 +25,17 @@ COPY client/web web
 RUN npm run build
 
 # --- Runtime stage ------------------------------------------------------------
-FROM docker.io/nginxinc/nginx-unprivileged:stable-alpine
+FROM docker.io/library/caddy:2.11.9-alpine
 
-# The Snatter server to forward /api to.
+# The Snatter server to pass /api to.
 ENV SNATTER_SERVER_URL=http://server:8080
-# Makes the entrypoint export the container's DNS servers as
-# NGINX_LOCAL_RESOLVERS, so the server's address is looked up again when it
-# changes rather than only at startup.
-ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+# The address members reach this machine at, for HTTPS; unset, plain HTTP.
+ENV SNATTER_ADDRESS=""
 
-COPY client/web/nginx/default.conf.template /etc/nginx/templates/default.conf.template
-COPY --from=build /build/client/web/dist /usr/share/nginx/html
+COPY client/web/caddy/Caddyfile /etc/caddy/Caddyfile
+COPY --chmod=755 client/web/caddy/start.sh /usr/local/bin/snatter-web
+COPY --from=build /build/client/web/dist /srv
 
-EXPOSE 8080
+# HTTP, and HTTPS over TCP and, for HTTP/3, UDP. Certificates are kept in /data.
+EXPOSE 80 443 443/udp
+CMD ["snatter-web"]
