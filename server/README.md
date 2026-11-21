@@ -74,10 +74,17 @@ there is no configuration file to mount.
 | `QUARKUS_HTTP_PORT`    | `8080`                                         | Port the server listens on     |
 | `SNATTER_MEDIA_PORT`   | `8080`                                         | UDP port for voice. Open it, and publish it from a container, beside the HTTP port |
 | `SNATTER_MEDIA_ADDRESS` | none                                          | The address people reach the voice port at, when the server is behind NAT or in a container: a public IP address or a host name |
+| `SNATTER_TRUSTED_PROXIES` | none                                       | The reverse proxies in front of the server, as IP addresses or CIDR ranges separated by commas, such as `127.0.0.1` or `172.16.0.0/12`. Only from them does the server take the client's address and the page's from `X-Forwarded-*` headers; unset, it takes them from nobody |
+| `SNATTER_WEB_APP`       | `https://web.snatter.app`                      | The web app the server's own address, and its invite links, lead to when no app is served in front of it |
 
-Behind a reverse proxy, also set `QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING`
-and `QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED` to `true` so rate limits see the
-client's address, as `compose.yaml` does.
+Behind a reverse proxy, set `SNATTER_TRUSTED_PROXIES` to its address, so that
+rate limits see each client's own address rather than the proxy's. Name only
+the proxy: any client named there can claim to be anyone. The proxy must
+replace the `X-Forwarded-For`, `X-Forwarded-Proto` and `X-Forwarded-Host`
+headers a client sends, not add to them, as the server takes the first
+address in `X-Forwarded-For`. Caddy's `reverse_proxy` does so by itself; in
+nginx, set them outright (`proxy_set_header X-Forwarded-For $remote_addr;`),
+rather than with `$proxy_add_x_forwarded_for`.
 
 The database is a single SQLite file. The server creates it, and its
 directory, on first start, and upgrades the schema automatically. Keep it on a

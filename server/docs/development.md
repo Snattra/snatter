@@ -24,6 +24,7 @@ splitting by technical layer:
 | `media`       | Voice transport: SDP, ICE, DTLS-SRTP on one UDP port |
 | `ratelimit`   | Per-client rate limiting driven by the settings      |
 | `origin`      | Which web apps may use the API from a browser        |
+| `edge`        | Proxies believed, and the pages outside the API      |
 | `api`         | Shared API error types and exception mappers         |
 | `common`      | Domain-wide abstractions such as `Value` and `Id`    |
 | `persistence` | JDBI producer and small JDBC helpers                 |
@@ -681,10 +682,31 @@ handler in front of `/api`, does the rest:
   CORS headers and are never refused.
 
 Own pages are recognised by host and port alone, since behind a proxy that
-terminates TLS the server sees plain HTTP where the page has HTTPS. Behind
-the web container, the address is the page's own, port and all, which nginx
-forwards as `X-Forwarded-Host` and the server trusts
-(`quarkus.http.proxy.enable-forwarded-host`).
+terminates TLS the server sees plain HTTP where the page has HTTPS. Behind a
+proxy, the address is the page's own, port and all, as the proxy forwards it
+in `X-Forwarded-Host`, from a proxy the server believes (see "At the edge").
+
+## At the edge
+
+**Proxies.** Rate limits and the server's own pages depend on who the client
+is and where the page is, which behind a reverse proxy only the proxy
+knows. The server believes `X-Forwarded-For`, `-Proto` and `-Host` from the
+proxies `SNATTER_TRUSTED_PROXIES` names, and from nobody else:
+`edge.TrustedProxies`, a configuration source registered in
+`META-INF/services`, switches Quarkus's forwarding on only when proxies are
+named, with `quarkus.http.proxy.trusted-proxies` set to them. With none
+named, a client's forwarded headers are ignored, so it cannot pass for
+another address.
+
+**Pages outside the API.** A server standing alone, with no web app served
+in front of it, still answers the two addresses people open in a browser
+(`edge.AppPages`): its own address, which goes on to the web app, and its
+invite links, `/invite/{code}`, which go on to
+`{web app}/invite#{this server}/{code}` for the app to add the server and
+sign up with the invite. The server is named by its origin, encoded so the
+app need not guess its scheme: that of `publicUrl`, or else of the request.
+The web app is `SNATTER_WEB_APP`, web.snatter.app unless set. Where an app
+is served in front of the server, it answers these paths itself.
 
 ## HTTP API
 

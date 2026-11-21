@@ -21,14 +21,11 @@ services:
     image: snatter-server:local
     restart: unless-stopped
     environment:
-      # Take the client address from the web container's X-Forwarded-For, so
-      # rate limits apply per client. Safe only because nothing but the web
-      # container can reach the server.
-      QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING: "true"
-      QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED: "true"
-      # And the address the page is at from its X-Forwarded-Host, so that the
-      # server knows its own pages.
-      QUARKUS_HTTP_PROXY_ENABLE_FORWARDED_HOST: "true"
+      # Believe the web container about the client's address and the page's,
+      # so rate limits apply per client and the server knows its own pages:
+      # the networks Docker gives containers, as nothing outside this compose
+      # network reaches the server's HTTP port.
+      SNATTER_TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
       # The address browsers reach this machine at, such as its LAN or public
       # address. Unset, the server offers only its container's addresses,
       # which browsers on other machines cannot reach, nor can browsers on
