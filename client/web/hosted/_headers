@@ -3,7 +3,7 @@
 # file into its output, and puts the Content-Security-Policy below in the page
 # as well, for hosts that cannot set headers; see vite.config.ts.
 #
-# The policy is the server installation's (nginx/default.conf.template), but
+# The policy is the server installation's (caddy/Caddyfile), but
 # this app talks to servers of anyone's choosing: any HTTPS server and its
 # gateway, and servers on this machine, for development: those the app
 # takes as local (isLocal in src/state/serverAddress.ts), and no others.

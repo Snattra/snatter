@@ -10,7 +10,7 @@ const server = process.env.SNATTER_SERVER ?? "http://localhost:8080";
 const proxy = { "/api": { target: server, ws: true } };
 
 // The Content-Security-Policy the app runs under: a server installation's,
-// from its nginx config, or the hosted app's, from the _headers file the
+// from its Caddyfile, or the hosted app's, from the _headers file the
 // multi-server build ships with. `vite preview` serves the build with it, so
 // that anything the policy blocks shows up locally. (The dev server cannot
 // use it: its hot reload relies on inline script.)
@@ -22,7 +22,7 @@ function cspIn(file: string, pattern: RegExp): string {
   }
   return csp;
 }
-const installationCsp = cspIn("nginx/default.conf.template", /add_header Content-Security-Policy "([^"]+)"/);
+const installationCsp = cspIn("caddy/Caddyfile", /Content-Security-Policy "([^"]+)"/);
 const hostedHeaders = readFileSync(new URL("hosted/_headers", import.meta.url), "utf8");
 const hostedCsp = cspIn("hosted/_headers", /^\s*Content-Security-Policy: (.+)$/m);
 

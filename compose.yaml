@@ -1,15 +1,28 @@
-# Runs a complete Snatter installation locally in the production profile:
-# the server, and the web app in front of it.
+# A complete Snatter installation, built from this checkout: the server, and
+# the web app in front of it, which serves the app and passes /api, the API
+# and the gateway, on to the server.
 #
 #   docker compose up --build
 #
-# Everything the server keeps, its SQLite database and uploaded content, is in
-# the server-data volume.
+# Settings go in a .env file beside this one (see .env.example):
 #
-# Open http://localhost:8080. The web container serves the app and forwards
-# /api, including the gateway, to the server, so all of that is on one port.
-# Voice goes to the server directly, on UDP 8080, at SNATTER_MEDIA_ADDRESS
-# (see below).
+#   SNATTER_ADDRESS        The address members reach this machine at: a host
+#                          name pointing here, or the machine's public IP
+#                          address. With it, the web app serves HTTPS, with
+#                          a certificate from Let's Encrypt, which needs ports
+#                          80 and 443 of that address to reach
+#                          SNATTER_HTTP_PORT and SNATTER_HTTPS_PORT here.
+#                          Unset, plain HTTP: the app works, but browsers
+#                          give the microphone only to HTTPS pages, so voice
+#                          needs HTTPS (or the page at localhost).
+#   SNATTER_HTTP_PORT      This machine's port for HTTP, 8080 unless set.
+#   SNATTER_HTTPS_PORT     This machine's port for HTTPS, 8443 unless set.
+#   SNATTER_MEDIA_ADDRESS  The address voice reaches this machine at, when it
+#                          is not SNATTER_ADDRESS, such as a LAN address.
+#
+# Voice goes to the server directly, on UDP 8080. Everything the server keeps,
+# its SQLite database and uploaded content, is in the server-data volume; the
+# certificates are in web-data.
 
 name: snatter
 
@@ -26,11 +39,10 @@ services:
       # the networks Docker gives containers, as nothing outside this compose
       # network reaches the server's HTTP port.
       SNATTER_TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-      # The address browsers reach this machine at, such as its LAN or public
-      # address. Unset, the server offers only its container's addresses,
-      # which browsers on other machines cannot reach, nor can browsers on
-      # this one under Docker Desktop.
-      SNATTER_MEDIA_ADDRESS: ${SNATTER_MEDIA_ADDRESS:-}
+      # The address the server offers browsers for voice. Unset, it offers
+      # only its container's addresses, which browsers on other machines
+      # cannot reach, nor can browsers on this one under Docker Desktop.
+      SNATTER_MEDIA_ADDRESS: ${SNATTER_MEDIA_ADDRESS:-${SNATTER_ADDRESS:-}}
     ports:
       # Voice, on the same number outside as inside, since the server offers
       # its own port number.
@@ -44,12 +56,27 @@ services:
       dockerfile: client/web/Dockerfile
     image: snatter-web:local
     restart: unless-stopped
+    # Root in its container, but with no privilege beyond binding ports 80
+    # and 443.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
     depends_on:
       - server
     environment:
       SNATTER_SERVER_URL: http://server:8080
+      SNATTER_ADDRESS: ${SNATTER_ADDRESS:-}
     ports:
-      - "${SNATTER_HTTP_PORT:-8080}:8080"
+      - "${SNATTER_HTTP_PORT:-8080}:80"
+      - "${SNATTER_HTTPS_PORT:-8443}:443"
+      # HTTP/3.
+      - "${SNATTER_HTTPS_PORT:-8443}:443/udp"
+    volumes:
+      # The certificates; kept, or every start asks Let's Encrypt again.
+      - web-data:/data
+      - web-config:/config
 
 volumes:
   server-data:
+  web-data:
+  web-config:

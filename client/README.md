@@ -54,9 +54,11 @@ committed.
 
 ## Container image
 
-`web/Dockerfile` builds the app and serves it with nginx, which forwards
-`/api` and the gateway to the server named by `SNATTER_SERVER_URL`. Build it
-from the repository root, since it needs `protocol/`:
+`web/Dockerfile` builds the app and serves it with Caddy, which passes `/api`
+and the gateway on to the server named by `SNATTER_SERVER_URL`, and serves
+the app over HTTPS when `SNATTER_ADDRESS` names the address it is reached at
+(`web/caddy/start.sh`). Build it from the repository root, since it needs
+`protocol/`:
 
 ```
 docker build -f client/web/Dockerfile -t snatter-web .

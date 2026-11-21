@@ -29,9 +29,21 @@ export function join(connection: ServerConnection, channelId: string): void {
   connection.joinVoice(channelId);
 }
 
-/** Whether the member may join a channel's voice: they have permission, and it is not full for them. */
+/**
+ * Whether voice can work on this page at all: browsers give the microphone
+ * only to secure pages, those over HTTPS or at localhost.
+ */
+export function voicePossible(): boolean {
+  return typeof window === "undefined" || window.isSecureContext;
+}
+
+/** What to say where voice cannot work on this page. */
+export const VOICE_NEEDS_HTTPS =
+  "Voice needs this page opened over HTTPS: browsers only let secure pages use the microphone. The server's owner can set that up; chat works as it is.";
+
+/** Whether the member may join a channel's voice: they have permission, it is not full for them, and the page can have voice. */
 export function canJoinVoice(view: ServerView, channel: Channel): boolean {
-  return can(view, "CONNECT") && !isFull(view, channel);
+  return can(view, "CONNECT") && !isFull(view, channel) && voicePossible();
 }
 
 /** Full of others, unless the member can move members, who may join anyway. */
@@ -331,11 +343,12 @@ export function VoiceHeaderButton({ connection, view, channel, local }: VoiceHea
     );
   }
   const allowed = can(view, "CONNECT");
+  const possible = voicePossible();
   return (
     <Button
       size="sm"
-      disabled={!allowed}
-      title={allowed ? undefined : "You don't have permission to join voice."}
+      disabled={!allowed || !possible}
+      title={!possible ? VOICE_NEEDS_HTTPS : allowed ? undefined : "You don't have permission to join voice."}
       onClick={() => join(connection, channel.id)}
     >
       <Icon name="headset" />
@@ -361,6 +374,7 @@ export function VoiceRoom({ connection, view, channel, local, onOpenProfile }: V
   const limit = channel.userLimit ?? 0;
   const full = isFull(view, channel);
   const allowed = can(view, "CONNECT");
+  const possible = voicePossible();
   return (
     <div className="sn-voice-room">
       {inVoice.length === 0 ? (
@@ -395,11 +409,12 @@ export function VoiceRoom({ connection, view, channel, local, onOpenProfile }: V
           {joining ? "Joining…" : "Leave voice"}
         </Button>
       ) : (
-        <Button variant="primary" disabled={!allowed || full} onClick={() => join(connection, channel.id)}>
+        <Button variant="primary" disabled={!allowed || full || !possible} onClick={() => join(connection, channel.id)}>
           Join voice
         </Button>
       )}
-      {!here && (!allowed || full) && (
+      {!here && !possible && <p className="sn-voice-room-note">{VOICE_NEEDS_HTTPS}</p>}
+      {!here && possible && (!allowed || full) && (
         <p className="sn-voice-room-note">{allowed ? "It's full." : "You don't have permission to join voice."}</p>
       )}
     </div>
