@@ -6,6 +6,7 @@ import app.snatter.server.api.ApiException;
 import app.snatter.server.channel.Channel;
 import app.snatter.server.channel.ChannelEvent;
 import app.snatter.server.channel.ChannelRepository;
+import app.snatter.server.persistence.AfterCommit;
 import app.snatter.server.role.RoleRepository;
 import io.quarkus.runtime.Startup;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -34,15 +35,17 @@ public class ServerSettingsService {
     private final RoleRepository roles;
     private final AccountRepository accounts;
     private final Event<Changed> changed;
+    private final AfterCommit afterCommit;
     private final AtomicReference<ServerSettings> current = new AtomicReference<>();
 
     public ServerSettingsService(ServerSettingsRepository repository, ChannelRepository channels, RoleRepository roles,
-                                 AccountRepository accounts, Event<Changed> changed) {
+                                 AccountRepository accounts, Event<Changed> changed, AfterCommit afterCommit) {
         this.repository = repository;
         this.channels = channels;
         this.roles = roles;
         this.accounts = accounts;
         this.changed = changed;
+        this.afterCommit = afterCommit;
         this.current.set(repository.get());
     }
 
@@ -55,12 +58,12 @@ public class ServerSettingsService {
      * needs neither an invite nor a challenge and makes its account the owner.
      */
     public boolean setupRequired() {
-        return current().ownerId() == null && accounts.count() == 0;
+        return repository.ownerId() == null && accounts.count() == 0;
     }
 
     @Transactional
     public ServerSettings update(AccountId actor, ServerSettings settings) {
-        ServerSettings before = current();
+        ServerSettings before = repository.get();
         if (settings.systemChannelId() != null && !settings.systemChannelId().equals(before.systemChannelId())) {
             Channel channel = channels.find(settings.systemChannelId())
                 .orElseThrow(() -> ApiException.badRequest("channel_not_found", "No such channel"));
@@ -73,8 +76,8 @@ public class ServerSettingsService {
         }
         repository.update(settings);
         ServerSettings fresh = repository.get();
-        current.set(fresh);
         changed.fire(new Changed(before, fresh, actor));
+        afterCommit.run(() -> current.set(fresh));
         return fresh;
     }
 
@@ -83,7 +86,8 @@ public class ServerSettingsService {
     public boolean claimOwner(AccountId accountId) {
         boolean claimed = repository.claimOwner(accountId);
         if (claimed) {
-            current.set(repository.get());
+            ServerSettings fresh = repository.get();
+            afterCommit.run(() -> current.set(fresh));
         }
         return claimed;
     }
