@@ -1,10 +1,8 @@
 package app.snatter.server.blob;
 
 import app.snatter.server.account.AccountId;
+import app.snatter.server.persistence.AfterCommit;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.transaction.Status;
-import jakarta.transaction.Synchronization;
-import jakarta.transaction.TransactionSynchronizationRegistry;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -24,19 +22,19 @@ public class BlobService {
 
     private final BlobRepository repository;
     private final BlobStore store;
-    private final TransactionSynchronizationRegistry transactions;
+    private final AfterCommit afterCommit;
 
-    public BlobService(BlobRepository repository, BlobStore store, TransactionSynchronizationRegistry transactions) {
+    public BlobService(BlobRepository repository, BlobStore store, AfterCommit afterCommit) {
         this.repository = repository;
         this.store = store;
-        this.transactions = transactions;
+        this.afterCommit = afterCommit;
     }
 
     /** Stores content and records it. Must be called inside a transaction. */
     public Blob store(byte[] content, String contentType, AccountId owner, String purpose) {
         BlobId id = BlobId.newId();
         store.put(id, content);
-        afterCompletion(Status.STATUS_ROLLEDBACK, () -> store.delete(id));
+        afterCommit.onRollback(() -> store.delete(id));
         Blob blob = new Blob(id, contentType, content.length, sha256(content), owner, purpose, Instant.now());
         repository.insert(blob);
         return blob;
@@ -53,28 +51,7 @@ public class BlobService {
     /** Deletes the row now and the bytes once the transaction commits. */
     public void delete(BlobId id) {
         repository.delete(id);
-        afterCompletion(Status.STATUS_COMMITTED, () -> store.delete(id));
-    }
-
-    private void afterCompletion(int whenStatus, Runnable action) {
-        if (transactions.getTransactionStatus() == Status.STATUS_NO_TRANSACTION) {
-            if (whenStatus == Status.STATUS_COMMITTED) {
-                action.run();
-            }
-            return;
-        }
-        transactions.registerInterposedSynchronization(new Synchronization() {
-            @Override
-            public void beforeCompletion() {
-            }
-
-            @Override
-            public void afterCompletion(int status) {
-                if (status == whenStatus) {
-                    action.run();
-                }
-            }
-        });
+        afterCommit.run(() -> store.delete(id));
     }
 
     static String sha256(byte[] content) {

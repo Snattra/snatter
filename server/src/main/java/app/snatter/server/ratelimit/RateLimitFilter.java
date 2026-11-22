@@ -8,6 +8,7 @@ import app.snatter.server.settings.ServerSettingsService;
 import io.vertx.core.http.HttpServerRequest;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.event.TransactionPhase;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ResourceInfo;
 import jakarta.ws.rs.core.MediaType;
@@ -72,7 +73,7 @@ public class RateLimitFilter {
     }
 
     /** Policies changed: start every client from a full bucket under the new rules. */
-    void onSettingsChanged(@Observes ServerSettingsService.Changed event) {
+    void onSettingsChanged(@Observes(during = TransactionPhase.AFTER_SUCCESS) ServerSettingsService.Changed event) {
         limiter.reset();
     }
 }

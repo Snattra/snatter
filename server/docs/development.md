@@ -134,8 +134,10 @@ Everything else is decided by permissions; see "Roles and permissions".
 
 Everything the owner can change at runtime lives in the
 `server_settings` row and is read through `ServerSettingsService`, which
-caches the row in memory and fires a `Changed` event on updates. Request paths
-never query the table. `application.properties` holds only how the server is
+caches the row in memory and fires a `Changed` event on updates. The cache is
+published only after commit; code inside a transaction reads the repository
+when it needs the transaction's settings. Ordinary request paths read the cache.
+`application.properties` holds only how the server is
 built and wired; environment variables say where it runs (data directory,
 database file, port), and anything about how the community runs is a server setting.
 Internal timing, such as the challenge lifetime or the gateway's keep-alive

@@ -11,6 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.mapper.RowMapper;
 
@@ -77,6 +78,14 @@ public class ServerSettingsRepository {
             .withClientOrigins(h.createQuery("SELECT origin FROM client_origin ORDER BY origin")
                 .map((rs, ctx) -> new ClientOrigin(rs.getString("origin")))
                 .list()));
+    }
+
+    public AccountId ownerId() {
+        return jdbi.withHandle(h -> h.createQuery("SELECT owner_account_id FROM server_settings WHERE id = :id")
+            .bind("id", SINGLETON_ID)
+            .map((rs, ctx) -> Optional.ofNullable(id(rs, "owner_account_id", AccountId::new)))
+            .one()
+            .orElse(null));
     }
 
     /** Writes every owner-editable field. The owner itself is set only through {@link #claimOwner}. */
